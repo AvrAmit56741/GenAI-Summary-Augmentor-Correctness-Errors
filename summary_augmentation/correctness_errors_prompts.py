@@ -166,24 +166,24 @@ def apply_transformation_on_claims_prompt(claims_decomposition_list, suitable_cl
     You are a Hebrew computational linguistics professional Researcher.
     Your goal is to perform correctness errors corruption transformation to hebrew atomic claims taken from a hebrew article. Follow these steps carefully:
 
-    **Apply **ALL** Transformations Simultaneously** - תבצע שינוי בטענה רק אם ניתן להפעיל על הטענה **את כל סוגי** השינויים שהוגדרו
+    **Apply **ALL** Transformations**
         - For claim within **Suitable Claims Decomposition List**, you MUST apply ALL of the error transformation types simultaneously mention **Error Transformation Types**
         - Each transformation must actually change something in the claim.
         - For each error transformation type, change only *ONE* word
         - Before perform the error transformation type, **VERIFY** that the claims **Suitable Claims Decomposition List** can apply all error transformation type mentioned.
-        - If not - choose another claim from **All Original Claims**
         - **When perform transformation on an chosen text based on the error transformation type, the original claim cannot remain unchanged! perform transformation means to change the original data!**
-    
+
     **IMPORTANT**: Check the section of **Apply Error Transformation Rules Examples** to understand better how perform the hebrew error transformations
-    
+
     {unique_transformation_instructions}
     """
 
     user_message = f"""
-    **Suitable Claims Decomposition List**: {suitable_claims_decomposition_list}
+    **Suitable Claims Decomposition List (indexed)**:
+     {[(i, c["original_claim"]) for i, c in enumerate(suitable_claims_decomposition_list)]}
     **Error Transformation Types**: {apply_transformation_types}
-    **All Original Claims** {claims_decomposition_list}
     **Apply Error Transformation Rules Examples**: {transformation_examples}
+    - IMPORTANT: You MUST apply the transformation on EACH and EVERY claim in the Suitable Claims Decomposition List. Do not skip any claim. Even if only one transformation type is given (like sentence_negation), you should apply it to all claims listed.
     - IMPORTANT!: **OBEY** the **Transformation Rules** of each Error Transformation example based on the relevant type!
     - IMPORTANT2!: **OBEY** the unique transformation instructions for each transformation error type if specify!
     {unique_transformation_instructions}
@@ -192,6 +192,39 @@ def apply_transformation_on_claims_prompt(claims_decomposition_list, suitable_cl
     """
 
     return system_message, user_message
+# def apply_transformation_on_claims_prompt(claims_decomposition_list, suitable_claims_decomposition_list, unique_transformation_instructions, apply_transformation_types, transformation_examples, output_instructions_parser):
+#
+#     # Create the system and user messages
+#     system_message = f"""
+#     You are a Hebrew computational linguistics professional Researcher.
+#     Your goal is to perform correctness errors corruption transformation to hebrew atomic claims taken from a hebrew article. Follow these steps carefully:
+#
+#     **Apply **ALL** Transformations Simultaneously** - תבצע שינוי בטענה רק אם ניתן להפעיל על הטענה **את כל סוגי** השינויים שהוגדרו
+#         - For claim within **Suitable Claims Decomposition List**, you MUST apply ALL of the error transformation types simultaneously mention **Error Transformation Types**
+#         - Each transformation must actually change something in the claim.
+#         - For each error transformation type, change only *ONE* word
+#         - Before perform the error transformation type, **VERIFY** that the claims **Suitable Claims Decomposition List** can apply all error transformation type mentioned.
+#         - If not - choose another claim from **All Original Claims**
+#         - **When perform transformation on an chosen text based on the error transformation type, the original claim cannot remain unchanged! perform transformation means to change the original data!**
+#
+#     **IMPORTANT**: Check the section of **Apply Error Transformation Rules Examples** to understand better how perform the hebrew error transformations
+#
+#     {unique_transformation_instructions}
+#     """
+#
+#     user_message = f"""
+#     **Suitable Claims Decomposition List**: {suitable_claims_decomposition_list}
+#     **Error Transformation Types**: {apply_transformation_types}
+#     **All Original Claims** {claims_decomposition_list}
+#     **Apply Error Transformation Rules Examples**: {transformation_examples}
+#     - IMPORTANT!: **OBEY** the **Transformation Rules** of each Error Transformation example based on the relevant type!
+#     - IMPORTANT2!: **OBEY** the unique transformation instructions for each transformation error type if specify!
+#     {unique_transformation_instructions}
+#     the response should be in JSON in the EXACT format:
+#     {output_instructions_parser.get_format_instructions()}
+#     """
+#
+#     return system_message, user_message
 
 
 def apply_halluzaition_transformation_on_claims_prompt(claims_decomposition_list,
@@ -231,7 +264,106 @@ def apply_halluzaition_transformation_on_claims_prompt(claims_decomposition_list
     return system_message, user_message
 
 
-def verify_grammar_transformation_prompt(transformed_claims, output_instructions_parser):
+def verify_grammar_transform_summary_prompt(corrupted_transformed_summary, output_instructions_parser):
+    system_message = """
+    You are a Hebrew-grammar expert whose *only* job is to fix **gender/number** agreement errors.
+
+    Rules:
+    1. Only adjust morphological agreement (gender & number) between nouns, adjectives, and verbs.
+    2. Do *not* change verb tense, aspect, voice, or word order.
+    3. Do *not* touch any facts, numbers, names, or semantic content.
+    4. Make *only* the minimal change necessary, and no more.
+    5. If no such errors exist, return the text exactly as it was.
+    6. Reply in JSON exactly as specified—no extra keys, no explanations.
+    """
+
+    user_message = f"""
+    Verify and correct gender/number agreement errors in the following Hebrew text only:
+
+    \"{corrupted_transformed_summary}\"
+
+    Output JSON schema:
+    {output_instructions_parser.get_format_instructions()}
+    """
+
+    return system_message, user_message
+
+def perform_multiple_transformations_on_claim(output_instructions_parser):
+    system_message = """
+    You are a Hebrew error-injection specialist. You will be given a JSON object with two fields:
+    - `original_claim`: a Hebrew sentence to corrupt.
+    - `applied_transformations`: a list of transformation instructions, each with a `type` and any required parameters.
+    
+    Your task is to apply *all* of those transformations to `original_claim`—no more, no fewer—producing a single, grammatically valid but error-injected sentence.
+    
+    Respond with a JSON object containing exactly these keys (no extras):
+    - `original_claim`
+    - `transformed_claim`
+    - `applied_transformations`
+    """
+
+    user_message = f"""
+    Apply every transformation listed in `applied_transformations` to `original_claim`, preserving Hebrew grammar.  
+    Output JSON schema:
+    {output_instructions_parser.get_format_instructions()}
+    """
+
+    return system_message, user_message
+
+# def verify_grammar_transform_summary_prompt(corrupted_transformed_summary, output_instructions_parser):
+#
+#     """
+#     Sends the corrupted summary to an LLM for grammar verification while preserving intentional errors.
+#
+#     Args:
+#         corrupted_transformed_summary: The summary with intentional errors to check
+#
+#     Returns:
+#         Grammar-verified summary that preserves the intentional errors, or the original if too different
+#     """
+#
+#     # Define the system prompt
+#     system_message = """
+#     אתה מומחה דקדוק עברי. המשימה שלך היא לתקן בעיות דקדוקיות בלבד בטקסט, מבלי לשנות את התוכן או לתקן שגיאות עובדתיות או מהותיות.
+#
+#     עקוב אחר ההנחיות הבאות בקפידה:
+#     1. תקן רק שגיאות דקדוקיות (כמו התאמת מגדר, מספר, זמני פעלים).
+#     2. אל תתקן טעויות תוכן, עובדות לא נכונות, מספרים שגויים, או שמות שגויים.
+#     3. אל תוסיף או תמחק מידע.
+#     4. שמור על כל השגיאות העובדתיות והמהותיות - הן הוכנסו בכוונה ואסור לשנות אותן.
+#     5. בצע שינויים מינימליים בלבד - רק מה שנדרש לתקינות דקדוקית ותחבירית.
+#     6. אל תוסיף הערות או הסברים לגבי השינויים שביצעת.
+#
+#     למשל, אם הטקסט אומר "142% משטח שבאו לא מכוסים מים", אל תתקן את המספר הלא הגיוני 142% או את השם "שבאו", אלא רק דאג שהמילים מתאימות זו לזו מבחינה דקדוקית.
+#     דוגמא:
+#
+#          :שגיאת מילת יחס
+#     טקסט שגוי: "החוקרים הגיעו על מסקנה מעניינת."
+#     תיקון דקדוקי: "החוקרים הגיעו למסקנה מעניינת."
+#     הסבר: הביטוי הנכון הוא "להגיע למסקנה" (עם מילת היחס "ל") ולא "להגיע על מסקנה".
+#
+#         שגיאת סדר מילים
+#     טקסט שגוי: "המחקר החדש בוצע על ידי המדענים המובילים בעולם שלושה."
+#     תיקון דקדוקי: "המחקר החדש בוצע על ידי שלושה מהמדענים המובילים בעולם."
+#     הסבר: המספר "שלושה" צריך להופיע לפני המושא ("מדענים") ולא אחריו.
+#
+#     שגיאות מסוג מגדר לשם עצם או פועל ושגיאות מסוג זמן - אסור לך לשנות
+#     """
+#
+#     # Define the user prompt
+#     user_message = f"""
+#     בדוק את הטקסט הבא מבחינה דקדוקית בלבד. תקן רק שגיאות דקדוק כמו התאמת מגדר, מספר וזמני פעלים, אבל אל תשנה שמות, מספרים, עובדות, או תוכן.
+#     הטקסט לבדיקה:
+#     "{corrupted_transformed_summary}"
+#
+#     The response should be in JSON in the EXACT format:
+#     {output_instructions_parser.get_format_instructions()}
+#     """
+#     return system_message, user_message
+
+
+
+def verify_grammar_transformation_claim_prompt(transformed_claims, output_instructions_parser):
     """
     Creates prompts to verify that transformed claims are grammatically correct in Hebrew.
 

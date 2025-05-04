@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-from transformers import pipeline
-from tokenizers.decoders import WordPiece
+import json
+import pandas as pd
+from typing import List, Dict
+from difflib import SequenceMatcher
 from typing import List, Dict, Type
 from enum import Enum
 from pydantic import BaseModel, PrivateAttr, Field
@@ -17,9 +19,20 @@ from summary_augmentation.correctness_errors_llm_helper_functions import summary
 from summary_augmentation.correctness_errors_prompts import TransformationDetail, SummaryDecompositionClaims, NegativeAugmentationSummary
 
 from difflib import SequenceMatcher
+
+import re
+from Levenshtein import ratio
+import itertools
 from typing import Dict, List, Any
+import itertools
+from typing import Dict, List, Any
+from transformers import pipeline, AutoTokenizer
+import re
+from tokenizers import Tokenizer
+from tokenizers.decoders import WordPiece as WPDecoder
+import logging
 
-
+logger = logging.getLogger(__name__)
 
 class CorrectnessErrorTypes(str, Enum):
     NOUN_GENDER_SWAP = "noun_gender_swap"
@@ -46,9 +59,6 @@ class CorrectnessErrorTypes(str, Enum):
     ENTITY_ORGANIZATION_REPLACE = "entity_organization_replace"
     ENTITY_DATE_REPLACE = "entity_date_replace"
 
-
-
-
 class ClaimDecompositionMethod(str, Enum):
     FACTS = "facts"
     SENTENCES = "sentences"
@@ -67,37 +77,67 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.0-flash')
 
 
-def extract_named_entities(text: str):
+# Module-scope initialization
+tokenizer = AutoTokenizer.from_pretrained('dicta-il/dictabert-ner')
+ner_pipeline = pipeline(
+    'ner',
+    model='dicta-il/dictabert-ner',
+    aggregation_strategy='simple'
+)
+ner_pipeline.tokenizer.backend_tokenizer.decoder = WPDecoder()
+
+def detach_hebrew_clitics(txt: str) -> str:
     """
-    Extracts named entities from the provided Hebrew text using the 'dicta-il/dictabert-ner' model.
-
-    Args:
-        text (str): The Hebrew text from which to extract named entities.
-
-    Returns:
-        list: A list of dictionaries with each entity's type, text, start and end positions.
+    Inserts a space after a standalone Hebrew clitic letter
+    (ו־, ב־, ל־, כ־, מ־, ש־) when it's stuck onto a word.
+    E.g. "שכדור הארץ" → "ש כדור הארץ"
     """
-    # Initialize the NER pipeline with the specified model and aggregation strategy
-    ner_pipeline = pipeline('ner', model='dicta-il/dictabert-ner', aggregation_strategy='simple')
+    return re.sub(
+        r'\b([ובלכס])(?=[\u05D0-\u05EA])',
+        r'\1 ',
+        txt
+    )
+def normalize_hebrew(txt: str) -> str:
+    txt = detach_hebrew_clitics(txt)
+    # Remove Hebrew diacritics, unify punctuation, strip HTML and collapse whitespace
+    txt = re.sub(r'[\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4-\u05C7]', '', txt)
+    txt = txt.replace('“', '"').replace('”', '"').replace('–', '-')
+    txt = re.sub(r'<[^>]+>', ' ', txt)
+    return re.sub(r'\s+', ' ', txt).strip()
 
-    # Set the decoder for the tokenizer to handle wordpieces correctly
-    ner_pipeline.tokenizer.backend_tokenizer.decoder = WordPiece()
+def extract_named_entities(text: str, min_score: float = 0.6):
+    """
+    Splits the input into overlapping chunks to respect the 512-token limit,
+    runs NER on each chunk, and aggregates results.
+    Returns a list of dicts with keys: entity_group, word, start, end, score.
+    """
+    text = normalize_hebrew(text)
+    tokens = tokenizer.tokenize(text)
 
-    # Perform NER on the input text
-    ner_results = ner_pipeline(text)
+    max_len = tokenizer.model_max_length      # e.g. 512
+    chunk_size = max_len - 2                  # reserve for [CLS] & [SEP]
+    overlap = 50                              # overlap to catch boundary entities
 
-    # Convert results to a list of entity dictionaries with positions
     entities_list = []
-    for entity in ner_results:
-        entities_list.append({
-            "entity_group": entity['entity_group'],
-            "word": entity['word'],
-            "start": entity['start'],
-            "end": entity['end'],
-            "score": entity.get('score', 0)
-        })
+    for start_idx in range(0, len(tokens), chunk_size - overlap):
+        chunk_tokens = tokens[start_idx:start_idx + chunk_size]
+        chunk_text = tokenizer.convert_tokens_to_string(chunk_tokens)
+        ner_results = ner_pipeline(chunk_text)
+
+        for entity in ner_results:
+            score = entity.get('score', 0)
+            if score < min_score:
+                continue
+            entities_list.append({
+                "entity_group": entity['entity_group'],
+                "word": entity['word'].replace("##", ""),
+                "start": entity['start'],
+                "end": entity['end'],
+                "score": score
+            })
 
     return entities_list
+
 # def extract_named_entities(text: str):
 #     """
 #     Extracts named entities from the provided Hebrew text using the 'dicta-il/dictabert-ner' model.
@@ -106,7 +146,7 @@ def extract_named_entities(text: str):
 #         text (str): The Hebrew text from which to extract named entities.
 #
 #     Returns:
-#         dict: A dictionary where keys are entity types and values are lists of entities of that type.
+#         list: A list of dictionaries with each entity's type, text, start and end positions.
 #     """
 #     # Initialize the NER pipeline with the specified model and aggregation strategy
 #     ner_pipeline = pipeline('ner', model='dicta-il/dictabert-ner', aggregation_strategy='simple')
@@ -117,21 +157,19 @@ def extract_named_entities(text: str):
 #     # Perform NER on the input text
 #     ner_results = ner_pipeline(text)
 #
-#     # Initialize a dictionary to store entities categorized by their types
-#     entities_dict = {}
-#
-#     # Iterate over the NER results to populate the dictionary
+#     # Convert results to a list of entity dictionaries with positions
+#     entities_list = []
 #     for entity in ner_results:
-#         entity_type = entity['entity_group']
-#         entity_text = entity['word']
-#         if entity_type not in entities_dict:
-#             entities_dict[entity_type] = []
-#         entities_dict[entity_type].append(entity_text)
+#         entities_list.append({
+#             "entity_group": entity['entity_group'],
+#             "word": entity['word'],
+#             "start": entity['start'],
+#             "end": entity['end'],
+#             "score": entity.get('score', 0)
+#         })
 #
-#     return entities_dict
+#     return entities_list
 
-# def static_number_swap(claims):
-# def filter_non_transformed_claims(claims):
 def llm_query_to_gemini(system_message, user_message, output_object: Type[BaseModel]):
     print(f"prompt: {system_message}\n {user_message}")
     try:
@@ -152,8 +190,6 @@ def llm_query_to_gemini(system_message, user_message, output_object: Type[BaseMo
     except Exception as e:
         print(f"Exception during LLM query or parsing: {e}")
         return None
-
-
 
 def text_decomposition(
     text: str,
@@ -219,7 +255,6 @@ def suitable_number_swap_transformation(claim_decomposition) -> List[Dict[str, A
             })
 
     return results
-
 
 def extract_claim_text(claim_item):
     """Helper function to extract text from different claim formats"""
@@ -330,85 +365,602 @@ def number_swap_transformation(
 
     return results
 
-
-
+# def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
+#     """
+#     Rebuilds the summary by replacing original claims with their transformed versions.
+#
+#     Args:
+#         claim_decomposition: Object containing decomposed claims
+#         transformed_claims: Dictionary mapping original claims to their transformed versions
+#
+#     Returns:
+#         Dictionary with corrupted summary and transformation statistics
+#     """
+#     # Extract all claims from claim_decomposition
+#     all_claims = []
+#     for claim_item in claim_decomposition.claims_decomposition:
+#         claim_text = extract_claim_text(claim_item)
+#         if claim_text:
+#             all_claims.append(claim_text)
+#
+#     # Create a copy of all claims to modify
+#     modified_claims = all_claims.copy()
+#
+#     # Track transformations performed
+#     transformations_performed = []
+#     total_transformations = 0
+#
+#     # For each transformed claim, find and replace in modified_claims
+#     for original_claim, transformations in transformed_claims.items():
+#         # Find the best matching claim in all_claims
+#         best_match = None
+#         best_similarity = 0
+#
+#         for i, claim in enumerate(all_claims):
+#             similarity = SequenceMatcher(None, original_claim, claim).ratio()
+#             if similarity > 0.9 and similarity > best_similarity:
+#                 best_similarity = similarity
+#                 best_match = i
+#
+#         # If we found a good match, replace it with a transformed version
+#         if best_match is not None and transformations:
+#             # Use the first transformation (could be extended to choose randomly or by specific criteria)
+#             # takes only the first transformation
+#             transformation = transformations[0]
+#
+#             # Replace the claim
+#             modified_claims[best_match] = transformation["transformed_claim"]
+#
+#             # Track this transformation
+#             transformation_info = {
+#                 "original_claim": original_claim,
+#                 "transformed_claim": transformation["transformed_claim"],
+#                 "error_type": transformation["error_type"]
+#             }
+#
+#             # Add additional fields if they exist
+#             if "original_entity" in transformation:
+#                 transformation_info["original_entity"] = transformation["original_entity"]
+#             if "replacement_entity" in transformation:
+#                 transformation_info["replacement_entity"] = transformation["replacement_entity"]
+#
+#             transformations_performed.append(transformation_info)
+#             total_transformations += 1
+#
+#     # Rebuild the summary by joining the modified claims
+#     corrupted_summary = " ".join(modified_claims)
+#
+#     # Calculate the transformation score
+#     total_claims = len(all_claims)
+#     transformation_score = total_transformations / total_claims if total_claims > 0 else 0
+#
+#     # Create the result object
+#     result = {
+#         "corrupted_summary": corrupted_summary,
+#         "transformations_performed": total_transformations,
+#         "transformation_list": transformations_performed,
+#         "transformation_score": transformation_score
+#     }
+#
+#     return result
 def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
     """
-    Rebuilds the summary by replacing original claims with their transformed versions.
-
-    Args:
-        claim_decomposition: Object containing decomposed claims
-        transformed_claims: Dictionary mapping original claims to their transformed versions
-
-    Returns:
-        Dictionary with corrupted summary and transformation statistics
+    Rebuilds the summary by replacing original claims with their transformed versions,
+    applying multiple transformations to each claim where available.
     """
-    # Extract all claims from claim_decomposition
+    # 1) Extract all claims
     all_claims = []
     for claim_item in claim_decomposition.claims_decomposition:
         claim_text = extract_claim_text(claim_item)
         if claim_text:
             all_claims.append(claim_text)
-
-    # Create a copy of all claims to modify
     modified_claims = all_claims.copy()
 
-    # Track transformations performed
-    transformations_performed = []
     total_transformations = 0
+    transformations_performed = []
+    logger.info("Starting recompose: %d claims to check", len(transformed_claims))
 
-    # For each transformed claim, find and replace in modified_claims
+    # 2) For each claim with transformations
     for original_claim, transformations in transformed_claims.items():
-        # Find the best matching claim in all_claims
+        logger.debug("Processing claim: %s", original_claim)
+        if not transformations:
+            logger.debug(" -> No transformations for this claim, skipping")
+            continue
+
+        # 2a) Find the best matching sentence index
         best_match = None
-        best_similarity = 0
-
+        best_sim = 0.0
         for i, claim in enumerate(all_claims):
-            similarity = SequenceMatcher(None, original_claim, claim).ratio()
-            if similarity > 0.9 and similarity > best_similarity:
-                best_similarity = similarity
+            sim = SequenceMatcher(None, original_claim, claim).ratio()
+            if sim > 0.9 and sim > best_sim:
+                best_sim = sim
                 best_match = i
+        logger.debug(" Best match index=%s, similarity=%.3f", best_match, best_sim)
+        if best_match is None:
+            continue
 
-        # If we found a good match, replace it with a transformed version
-        if best_match is not None and transformations:
-            # Use the first transformation (could be extended to choose randomly or by specific criteria)
-            transformation = transformations[0]
+        # 2b) Prepare to patch this claim
+        current_claim = all_claims[best_match]
+        applied = []
 
-            # Replace the claim
-            modified_claims[best_match] = transformation["transformed_claim"]
+        # 2c) Group by error type
+        transformations_by_type = {}
+        for t in transformations:
+            key = str(t["error_type"])
+            transformations_by_type.setdefault(key, []).append(t)
+            logger.debug(" Grouped into %d types", len(transformations_by_type))
 
-            # Track this transformation
-            transformation_info = {
-                "original_claim": original_claim,
-                "transformed_claim": transformation["transformed_claim"],
-                "error_type": transformation["error_type"]
-            }
+        # 2d) Sort so LLM-generated patches run first
+        items = list(transformations_by_type.items())
+        items.sort(
+            key=lambda kv: any(x.get("llm_generated") for x in kv[1]),
+            reverse=True
+        )
 
-            # Add additional fields if they exist
-            if "original_entity" in transformation:
-                transformation_info["original_entity"] = transformation["original_entity"]
-            if "replacement_entity" in transformation:
-                transformation_info["replacement_entity"] = transformation["replacement_entity"]
+        # 3) Apply each transformation
+        for t_type, group in items:
+            logger.debug("  Applying type: %s (%d candidates)", t_type, len(group))
+            # pick LLM if available, else static
+            llm_opts = [x for x in group if x.get("llm_generated")]
+            t = llm_opts[0] if llm_opts else group[0]
 
-            transformations_performed.append(transformation_info)
+            # 3a) Static replace (entity or number)
+            if "original_entity" in t and "replacement_entity" in t:
+                orig = t["original_entity"]
+                repl = t["replacement_entity"]
+                if orig in current_claim:
+                    current_claim = current_claim.replace(orig, repl)
+                    applied.append({
+                        "type": t["error_type"],
+                        "original": orig,
+                        "replacement": repl
+                    })
+                    logger.debug("   Static replace: %s -> %s", orig, repl)
+
+            # 3b) LLM-generated minimal patch
+            elif t.get("llm_generated"):
+                o = t["original_claim"]
+                n = t["transformed_claim"]
+                # find common prefix
+                i = 0
+                while i < len(o) and i < len(n) and o[i] == n[i]:
+                    i += 1
+                # find common suffix
+                j_o, j_n = len(o), len(n)
+                while j_o > i and j_n > i and o[j_o-1] == n[j_n-1]:
+                    j_o -= 1
+                    j_n -= 1
+                o_mid = o[i:j_o]
+                n_mid = n[i:j_n]
+                if o_mid and o_mid in current_claim:
+                    # replacement case
+                    current_claim = current_claim.replace(o_mid, n_mid)
+                    applied.append({
+                        "type": t["error_type"],
+                        "original": o_mid,
+                        "replacement": n_mid
+                    })
+                    logger.debug("   LLM patch replace: %s -> %s", o_mid, n_mid)
+                elif not o_mid and n_mid:
+                    # pure insertion case
+                    current_claim = current_claim[:i] + n_mid + current_claim[i:]
+                    applied.append({
+                        "type": t["error_type"],
+                        "original": "",
+                        "replacement": n_mid
+                    })
+                    logger.debug("   LLM patch insert: '%s' at pos %d", n_mid, i)
+
             total_transformations += 1
 
-    # Rebuild the summary by joining the modified claims
+        # 4) Save patched claim
+        modified_claims[best_match] = current_claim
+        transformations_performed.append({
+            "original_claim": original_claim,
+            "transformed_claim": current_claim,
+            "applied_transformations": applied
+        })
+        logger.info(" Finished claim. Applied %d transforms", len(applied))
+
+    # 5) Rebuild the full summary and score
     corrupted_summary = " ".join(modified_claims)
-
-    # Calculate the transformation score
     total_claims = len(all_claims)
-    transformation_score = total_transformations / total_claims if total_claims > 0 else 0
+    transformation_score = total_transformations / total_claims if total_claims else 0
 
-    # Create the result object
-    result = {
+    return {
         "corrupted_summary": corrupted_summary,
         "transformations_performed": total_transformations,
         "transformation_list": transformations_performed,
         "transformation_score": transformation_score
     }
 
-    return result
+
+
+# def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
+#     """
+#     Rebuilds the summary by replacing original claims with their transformed versions,
+#     applying multiple transformations to each claim where available.
+#     """
+#     # Extract all claims from claim_decomposition
+#     all_claims = []
+#     for claim_item in claim_decomposition.claims_decomposition:
+#         claim_text = extract_claim_text(claim_item)
+#         if claim_text:
+#             all_claims.append(claim_text)
+#
+#     # Create a copy of all claims to modify
+#     modified_claims = all_claims.copy()
+#
+#     # Track transformations performed
+#     transformations_performed = []
+#     total_transformations = 0
+#
+#     # For each transformed claim, find and replace in modified_claims
+#     for original_claim, transformations in transformed_claims.items():
+#         if not transformations:
+#             continue
+#
+#         # Find the best matching claim in all_claims
+#         best_match = None
+#         best_similarity = 0
+#
+#         for i, claim in enumerate(all_claims):
+#             similarity = SequenceMatcher(None, original_claim, claim).ratio()
+#             if similarity > 0.9 and similarity > best_similarity:
+#                 best_similarity = similarity
+#                 best_match = i
+#
+#         # If we found a good match, apply multiple transformations
+#         if best_match is not None:
+#             # Start with the original claim
+#             current_claim = all_claims[best_match]
+#             applied_transformations = []
+#
+#             # Group transformations by type to avoid conflicts
+#             # This prevents applying two NUMBER_SWAP transformations that might target the same number
+#             transformations_by_type = {}
+#             for t in transformations:
+#                 t_type = str(t["error_type"])  # Convert to string to handle enum objects
+#                 if t_type not in transformations_by_type:
+#                     transformations_by_type[t_type] = []
+#                 transformations_by_type[t_type].append(t)
+#
+#             # Apply one transformation of each type, preferring LLM results
+#             for t_type, type_transformations in transformations_by_type.items():
+#                 # if the LLM gave us a transformed_claim, use it
+#                 llm_opts = [x for x in type_transformations if x.get("llm_generated")]
+#                 t = llm_opts[0] if llm_opts else type_transformations[0]
+#             # # Apply one transformation of each type
+#             # for t_type, type_transformations in transformations_by_type.items():
+#             #     # Choose just one transformation per type (first one)
+#             #     t = type_transformations[0]
+#
+#                 # For entity replacement or number swap, we need to check if the original entity
+#                 # still exists after previous transformations
+#                 if "original_entity" in t and "replacement_entity" in t:
+#                     # Replace the entity if it still exists in the current version
+#                     if t["original_entity"] in current_claim:
+#                         current_claim = current_claim.replace(t["original_entity"], t["replacement_entity"])
+#                         applied_transformations.append({
+#                             "type": t["error_type"],
+#                             "original": t["original_entity"],
+#                             "replacement": t["replacement_entity"]
+#                         })
+#                 # For LLM-generated transformations, use the complete transformed claim
+#                 # but only if no other transformation of the same type was applied
+#                 elif "llm_generated" in t and t["llm_generated"]:
+#                     # Replace the entire claim with the LLM-generated version
+#                     current_claim = t["transformed_claim"]
+#                     applied_transformations.append({
+#                         "type": t["error_type"],
+#                         "llm_generated": True,
+#                         "original_claim": t["original_claim"],
+#                         "transformed_claim": t['transformed_claim']
+#                     })
+#
+#                 # Track each successful transformation
+#                 total_transformations += 1
+#
+#             # Update the claim with all applied transformations
+#             modified_claims[best_match] = current_claim
+#
+#             # Record transformation info
+#             transformation_info = {
+#                 "original_claim": original_claim,
+#                 "transformed_claim": current_claim,
+#                 "applied_transformations": applied_transformations
+#             }
+#             transformations_performed.append(transformation_info)
+#
+#     # Rebuild the summary by joining the modified claims
+#     corrupted_summary = " ".join(modified_claims)
+#
+#     # Calculate the transformation score
+#     total_claims = len(all_claims)
+#     transformation_score = total_transformations / total_claims if total_claims > 0 else 0
+#
+#     # Create the result object
+#     result = {
+#         "corrupted_summary": corrupted_summary,
+#         "transformations_performed": total_transformations,
+#         "transformation_list": transformations_performed,
+#         "transformation_score": transformation_score
+#     }
+#
+#     return result
+
+
+
+def control_claims_after_transformation(
+    claims_after_transformation: Dict[str, List[Dict[str, Any]]],
+    amount_of_transformed_claims: int = None,
+    amount_of_correctness_errors: int = None,
+    percentage_of_correctness_errors_transformation: float = None
+) -> List[Dict[str, List[Dict[str, Any]]]]:
+
+    # 1. Prepare list of claims and their errors
+    items = list(claims_after_transformation.items())
+    num_claims = len(items)
+
+    # 2. Determine k = total errors to pick
+    total_errors = sum(len(errs) for _, errs in items)
+    if percentage_of_correctness_errors_transformation is not None:
+        k = int(total_errors * percentage_of_correctness_errors_transformation / 100)
+    else:
+        k = amount_of_correctness_errors
+    k = max(1, min(k, total_errors))
+
+    # 3. Recursive generator: allocate rem errors among claims[i:]
+    def gen(i, rem):
+        if i == num_claims:
+            if rem == 0:
+                yield []
+            return
+        claim, errs = items[i]
+        n = len(errs)
+        # c = how many errors to pick from this claim
+        # ensure that the remaining claims can supply rem-c errors
+        min_c = max(0, rem - sum(len(e) for _, e in items[i+1:]))
+        max_c = min(n, rem)
+        for c in range(min_c, max_c + 1):
+            for combo in itertools.combinations(errs, c):
+                for rest in gen(i+1, rem - c):
+                    yield [(claim, list(combo))] + rest
+
+    # 4. Build results
+    results = []
+    for allocation in gen(0, k):
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for claim, errs in allocation:
+            if errs:
+                grouped[claim] = errs
+        results.append(grouped)
+
+    return results
+
+
+def normalize_heb(text: str) -> str:
+    """
+    Lowercase, strip punctuation and extra whitespace.
+    """
+    # Keep Hebrew letters, Latin letters, digits and spaces
+    cleaned = re.sub(r'[^\wא-ת0-9 ]+', '', text)
+    return cleaned.strip().lower()
+
+def token_containment(a: str, b: str) -> bool:
+    """
+    Return True if the token set of a is a subset of b or vice versa.
+    Catches “עמית” ⊆ “עמית אברהם”.
+    """
+    ta = set(normalize_heb(a).split())
+    tb = set(normalize_heb(b).split())
+    return bool(ta and (ta <= tb or tb <= ta))
+
+def is_same_entity(a: str, b: str) -> bool:
+    """
+    Heuristic to detect if two mentions refer to the same entity:
+      1. Token containment (subset/superset)
+      2. High-overlap string similarity (Levenshtein ratio > 0.8)
+      3. Head-noun match + fuzzy on modifiers
+    """
+    try:
+        na, nb = normalize_heb(a), normalize_heb(b)
+
+        # If either normalized string is empty, they can't match
+        if not na or not nb:
+            return False
+
+        # 1) Token containment
+        if token_containment(na, nb):
+            return True
+
+        # 2) High-overlap string similarity
+        if ratio(na, nb) > 0.8:
+            return True
+
+        # 3) Head-noun + fuzzy modifiers
+        parts_a = na.split()
+        parts_b = nb.split()
+        if not parts_a or not parts_b:
+            return False
+
+        ha, *ra = parts_a
+        hb, *rb = parts_b
+
+        if ha == hb:
+            rest_a = " ".join(ra)
+            rest_b = " ".join(rb)
+            if rest_a and rest_b:
+                if token_containment(rest_a, rest_b) or ratio(rest_a, rest_b) > 0.7:
+                    return True
+
+        return False
+
+    except Exception:
+        # On any unexpected error, assume they are not the same
+        return False
+
+
+def get_entities_by_type(text: str) -> Dict[CorrectnessErrorTypes, List[str]]:
+    """
+    Extract named entities from `text` and group them by our CorrectnessErrorTypes,
+    deduplicated as lists.
+    """
+    ner = extract_named_entities(text)
+    grouped: Dict[CorrectnessErrorTypes, Set[str]] = {}
+    for ent in ner:
+        et = ent["entity_group"].upper()
+        if et == "PER":
+            key = CorrectnessErrorTypes.ENTITY_PERSON_SWAP
+        elif et in ("LOC", "GPE"):
+            key = CorrectnessErrorTypes.ENTITY_LOCATION_SWAP
+        elif et == "ORG":
+            key = CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP
+        elif et == "TTL":
+            key = CorrectnessErrorTypes.ENTITY_TITLE_SWAP
+        elif et == "EVE":
+            key = CorrectnessErrorTypes.ENTITY_EVENT_SWAP
+        else:
+            continue
+
+        grouped.setdefault(key, set()).add(ent["word"])
+
+    # to lists
+    return {k: list(v) for k, v in grouped.items()}
+
+def save_dataset_json(records: List[dict], path: str):
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
+
+
+def save_dataset_csv(records: List[dict], path: str):
+    rows = []
+
+    for rec in records:
+        # Add the original entailment pair
+        rows.append({
+            'premise': rec['source_article'],
+            'hypothesis': rec['gold_summary'],
+            'label': 'entailment',
+            'error_types': ''  # Empty for entailment pairs
+        })
+
+        # Add all the contradiction pairs from corrupted summaries
+        for corrupt in rec.get('correctness_corrupted_summaries', []):
+            # Extract error types from the transformation_list
+            ets = []
+            for t in corrupt.get('transformation_list', []):
+                # Handle the Enum type in the data structure
+                applied_trans = t.get('applied_transformations', [])
+                for at in applied_trans:
+                    ty = at.get('type')
+                    if isinstance(ty, CorrectnessErrorTypes):
+                        ets.append(ty.value)
+                    elif isinstance(ty, str):
+                        ets.append(ty)
+
+            rows.append({
+                'premise': rec['source_article'],
+                'hypothesis': corrupt['corrupted_summary'],  # Just the text string
+                'label': 'contradiction',
+                'error_types': ','.join(set(ets))  # Use set to remove duplicates
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_csv(path, index=False)
+
+
+def token_overlap(a: str, b: str) -> float:
+    """
+    Compute overlap ratio = |tokens(a) ∩ tokens(b)| / min(|tokens(a)|, |tokens(b)|).
+    A value of 1.0 means one is a subset of the other; 0 means no tokens in common.
+    """
+    a_tok = set(a.split())
+    b_tok = set(b.split())
+    if not a_tok or not b_tok:
+        return 0.0
+    return len(a_tok & b_tok) / min(len(a_tok), len(b_tok))
+
+
+# def filter_diverse_summaries(
+#     golden: str,
+#     cands: List[dict],
+#     max_same: float = 0.8
+# ) -> List[dict]:
+#     """
+#     Keep only those candidates whose token-overlap with the golden
+#     summary is <= max_same, and which are also <= max_same with any
+#     already-kept candidate.
+#     """
+#     kept = []
+#     for c in cands:
+#         txt = c['corrupted_summary']
+#
+#         # 1) filter vs. golden
+#         if token_overlap(txt, golden) > max_same:
+#             continue
+#
+#         # 2) filter vs. already-kept
+#         too_similar = False
+#         for k in kept:
+#             if token_overlap(txt, k['corrupted_summary']) > max_same:
+#                 too_similar = True
+#                 break
+#         if too_similar:
+#             continue
+#
+#         kept.append(c)
+#     return kept
+
+
+def jaccard(tokens1, tokens2):
+    s1, s2 = set(tokens1), set(tokens2)
+    if not s1 and not s2:
+        return 0.0
+    return len(s1 & s2) / len(s1 | s2)
+
+def ngram(tokens, n):
+    return list(zip(*(tokens[i:] for i in range(n))))
+
+def filter_diverse_summaries(
+    golden: str,
+    cands: List[Dict],
+    max_same: float = 0.8
+) -> List[Dict]:
+    """
+    Keep only those candidates whose combined unigram/bigram overlap
+    with the golden summary is <= max_same, and likewise <= max_same
+    against any already-kept candidate.
+    """
+    def overlap(a: str, b: str) -> float:
+        t1 = a.split()
+        t2 = b.split()
+        uni = jaccard(t1, t2)
+        bi  = jaccard(ngram(t1, 2), ngram(t2, 2))
+        return max(uni, bi)
+
+    kept = []
+    for c in cands:
+        txt = c['corrupted_summary']
+
+        # 1) filter vs. golden
+        if overlap(txt, golden) > max_same:
+            continue
+
+        # 2) filter vs. already-kept
+        too_similar = False
+        for k in kept:
+            if overlap(txt, k['corrupted_summary']) > max_same:
+                too_similar = True
+                break
+        if too_similar:
+            continue
+
+        kept.append(c)
+
+    return kept
+
+
 # def llm_query_to_openai(system_message, user_message, output_object: Type[BaseModel]):
 #
 #     print(f"prompt: {system_message}\n {user_message}")

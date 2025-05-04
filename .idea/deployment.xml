@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="avramit@132.72.66.197:22 password" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="avramit@132.72.66.187:22 password (3)" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
       <paths name="avramit@132.72.64.199:22 password">
         <serverdata>
@@ -335,6 +335,13 @@
         <serverdata>
           <mappings>
             <mapping deploy="/tmp/pycharm_project_546" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="avramit@132.72.66.187:22 password (3)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/tmp/pycharm_project_465" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>

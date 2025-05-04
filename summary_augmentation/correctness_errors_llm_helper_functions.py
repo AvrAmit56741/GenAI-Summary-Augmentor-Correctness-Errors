@@ -15,11 +15,16 @@ from openai import OpenAI
 import google.generativeai as genai
 from typing import List, Dict, Type
 from langchain_openai import ChatOpenAI
+from difflib import SequenceMatcher
 
-from summary_augmentation.correctness_errors_prompts import TransformationDetail, SummaryDecompositionClaims, NegativeAugmentationSummary
-from summary_augmentation.correctness_errors_prompts import suitable_claim_decomposition_prompt, apply_transformation_on_claims_prompt, apply_halluzaition_transformation_on_claims_prompt,claims_decomposition_prompt, suitable_claim_decomposition_permissive_prompt
+from summary_augmentation.correctness_errors_prompts import TransformationDetail, SummaryDecompositionClaims, \
+    NegativeAugmentationSummary
+from summary_augmentation.correctness_errors_prompts import verify_grammar_transform_summary_prompt, \
+    suitable_claim_decomposition_prompt, apply_transformation_on_claims_prompt, \
+    apply_halluzaition_transformation_on_claims_prompt, claims_decomposition_prompt, \
+    suitable_claim_decomposition_permissive_prompt
+
 # Define the main data structure
-
 
 
 GEMINI_API_KEY = "***REMOVED-API-KEY***"
@@ -29,8 +34,8 @@ model = genai.GenerativeModel('gemini-2.0-flash')
 # EYAL
 OPENAI_API_KEY = "***REMOVED-API-KEY***"
 
-#AMIT
-#OPENAI_API_KEY = "***REMOVED-API-KEY***"
+# AMIT
+# OPENAI_API_KEY = "***REMOVED-API-KEY***"
 llm = ChatOpenAI(
     model="gpt-4o",
     temperature=0.0,
@@ -39,7 +44,6 @@ llm = ChatOpenAI(
     response_format="json_object"
 )
 client = OpenAI(api_key=OPENAI_API_KEY)
-
 
 
 def llm_query_to_openai(system_message, user_message, output_object: Type[BaseModel], parser=None):
@@ -79,13 +83,18 @@ def llm_query_to_openai(system_message, user_message, output_object: Type[BaseMo
         print(f"Exception during openai LLM query or parsing: {e}")
         return None
 
-def choose_suitable_claim(claim_decomposition: SummaryDecompositionClaims, apply_transformation_types,transformation_examples) -> str:
+
+def choose_suitable_claim(claim_decomposition: SummaryDecompositionClaims, apply_transformation_types,
+                          transformation_examples) -> str:
     class SuitableClaimDecomposition(BaseModel):
-        claim_correctness_error_justification: str = Field(description="justification which explain wht this claim can perform the specific correctness error transformation type")
+        claim_correctness_error_justification: str = Field(
+            description="justification which explain wht this claim can perform the specific correctness error transformation type")
         original_claim: str = Field(description="the original correctness error transformation suitable claim")
-        correctness_error_type: str = Field (description="the CorrectnessErrorTypes which is the claim can to transform")
-        applicable_transformation_text_within_claim: str = Field(description="the text in the claim which match the mention error transformation type")
-        suggested_transformed_claim: str = Field(description="Example of transformed with the correctness error type found on text within original_claim")
+        correctness_error_type: str = Field(description="the CorrectnessErrorTypes which is the claim can to transform")
+        applicable_transformation_text_within_claim: str = Field(
+            description="the text in the claim which match the mention error transformation type")
+        suggested_transformed_claim: str = Field(
+            description="Example of transformed with the correctness error type found on text within original_claim")
 
     class TransformationSuitableClaims(BaseModel):
         reasoning: str = Field(description="reasoning process describe step by step justify your decision")
@@ -94,14 +103,18 @@ def choose_suitable_claim(claim_decomposition: SummaryDecompositionClaims, apply
         #     description="List of tuples as follows: The original claim which suitable to perform transformation and justification described in details why this claim suitable, the justification should suggest contains example of apply transformation. Tuple of original claim and justification")
 
     suitable_claims_decomposition_base_parser = JsonOutputParser(pydantic_object=TransformationSuitableClaims)
-    retry_parser = RetryWithErrorOutputParser.from_llm(llm=llm, parser= suitable_claims_decomposition_base_parser, max_retries=7)
+    retry_parser = RetryWithErrorOutputParser.from_llm(llm=llm, parser=suitable_claims_decomposition_base_parser,
+                                                       max_retries=7)
 
     system, user = suitable_claim_decomposition_permissive_prompt(claim_decomposition, apply_transformation_types,
-                                                       json.dumps(transformation_examples, ensure_ascii=False),
-                                                       suitable_claims_decomposition_base_parser)
+                                                                  json.dumps(transformation_examples,
+                                                                             ensure_ascii=False),
+                                                                  suitable_claims_decomposition_base_parser)
 
-    result = llm_query_to_openai(system_message=system, user_message=user, output_object=TransformationSuitableClaims,parser=retry_parser)
+    result = llm_query_to_openai(system_message=system, user_message=user, output_object=TransformationSuitableClaims,
+                                 parser=retry_parser)
     return result
+
 
 def summary_negative_augmentation(apply_transformation_types,
                                   transformation_examples: dict,
@@ -110,10 +123,12 @@ def summary_negative_augmentation(apply_transformation_types,
                                   unique_transformation_instructions):
     # Initialize the OpenAI client directly
     class CorruptedTransformedClaims(BaseModel):
-        corrupted_transformed_claims_decomposition: List[Tuple[str, str]] = Field(
-            description="List of tuples as follows: The correctness error corrupted claim after transformation and justification described in details why how tne transformation applied. Tuple of corrupted transformed claim and justification")
-        original_and_corrupted_transformed_claims: List[Tuple[str, str]] = Field(
-            description="List of tuples as follows: The correctness error corrupted claim after transformation and the original claim id. Tuple of corrupted transformed claim and original claim id")
+        original_and_corrupted_transformed_claims: List[Tuple[str, int]] = Field(
+            description="List of tuples: (corrupted_claim, index_of_original_in_suitable_list)")
+        # corrupted_transformed_claims_decomposition: List[Tuple[str, str]] = Field(
+        #     description="List of tuples as follows: The correctness error corrupted claim after transformation and justification described in details why how tne transformation applied. Tuple of corrupted transformed claim and justification")
+        # original_and_corrupted_transformed_claims: List[Tuple[str, str]] = Field(
+        #     description="List of tuples as follows: The correctness error corrupted claim after transformation and the original claim id. Tuple of corrupted transformed claim and original claim id")
 
     parser = JsonOutputParser(pydantic_object=CorruptedTransformedClaims)
 
@@ -127,6 +142,14 @@ def summary_negative_augmentation(apply_transformation_types,
                                                              output_instructions_parser=parser)
         # Send request to the model
         result = llm_query_to_openai(system_message=system, user_message=user, output_object=CorruptedTransformedClaims)
+
+        # Process results to ensure original claims come from suitable_claims_decomposition_list
+        # Re‐map the “original” index back to the true claim text
+        cleaned = []
+        for corrupted, idx in result.original_and_corrupted_transformed_claims:
+            true_orig = suitable_claims_decomposition_list[idx]['original_claim']
+            cleaned.append((corrupted, true_orig))
+            result.original_and_corrupted_transformed_claims = cleaned
         return result
 
     except Exception as e:
@@ -180,8 +203,6 @@ def summary_halluzaition_negative_augmentation(apply_transformation_types,
         return None
 
 
-
-
 def summary_claim_decomposition(text: str) -> SummaryDecompositionClaims:
     # TODO: change to summary_decomposition and the level will be configable (sentence, atomic claim, coverage claim, section)
     # Initialize the OpenAI client directly
@@ -192,7 +213,8 @@ def summary_claim_decomposition(text: str) -> SummaryDecompositionClaims:
     try:
         system, user = claims_decomposition_prompt(text, retry_parser)
         # Send request to the model
-        result = llm_query_to_openai(system_message=system, user_message=user, output_object=SummaryDecompositionClaims,parser=retry_parser )
+        result = llm_query_to_openai(system_message=system, user_message=user, output_object=SummaryDecompositionClaims,
+                                     parser=retry_parser)
 
         if result:
             result._original_text = text  # Assign the original text separately
@@ -201,6 +223,58 @@ def summary_claim_decomposition(text: str) -> SummaryDecompositionClaims:
     except Exception as e:
         print(f"Error in summary_claim_decomposition: {e}")
         return None
+
+
+def verify_transformed_summary_grammar(transformed_summary_before_validation: str):
+    """
+    Verifies the grammatical correctness of transformed claims in Hebrew.
+
+    Args:
+        transformed_summary_before_validation: The summary *before* grammar validation
+
+    Returns:
+        Tuple[(before, after), success_flag]
+    """
+
+    class GrammarVerificationResult(BaseModel):
+        reasoning_of_grammar_validation_process: str = Field(
+            description="step by step reasoning which explain the grammar modifications changes")
+        summary_after_grammar_validation_modifications: str = Field(
+            description="The generative summary after grammar validation modifications")
+
+    base_parser = JsonOutputParser(pydantic_object=GrammarVerificationResult)
+    retry_parser = RetryWithErrorOutputParser.from_llm(llm=llm, parser=base_parser, max_retries=7)
+
+    try:
+        system, user = verify_grammar_transform_summary_prompt(
+            transformed_summary_before_validation, retry_parser
+        )
+        result = llm_query_to_openai(
+            system_message=system,
+            user_message=user,
+            output_object=GrammarVerificationResult,
+            parser=retry_parser
+        )
+        # extract the “after” summary
+        grammar_verified = result.summary_after_grammar_validation_modifications
+
+        # compute similarity
+        sim = SequenceMatcher(None, transformed_summary_before_validation, grammar_verified).ratio()
+
+        if sim < 0.97:
+            print(f"Grammar verification made too many changes (sim={sim:.2f}); keeping original.")
+            return (transformed_summary_before_validation, transformed_summary_before_validation), False
+
+        # return (transformed_summary_before_validation, grammar_verified), True
+        return {
+                   "transformed_summary_before_validation": transformed_summary_before_validation,
+                   "grammar_verified": grammar_verified,
+                   "verification_reasoning": result.reasoning_of_grammar_validation_process
+               }, True
+
+    except Exception as e:
+        print(f"Error in grammar verification: {e}")
+        return (transformed_summary_before_validation, transformed_summary_before_validation), False
 
 
 def verify_transformed_claims_grammar(transformed_claims):
