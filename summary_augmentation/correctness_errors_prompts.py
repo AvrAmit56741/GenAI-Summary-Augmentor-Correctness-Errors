@@ -310,6 +310,36 @@ def perform_multiple_transformations_on_claim(output_instructions_parser):
 
     return system_message, user_message
 
+
+def faithfulness_summary_back_translation_and_paraphrasing(faithfulness_summary, output_instructions_parser):
+    system_message = """
+    You are an expert bilingual writer and editor.
+    
+    Your task is to process Hebrew text (article summary) in TWO distinct ways:
+    Task Back-Translation - return **HEBREW** summary after Back-Translation
+    - Translate the Hebrew text into precise and natural English.
+    - Translate the English version back into natural, idiomatic Hebrew.
+    - Ensure NO factual data is added, omitted, or altered.
+    - Final Hebrew must be factually identical to the original text.
+    
+    Task Paraphrasing (RICH and NATURAL) - return **HEBREW** summary Paraphrasing
+    - Paraphrase the original Hebrew directly into DIFFERENT and VARIED Hebrew phrasing:
+    - Significantly change sentence structures and vary expressions.
+    - Use synonyms, alternative phrasings, and reordering of ideas where natural.
+    - Make the text flow naturally and elegantly, as if edited by a skilled native writer.
+    - Avoid simple word swaps only — aim for rich, fluid, and stylistically diverse phrasing.
+    - KEEP all factual details strictly unchanged (names, dates, historical facts, claims, etc.).
+    - Ensure the final Hebrew version is FACTUALLY IDENTICAL to the original, but EXPRESSED DIFFERENTLY and NATURALLY. 
+    
+    Both Paraphrasing and Back-Translation are in HEBREW language
+    """
+
+    user_message = f"""
+    Hebrew summary to perform the back translation and the paraphrasing: {faithfulness_summary}
+    Output JSON schema:
+    {output_instructions_parser.get_format_instructions()}
+    """
+    return system_message, user_message
 # def verify_grammar_transform_summary_prompt(corrupted_transformed_summary, output_instructions_parser):
 #
 #     """

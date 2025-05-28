@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
-
+import concurrent.futures
+import threading
+import datetime
+import pandas as pd
+import logging
+import sys
+import os
+from typing import List, Dict, Any
 import logging
 from typing import List
-import pandas as pd
+
 import datetime
 
 from typing import Dict, List, Any, Tuple
@@ -28,7 +35,7 @@ from summary_augmentation.correctness_errors_prompts import suitable_claim_decom
 from summary_augmentation.utils import filter_diverse_summaries, save_dataset_json, save_dataset_csv, control_claims_after_transformation, get_entities_by_type, is_same_entity,extract_named_entities, CorrectnessErrorTypes, text_decomposition, ClaimDecompositionMethod, number_swap_transformation, suitable_number_swap_transformation, recompose_transformed_summary
 # Define the main data structure
 from summary_augmentation.correctness_errors_prompts import claims_decomposition_prompt
-from summary_augmentation.correctness_errors_llm_helper_functions import verify_transformed_summary_grammar, choose_suitable_claim, summary_negative_augmentation, summary_halluzaition_negative_augmentation
+from summary_augmentation.correctness_errors_llm_helper_functions import verify_transformed_summary_grammar, choose_suitable_claim, summary_negative_augmentation, summary_halluzaition_negative_augmentation, back_translation_and_paraphrasing
 import re
 
 
@@ -64,7 +71,7 @@ hebrew_llm_transformations = [
     CorrectnessErrorTypes.NOUN_GENDER_SWAP,
     CorrectnessErrorTypes.VERB_GENDER_SWAP,
     CorrectnessErrorTypes.VERB_TENSE_SWAP,
-    CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP
+    #CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP
 ]
 
 general_llm_transformations = [
@@ -795,19 +802,22 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
     logger.info(f"Claims after transformation: {len(claims_after_transformation)} claims modified")
     transformed_claims_variations = control_claims_after_transformation(
         claims_after_transformation,
-        percentage_of_correctness_errors_transformation=90.0
+        percentage_of_correctness_errors_transformation=93.0
     )
     logger.info(f"Generated {len(transformed_claims_variations)} transformed claim variations")
     if not transformed_claims_variations:
         logger.warning("No transformed claim variations were produced.")
 
     for s in transformed_claims_variations:
+        logger.debug(f"there are {len(transformed_claims_variations)} of transformed_claims_variations")
         # stop as soon as we’ve collected enough valid ones
         # if count >= 5:
         #     break
 
         # re-compose the summary object (dict with 'corrupted_summary', etc.)
+        logger.debug(f"enter recompose_transformed_summary for claim variation {s}")
         summary_aug = recompose_transformed_summary(claim_decomposition, s)
+        logger.debug(f"complete recompose_transformed_summary for claim variation: {s} and summary_aug: {summary_aug}")
         # text = summary_aug['corrupted_summary']
         # if not verify_transformed_summary_grammar(text):
         #     continue
@@ -920,12 +930,97 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
 #     save_dataset_csv(all_records, output_csv)
 #
 #     print(f"Written {len(sample)} examples to:\n  JSON: {output_json}\n  CSV:  {output_csv}")
+
+#### good main !!
+# def main():
+#     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+#     input_csv_path  = r"C:\Users\amita\Downloads\mafat_800_article_150_summary.csv"
+#     output_json = rf"C:\Users\amita\Downloads\augmented_dataset_{timestamp}.json"
+#     output_csv = rf"C:\Users\amita\Downloads\augmented_dataset_{timestamp}.csv"
+#     num_rows = 13
+#     transform_types = [
+#         CorrectnessErrorTypes.ENTITY_PERSON_SWAP,
+#         CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP,
+#         CorrectnessErrorTypes.ENTITY_LOCATION_SWAP,
+#         CorrectnessErrorTypes.ENTITY_DATE_SWAP,
+#         CorrectnessErrorTypes.ENTITY_EVENT_SWAP,
+#         CorrectnessErrorTypes.ENTITY_TITLE_SWAP
+#     ]
+#
+#     df = pd.read_csv(input_csv_path)
+#     sample = df.sample(n=min(num_rows, len(df)))
+#
+#     all_records = []
+#     for _, row in sample.iterrows():
+#         # note: you had premise/hypothesis reversed
+#         source = row['hypothesis']
+#         gold   = row['premise']
+#
+#         corrupted_list = correctness_errors_transformation_workflow(
+#             summary=gold,
+#             source_article=source,
+#             transformation_types=transform_types
+#         )
+#
+#         logger.info(f"After full correctness_errors_transformation_workflow returned {len(corrupted_list)} summaries")
+#         all_records.append({
+#             'source_article': source,
+#             'gold_summary': gold,
+#             'correctness_corrupted_summaries': corrupted_list
+#         })
+#
+#     # save both files
+#     save_dataset_json(all_records, output_json)
+#     save_dataset_csv(all_records,  output_csv)
+#
+#     print(f"Written {len(all_records)} examples to:\n  JSON: {output_json}\n  CSV:  {output_csv}")
+#### good main !!
+#
+# if __name__ == "__main__":
+#     main()
+
+
+def process_row(row, transform_types):
+    """Worker function to process a single row."""
+    thread_id = threading.current_thread().name
+    try:
+        # note: premise/hypothesis as in original code
+        source = row['premise']
+        gold = row['hypothesis']
+
+
+        corrupted_list = correctness_errors_transformation_workflow(
+            summary=gold,
+            source_article=source,
+            transformation_types=transform_types
+        )
+
+        logger.info(f"Thread {thread_id}: generated {len(corrupted_list)} corrupted summaries")
+        return {
+            'source_article': source,
+            'gold_summary': gold,
+            'correctness_corrupted_summaries': corrupted_list,
+            'len_group': row['len_group'],
+            'doc_id': row['doc_id'],
+            'source': row['source']
+
+        }
+    except Exception as e:
+        logger.error(f"Thread {thread_id}: Error processing row: {str(e)}")
+        return None
+
+
 def main():
+    # Hardcoded configuration
+    max_workers = 2           # Number of parallel threads to use
+    start_row = 36            # <-- first row index (inclusive)
+    end_row = 50             # <-- one past the last row index (exclusive)
+
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    input_csv_path  = r"C:\Users\amita\Downloads\mafat_800_article_150_summary.csv"
-    output_json = rf"C:\Users\amita\Downloads\augmented_dataset_{timestamp}.json"
-    output_csv = rf"C:\Users\amita\Downloads\augmented_dataset_{timestamp}.csv"
-    num_rows = 13
+    input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"
+    output_json = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
+    output_csv = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
+
     transform_types = [
         CorrectnessErrorTypes.ENTITY_PERSON_SWAP,
         CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP,
@@ -935,37 +1030,84 @@ def main():
         CorrectnessErrorTypes.ENTITY_TITLE_SWAP
     ]
 
-    df = pd.read_csv(input_csv_path)
-    sample = df.sample(n=min(num_rows, len(df)))
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(threadName)s - %(levelname)s - %(message)s'
+    )
 
-    all_records = []
-    for _, row in sample.iterrows():
-        # note: you had premise/hypothesis reversed
-        source = row['hypothesis']
-        gold   = row['premise']
+    logger.info(f"Starting processing with {max_workers} worker threads")
 
-        corrupted_list = correctness_errors_transformation_workflow(
-            summary=gold,
-            source_article=source,
-            transformation_types=transform_types
-        )
+    try:
+        # Read the CSV and slice rows [start_row:end_row)
+        df = pd.read_csv(input_csv_path)
+        slice_df = df.iloc[start_row:end_row]
+        total_rows = len(slice_df)
 
-        logger.info(f"After full correctness_errors_transformation_workflow returned {len(corrupted_list)} summaries")
-        all_records.append({
-            'source_article': source,
-            'gold_summary': gold,
-            'correctness_corrupted_summaries': corrupted_list
-        })
+        # Thread-safe container for results
+        all_records = []
+        results_lock = threading.Lock()
 
-    # save both files
-    save_dataset_json(all_records, output_json)
-    save_dataset_csv(all_records,  output_csv)
+        # Progress tracking
+        completed = 0
+        failed = 0
+        progress_lock = threading.Lock()
 
-    print(f"Written {len(all_records)} examples to:\n  JSON: {output_json}\n  CSV:  {output_csv}")
-#
+        def update_progress(success=True):
+            nonlocal completed, failed
+            with progress_lock:
+                completed += 1
+                if not success:
+                    failed += 1
+                progress = (completed / total_rows) * 100
+                sys.stdout.write(f"\rProgress: {progress:.2f}% ({completed}/{total_rows}) - Failures: {failed}")
+                sys.stdout.flush()
+
+        print(f"Processing rows {start_row} to {end_row - 1} ({total_rows} total) with {max_workers} worker threads")
+
+        # Use ThreadPoolExecutor to manage threads
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(process_row, row, transform_types)
+                for _, row in slice_df.iterrows()
+            ]
+
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
+                    if result:
+                        with results_lock:
+                            all_records.append(result)
+                        update_progress(success=True)
+                    else:
+                        update_progress(success=False)
+                except Exception as e:
+                    logger.error(f"Error getting task result: {e}")
+                    update_progress(success=False)
+
+        print("\nProcessing completed")
+
+        # Write out
+        if all_records:
+            save_dataset_json(all_records, output_json)
+            save_dataset_csv(all_records, output_csv)
+            print(f"Written {len(all_records)} examples to:\n  JSON: {output_json}\n  CSV: {output_csv}")
+        else:
+            print("No records were successfully processed. Check the logs for errors.")
+
+    except Exception as e:
+        logger.error(f"Error in main processing: {e}")
+        raise
+
+
+
 if __name__ == "__main__":
-    main()
-
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProcessing interrupted by user")
+    except Exception as e:
+        print(f"Unhandled exception: {str(e)}")
 # def main():
 #     # input_csv_path = r"/sise/home/avramit/dataset_augmentation/output_mafat_less_500_test_new.csv"
 #     #input_csv_path = r"/sise/home/avramit/mfact-summ/mfact/datasets/heb/mafat_800_article_150_summary.csv"

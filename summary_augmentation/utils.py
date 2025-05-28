@@ -443,10 +443,12 @@ def number_swap_transformation(
 #     }
 #
 #     return result
+
+
 def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
     """
     Rebuilds the summary by replacing original claims with their transformed versions,
-    applying multiple transformations to each claim where available.
+    applying at most one transformation per claim.
     """
     # 1) Extract all claims
     all_claims = []
@@ -488,7 +490,6 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
         for t in transformations:
             key = str(t["error_type"])
             transformations_by_type.setdefault(key, []).append(t)
-            logger.debug(" Grouped into %d types", len(transformations_by_type))
 
         # 2d) Sort so LLM-generated patches run first
         items = list(transformations_by_type.items())
@@ -497,10 +498,8 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
             reverse=True
         )
 
-        # 3) Apply each transformation
+        # 3) Apply at most one transformation
         for t_type, group in items:
-            logger.debug("  Applying type: %s (%d candidates)", t_type, len(group))
-            # pick LLM if available, else static
             llm_opts = [x for x in group if x.get("llm_generated")]
             t = llm_opts[0] if llm_opts else group[0]
 
@@ -515,7 +514,8 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
                         "original": orig,
                         "replacement": repl
                     })
-                    logger.debug("   Static replace: %s -> %s", orig, repl)
+                    total_transformations += 1
+                    break
 
             # 3b) LLM-generated minimal patch
             elif t.get("llm_generated"):
@@ -527,31 +527,31 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
                     i += 1
                 # find common suffix
                 j_o, j_n = len(o), len(n)
-                while j_o > i and j_n > i and o[j_o-1] == n[j_n-1]:
+                while j_o > i and j_n > i and o[j_o - 1] == n[j_n - 1]:
                     j_o -= 1
                     j_n -= 1
                 o_mid = o[i:j_o]
                 n_mid = n[i:j_n]
+
                 if o_mid and o_mid in current_claim:
-                    # replacement case
                     current_claim = current_claim.replace(o_mid, n_mid)
                     applied.append({
                         "type": t["error_type"],
                         "original": o_mid,
                         "replacement": n_mid
                     })
-                    logger.debug("   LLM patch replace: %s -> %s", o_mid, n_mid)
+                    total_transformations += 1
+                    break
+
                 elif not o_mid and n_mid:
-                    # pure insertion case
                     current_claim = current_claim[:i] + n_mid + current_claim[i:]
                     applied.append({
                         "type": t["error_type"],
                         "original": "",
                         "replacement": n_mid
                     })
-                    logger.debug("   LLM patch insert: '%s' at pos %d", n_mid, i)
-
-            total_transformations += 1
+                    total_transformations += 1
+                    break
 
         # 4) Save patched claim
         modified_claims[best_match] = current_claim
@@ -575,7 +575,139 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
     }
 
 
+# !!! worked !!!
+# def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
+#     """
+#     Rebuilds the summary by replacing original claims with their transformed versions,
+#     applying multiple transformations to each claim where available.
+#     """
+#     # 1) Extract all claims
+#     all_claims = []
+#     for claim_item in claim_decomposition.claims_decomposition:
+#         claim_text = extract_claim_text(claim_item)
+#         if claim_text:
+#             all_claims.append(claim_text)
+#     modified_claims = all_claims.copy()
+#
+#     total_transformations = 0
+#     transformations_performed = []
+#     logger.info("Starting recompose: %d claims to check", len(transformed_claims))
+#
+#     # 2) For each claim with transformations
+#     for original_claim, transformations in transformed_claims.items():
+#         logger.debug("Processing claim: %s", original_claim)
+#         if not transformations:
+#             logger.debug(" -> No transformations for this claim, skipping")
+#             continue
+#
+#         # 2a) Find the best matching sentence index
+#         best_match = None
+#         best_sim = 0.0
+#         for i, claim in enumerate(all_claims):
+#             sim = SequenceMatcher(None, original_claim, claim).ratio()
+#             if sim > 0.9 and sim > best_sim:
+#                 best_sim = sim
+#                 best_match = i
+#         logger.debug(" Best match index=%s, similarity=%.3f", best_match, best_sim)
+#         if best_match is None:
+#             continue
+#
+#         # 2b) Prepare to patch this claim
+#         current_claim = all_claims[best_match]
+#         applied = []
+#
+#         # 2c) Group by error type
+#         transformations_by_type = {}
+#         for t in transformations:
+#             key = str(t["error_type"])
+#             transformations_by_type.setdefault(key, []).append(t)
+#             logger.debug(" Grouped into %d types", len(transformations_by_type))
+#
+#         # 2d) Sort so LLM-generated patches run first
+#         items = list(transformations_by_type.items())
+#         items.sort(
+#             key=lambda kv: any(x.get("llm_generated") for x in kv[1]),
+#             reverse=True
+#         )
+#
+#         # 3) Apply each transformation
+#         for t_type, group in items:
+#             logger.debug("  Applying type: %s (%d candidates)", t_type, len(group))
+#             # pick LLM if available, else static
+#             llm_opts = [x for x in group if x.get("llm_generated")]
+#             t = llm_opts[0] if llm_opts else group[0]
+#
+#             # 3a) Static replace (entity or number)
+#             if "original_entity" in t and "replacement_entity" in t:
+#                 orig = t["original_entity"]
+#                 repl = t["replacement_entity"]
+#                 if orig in current_claim:
+#                     current_claim = current_claim.replace(orig, repl)
+#                     applied.append({
+#                         "type": t["error_type"],
+#                         "original": orig,
+#                         "replacement": repl
+#                     })
+#                     logger.debug("   Static replace: %s -> %s", orig, repl)
+#
+#             # 3b) LLM-generated minimal patch
+#             elif t.get("llm_generated"):
+#                 o = t["original_claim"]
+#                 n = t["transformed_claim"]
+#                 # find common prefix
+#                 i = 0
+#                 while i < len(o) and i < len(n) and o[i] == n[i]:
+#                     i += 1
+#                 # find common suffix
+#                 j_o, j_n = len(o), len(n)
+#                 while j_o > i and j_n > i and o[j_o-1] == n[j_n-1]:
+#                     j_o -= 1
+#                     j_n -= 1
+#                 o_mid = o[i:j_o]
+#                 n_mid = n[i:j_n]
+#                 if o_mid and o_mid in current_claim:
+#                     # replacement case
+#                     current_claim = current_claim.replace(o_mid, n_mid)
+#                     applied.append({
+#                         "type": t["error_type"],
+#                         "original": o_mid,
+#                         "replacement": n_mid
+#                     })
+#                     logger.debug("   LLM patch replace: %s -> %s", o_mid, n_mid)
+#                 elif not o_mid and n_mid:
+#                     # pure insertion case
+#                     current_claim = current_claim[:i] + n_mid + current_claim[i:]
+#                     applied.append({
+#                         "type": t["error_type"],
+#                         "original": "",
+#                         "replacement": n_mid
+#                     })
+#                     logger.debug("   LLM patch insert: '%s' at pos %d", n_mid, i)
+#
+#             total_transformations += 1
+#
+#         # 4) Save patched claim
+#         modified_claims[best_match] = current_claim
+#         transformations_performed.append({
+#             "original_claim": original_claim,
+#             "transformed_claim": current_claim,
+#             "applied_transformations": applied
+#         })
+#         logger.info(" Finished claim. Applied %d transforms", len(applied))
+#
+#     # 5) Rebuild the full summary and score
+#     corrupted_summary = " ".join(modified_claims)
+#     total_claims = len(all_claims)
+#     transformation_score = total_transformations / total_claims if total_claims else 0
+#
+#     return {
+#         "corrupted_summary": corrupted_summary,
+#         "transformations_performed": total_transformations,
+#         "transformation_list": transformations_performed,
+#         "transformation_score": transformation_score
+#     }
 
+# !!! worked !!!
 # def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
 #     """
 #     Rebuilds the summary by replacing original claims with their transformed versions,
@@ -842,7 +974,11 @@ def save_dataset_csv(records: List[dict], path: str):
             'premise': rec['source_article'],
             'hypothesis': rec['gold_summary'],
             'label': 'entailment',
+            'len_group': rec['len_group'],
+            'doc_id': rec['doc_id'],
+            'source': rec['source'],
             'error_types': ''  # Empty for entailment pairs
+            '',
         })
 
         # Add all the contradiction pairs from corrupted summaries
@@ -863,6 +999,9 @@ def save_dataset_csv(records: List[dict], path: str):
                 'premise': rec['source_article'],
                 'hypothesis': corrupt['corrupted_summary'],  # Just the text string
                 'label': 'contradiction',
+                'len_group': rec['len_group'],
+                'doc_id': rec['doc_id'],
+                'source': rec['source'],
                 'error_types': ','.join(set(ets))  # Use set to remove duplicates
             })
 

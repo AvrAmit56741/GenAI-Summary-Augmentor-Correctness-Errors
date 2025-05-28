@@ -933,120 +933,120 @@ hebrew_error_examples = {
             }
         }
     ],
-    "directional_preposition_swap": [
-        {
-            "Transformation rules": [
-                "החלף מילות יחס המציינות כיוון או מיקום במילות יחס הפוכות (מ- → ל-, ב- → מ-, על → מתחת ל-)",
-                "שמור על התאמה דקדוקית מלאה (הכלל גם בדגש על שמירת ה\"א הידיעה אם קיימת)",
-                "וודא שהמשפט החדש נשאר תקין מבחינה דקדוקית",
-                "הקפד שהשינוי יוצר היפוך משמעות או שגיאה עובדתית ביחס למקור"
-            ],
-            "Description": "בסוג החלפה זה, משנים מילות יחס המציינות כיוון, מיקום או יחס מרחבי למילות יחס בעלות משמעות הפוכה או שונה. החלפה זו משנה את המשמעות המרחבית או הכיוונית של המשפט תוך שמירה על תקינות דקדוקית.",
-            "Linguistic_patterns": {
-                "directional_pairs": {
-                    "origin_destination": {
-                        "מ-": "ל-",
-                        "מה-": "ל-",
-                        "מהמ-": "ל-"
-                    },
-                    "location_direction": {
-                        "ב-": "מ-",
-                        "ב-": "אל",
-                        "ב-": "ל-"
-                    },
-                    "spatial_relations": {
-                        "על": "מתחת ל-",
-                        "מעל": "מתחת ל-",
-                        "לפני": "אחרי",
-                        "בתוך": "מחוץ ל-"
-                    }
-                }
-            }
-        },
-        {
-            "Original_LLM_Generative_Summary": "אני הולך מהבית לעבודה כל בוקר בשעה שבע.",
-            "Error_transformation_LLM_Generative_Summary": "אני הולך לבית מהעבודה כל בוקר בשעה שבע.",
-            "Error_explanation": "החלפת מילות היחס המציינות כיוון: 'מהבית לעבודה' הוחלף ל'לבית מהעבודה', מה שמשנה את כיוון התנועה והופך את ההיגיון של הפעולה בבוקר.",
-            "Linguistic_metadata": {
-                "original": {
-                    "preposition_phrases": [
-                        {"text": "מהבית", "base_preposition": "מ-", "direction": "origin"},
-                        {"text": "לעבודה", "base_preposition": "ל-", "direction": "destination"}
-                    ]
-                },
-                "transformed": {
-                    "preposition_phrases": [
-                        {"text": "לבית", "base_preposition": "ל-", "direction": "destination"},
-                        {"text": "מהעבודה", "base_preposition": "מ-", "direction": "origin"}
-                    ],
-                    "factual_inconsistency": "חוסר סבירות בתיאור הליכה מהעבודה לבית בשעה שבע בבוקר"
-                }
-            }
-        },
-        {
-            "Original_LLM_Generative_Summary": "התלמידים עלו על האוטובוס בדרך לטיול השנתי.",
-            "Error_transformation_LLM_Generative_Summary": "התלמידים ירדו מהאוטובוס בדרך לטיול השנתי.",
-            "Error_explanation": "החלפת הפועל והמילית הכיוונית מ'עלו על' ל'ירדו מהאוטובוס' משנה את המשמעות באופן שמנוגד להגיון של 'בדרך לטיול'.",
-            "Linguistic_metadata": {
-                "original": {
-                    "verb": {"text": "עלו", "direction": "upward/inward"},
-                    "preposition": {"text": "על", "relation": "onto"}
-                },
-                "transformed": {
-                    "verb": {"text": "ירדו", "direction": "downward/outward"},
-                    "preposition": {"text": "מה-", "relation": "from"}
-                }
-            }
-        },
-        {
-            "Original_LLM_Generative_Summary": "הטיסה המריאה מנמל התעופה בן-גוריון בדרכה לפריז.",
-            "Error_transformation_LLM_Generative_Summary": "הטיסה נחתה בנמל התעופה בן-גוריון בדרכה לפריז.",
-            "Error_explanation": "החלפת הפועל מ'המריאה מ-' ל'נחתה ב-' יוצרת סתירה לוגית עם 'בדרכה לפריז' כיוון שנחיתה מסמנת סוף מסלול ולא תחילתו.",
-            "Linguistic_metadata": {
-                "original": {
-                    "verb": {"text": "המריאה", "direction": "departure"},
-                    "preposition": {"text": "מ-", "relation": "source"}
-                },
-                "transformed": {
-                    "verb": {"text": "נחתה", "direction": "arrival"},
-                    "preposition": {"text": "ב-", "relation": "location"}
-                }
-            }
-        },
-        {
-            "Original_LLM_Generative_Summary": "המים זורמים מלמעלה למטה דרך הצינור ומגיעים לברז.",
-            "Error_transformation_LLM_Generative_Summary": "המים זורמים מלמטה למעלה דרך הצינור ומגיעים לברז.",
-            "Error_explanation": "החלפת כיוון הזרימה מ'מלמעלה למטה' ל'מלמטה למעלה' סותרת את חוקי הפיזיקה בהקשר של זרימת מים רגילה בצינור.",
-            "Linguistic_metadata": {
-                "original": {
-                    "directional_phrase": {
-                        "source": {"text": "מלמעלה", "direction": "from_above"},
-                        "destination": {"text": "למטה", "direction": "to_below"}
-                    }
-                },
-                "transformed": {
-                    "directional_phrase": {
-                        "source": {"text": "מלמטה", "direction": "from_below"},
-                        "destination": {"text": "למעלה", "direction": "to_above"}
-                    }
-                }
-            }
-        },
-        {
-            "Original_LLM_Generative_Summary": "המנהל יצא מחדר הישיבות אחרי שסיים את הפגישה החשובה.",
-            "Error_transformation_LLM_Generative_Summary": "המנהל נכנס לחדר הישיבות אחרי שסיים את הפגישה החשובה.",
-            "Error_explanation": "החלפת הפועל והכיוון מ'יצא מחדר' ל'נכנס לחדר' יוצרת סתירה לוגית עם 'אחרי שסיים את הפגישה', שכן נכנסים לפני הפגישה ולא אחריה.",
-            "Linguistic_metadata": {
-                "original": {
-                    "verb": {"text": "יצא", "direction": "outward"},
-                    "preposition": {"text": "מ-", "relation": "from_inside"}
-                },
-                "transformed": {
-                    "verb": {"text": "נכנס", "direction": "inward"},
-                    "preposition": {"text": "ל-", "relation": "to_inside"}
-                }
-            }
-        }
-    ]
+    # "directional_preposition_swap": [
+    #     {
+    #         "Transformation rules": [
+    #             "החלף מילות יחס המציינות כיוון או מיקום במילות יחס הפוכות (מ- → ל-, ב- → מ-, על → מתחת ל-)",
+    #             "שמור על התאמה דקדוקית מלאה (הכלל גם בדגש על שמירת ה\"א הידיעה אם קיימת)",
+    #             "וודא שהמשפט החדש נשאר תקין מבחינה דקדוקית",
+    #             "הקפד שהשינוי יוצר היפוך משמעות או שגיאה עובדתית ביחס למקור"
+    #         ],
+    #         "Description": "בסוג החלפה זה, משנים מילות יחס המציינות כיוון, מיקום או יחס מרחבי למילות יחס בעלות משמעות הפוכה או שונה. החלפה זו משנה את המשמעות המרחבית או הכיוונית של המשפט תוך שמירה על תקינות דקדוקית.",
+    #         "Linguistic_patterns": {
+    #             "directional_pairs": {
+    #                 "origin_destination": {
+    #                     "מ-": "ל-",
+    #                     "מה-": "ל-",
+    #                     "מהמ-": "ל-"
+    #                 },
+    #                 "location_direction": {
+    #                     "ב-": "מ-",
+    #                     "ב-": "אל",
+    #                     "ב-": "ל-"
+    #                 },
+    #                 "spatial_relations": {
+    #                     "על": "מתחת ל-",
+    #                     "מעל": "מתחת ל-",
+    #                     "לפני": "אחרי",
+    #                     "בתוך": "מחוץ ל-"
+    #                 }
+    #             }
+    #         }
+    #     },
+    #     {
+    #         "Original_LLM_Generative_Summary": "אני הולך מהבית לעבודה כל בוקר בשעה שבע.",
+    #         "Error_transformation_LLM_Generative_Summary": "אני הולך לבית מהעבודה כל בוקר בשעה שבע.",
+    #         "Error_explanation": "החלפת מילות היחס המציינות כיוון: 'מהבית לעבודה' הוחלף ל'לבית מהעבודה', מה שמשנה את כיוון התנועה והופך את ההיגיון של הפעולה בבוקר.",
+    #         "Linguistic_metadata": {
+    #             "original": {
+    #                 "preposition_phrases": [
+    #                     {"text": "מהבית", "base_preposition": "מ-", "direction": "origin"},
+    #                     {"text": "לעבודה", "base_preposition": "ל-", "direction": "destination"}
+    #                 ]
+    #             },
+    #             "transformed": {
+    #                 "preposition_phrases": [
+    #                     {"text": "לבית", "base_preposition": "ל-", "direction": "destination"},
+    #                     {"text": "מהעבודה", "base_preposition": "מ-", "direction": "origin"}
+    #                 ],
+    #                 "factual_inconsistency": "חוסר סבירות בתיאור הליכה מהעבודה לבית בשעה שבע בבוקר"
+    #             }
+    #         }
+    #     },
+    #     {
+    #         "Original_LLM_Generative_Summary": "התלמידים עלו על האוטובוס בדרך לטיול השנתי.",
+    #         "Error_transformation_LLM_Generative_Summary": "התלמידים ירדו מהאוטובוס בדרך לטיול השנתי.",
+    #         "Error_explanation": "החלפת הפועל והמילית הכיוונית מ'עלו על' ל'ירדו מהאוטובוס' משנה את המשמעות באופן שמנוגד להגיון של 'בדרך לטיול'.",
+    #         "Linguistic_metadata": {
+    #             "original": {
+    #                 "verb": {"text": "עלו", "direction": "upward/inward"},
+    #                 "preposition": {"text": "על", "relation": "onto"}
+    #             },
+    #             "transformed": {
+    #                 "verb": {"text": "ירדו", "direction": "downward/outward"},
+    #                 "preposition": {"text": "מה-", "relation": "from"}
+    #             }
+    #         }
+    #     },
+    #     {
+    #         "Original_LLM_Generative_Summary": "הטיסה המריאה מנמל התעופה בן-גוריון בדרכה לפריז.",
+    #         "Error_transformation_LLM_Generative_Summary": "הטיסה נחתה בנמל התעופה בן-גוריון בדרכה לפריז.",
+    #         "Error_explanation": "החלפת הפועל מ'המריאה מ-' ל'נחתה ב-' יוצרת סתירה לוגית עם 'בדרכה לפריז' כיוון שנחיתה מסמנת סוף מסלול ולא תחילתו.",
+    #         "Linguistic_metadata": {
+    #             "original": {
+    #                 "verb": {"text": "המריאה", "direction": "departure"},
+    #                 "preposition": {"text": "מ-", "relation": "source"}
+    #             },
+    #             "transformed": {
+    #                 "verb": {"text": "נחתה", "direction": "arrival"},
+    #                 "preposition": {"text": "ב-", "relation": "location"}
+    #             }
+    #         }
+    #     },
+    #     {
+    #         "Original_LLM_Generative_Summary": "המים זורמים מלמעלה למטה דרך הצינור ומגיעים לברז.",
+    #         "Error_transformation_LLM_Generative_Summary": "המים זורמים מלמטה למעלה דרך הצינור ומגיעים לברז.",
+    #         "Error_explanation": "החלפת כיוון הזרימה מ'מלמעלה למטה' ל'מלמטה למעלה' סותרת את חוקי הפיזיקה בהקשר של זרימת מים רגילה בצינור.",
+    #         "Linguistic_metadata": {
+    #             "original": {
+    #                 "directional_phrase": {
+    #                     "source": {"text": "מלמעלה", "direction": "from_above"},
+    #                     "destination": {"text": "למטה", "direction": "to_below"}
+    #                 }
+    #             },
+    #             "transformed": {
+    #                 "directional_phrase": {
+    #                     "source": {"text": "מלמטה", "direction": "from_below"},
+    #                     "destination": {"text": "למעלה", "direction": "to_above"}
+    #                 }
+    #             }
+    #         }
+    #     },
+    #     {
+    #         "Original_LLM_Generative_Summary": "המנהל יצא מחדר הישיבות אחרי שסיים את הפגישה החשובה.",
+    #         "Error_transformation_LLM_Generative_Summary": "המנהל נכנס לחדר הישיבות אחרי שסיים את הפגישה החשובה.",
+    #         "Error_explanation": "החלפת הפועל והכיוון מ'יצא מחדר' ל'נכנס לחדר' יוצרת סתירה לוגית עם 'אחרי שסיים את הפגישה', שכן נכנסים לפני הפגישה ולא אחריה.",
+    #         "Linguistic_metadata": {
+    #             "original": {
+    #                 "verb": {"text": "יצא", "direction": "outward"},
+    #                 "preposition": {"text": "מ-", "relation": "from_inside"}
+    #             },
+    #             "transformed": {
+    #                 "verb": {"text": "נכנס", "direction": "inward"},
+    #                 "preposition": {"text": "ל-", "relation": "to_inside"}
+    #             }
+    #         }
+    #     }
+    # ]
 }
 

@@ -22,7 +22,7 @@ from summary_augmentation.correctness_errors_prompts import TransformationDetail
 from summary_augmentation.correctness_errors_prompts import verify_grammar_transform_summary_prompt, \
     suitable_claim_decomposition_prompt, apply_transformation_on_claims_prompt, \
     apply_halluzaition_transformation_on_claims_prompt, claims_decomposition_prompt, \
-    suitable_claim_decomposition_permissive_prompt
+    suitable_claim_decomposition_permissive_prompt,faithfulness_summary_back_translation_and_paraphrasing
 
 # Define the main data structure
 
@@ -155,6 +155,23 @@ def summary_negative_augmentation(apply_transformation_types,
     except Exception as e:
         print(f"Error: {e}")
         # Return an empty model instance if there's an erro
+
+
+def back_translation_and_paraphrasing(faithfulness_summary):
+    # Initialize the OpenAI client directly
+    class SummaryBackTranslationParaphrasing(BaseModel):
+        summary_paraphrasing: str = Field(description="HEBREW summary generative rich paraphrasing")
+        summary_back_translation: str = Field(description="HEBREW summary back translation hebrew to english and then again to hebrew")
+    parser = JsonOutputParser(pydantic_object=SummaryBackTranslationParaphrasing)
+
+    try:
+        system, user = faithfulness_summary_back_translation_and_paraphrasing(faithfulness_summary=faithfulness_summary, output_instructions_parser=parser)
+        result = llm_query_to_openai(system_message=system, user_message=user, output_object=SummaryBackTranslationParaphrasing)
+        return result
+
+    except Exception as e:
+        print(f"Error: {e}")
+
 
 
 def summary_halluzaition_negative_augmentation(apply_transformation_types,
