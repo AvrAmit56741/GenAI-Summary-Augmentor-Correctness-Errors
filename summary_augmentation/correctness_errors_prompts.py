@@ -123,21 +123,6 @@ def suitable_claim_decomposition_prompt(claims_decomposition_list, apply_transfo
 
     return system_message, user_message
 
-# def claims_decomposition_prompt(text: str, output_instructions_parser):
-#     # Create the system and user messages
-#     system_message = """
-#     You are a Hebrew computational linguistics professional Researcher.
-#     Your goal is to perform claim decomposition to the following hebrew text sentences into individual facts.
-#     Do not add words or insert new details into a claim, keep the original text unchanged
-#     """
-#
-#     user_message = f"""
-#     **Summary**: {text}
-#     the response should be in JSON in the EXACT format:
-#     {output_instructions_parser.get_format_instructions()}
-#     """
-#     return system_message, user_message
-
 
 
 def claims_decomposition_prompt(text: str, output_instructions_parser):

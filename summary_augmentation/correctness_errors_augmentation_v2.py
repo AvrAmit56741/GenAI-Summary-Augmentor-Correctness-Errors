@@ -22,7 +22,7 @@ import json
 import summary_augmentation.correctness_errors_examples as correctness_errors_examples
 from openai import OpenAI
 # Define OpenAI API credentials
-#import google.generativeai as genai
+# import google.generativeai as genai
 from langchain_openai import ChatOpenAI
 
 import threading
@@ -32,12 +32,16 @@ from concurrent.futures import ThreadPoolExecutor
 
 from summary_augmentation.correctness_errors_prompts import suitable_claim_decomposition_prompt, \
     claims_decomposition_prompt, apply_transformation_on_claims_prompt
-from summary_augmentation.utils import filter_diverse_summaries, save_dataset_json, save_dataset_csv, control_claims_after_transformation, get_entities_by_type, is_same_entity,extract_named_entities, CorrectnessErrorTypes, text_decomposition, ClaimDecompositionMethod, number_swap_transformation, suitable_number_swap_transformation, recompose_transformed_summary
+from summary_augmentation.utils import filter_diverse_summaries, save_dataset_json, save_dataset_csv, \
+    control_claims_after_transformation, get_entities_by_type, is_same_entity, extract_named_entities, \
+    CorrectnessErrorTypes, text_decomposition,suitable_number_swap_transformation, recompose_transformed_summary, compute_all_diffs, ner_instructions
 # Define the main data structure
 from summary_augmentation.correctness_errors_prompts import claims_decomposition_prompt
-from summary_augmentation.correctness_errors_llm_helper_functions import verify_transformed_summary_grammar, choose_suitable_claim, summary_negative_augmentation, summary_halluzaition_negative_augmentation, back_translation_and_paraphrasing
+from summary_augmentation.correctness_errors_llm_helper_functions import verify_transformed_summary_grammar, \
+    choose_suitable_claim, summary_negative_augmentation, summary_halluzaition_negative_augmentation
 import re
-
+from summary_augmentation.config import get_enabled_transformations_as_dicts, get_enabled_transformations_as_lists, \
+    MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD, PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY, CLAIM_DECOMPOSITION_METHOD
 
 general_error_examples = correctness_errors_examples.general_error_examples
 hebrew_error_examples = correctness_errors_examples.hebrew_error_examples
@@ -51,42 +55,31 @@ NER_TO_ERROR_TYPE_MAP = {
     'TTL': CorrectnessErrorTypes.ENTITY_TITLE_SWAP
 }
 
-INSTRUCTION_TEMPLATES = {
-    CorrectnessErrorTypes.ENTITY_PERSON_SWAP: (
-        "For the 'entity_person_swap' error transformation type, you can perform word swaps "
-        "only from the given person list: {entities}."
-    ),
-    CorrectnessErrorTypes.ENTITY_LOCATION_SWAP: (
-        "For the 'entity_location_swap' error transformation type, consider swapping locations "
-        "from the following list: {entities}."
-    ),
-    CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP: (
-        "For the 'entity_organization_swap' error transformation type, you can replace organization "
-        "names using the provided list: {entities}."
-    ),
-    # Add other instruction templates as needed
-}
 
-hebrew_llm_transformations = [
-    CorrectnessErrorTypes.NOUN_GENDER_SWAP,
-    CorrectnessErrorTypes.VERB_GENDER_SWAP,
-    CorrectnessErrorTypes.VERB_TENSE_SWAP,
-    #CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP
-]
-
-general_llm_transformations = [
-    CorrectnessErrorTypes.SENTENCE_NEGATION,
-    CorrectnessErrorTypes.MEASURE_UNIT_SWAP,
-    CorrectnessErrorTypes.ENTITY_EVENT_SWAP,
-    CorrectnessErrorTypes.ENTITY_DATE_SWAP
-]
-
-ner_based_transformation = [
-    CorrectnessErrorTypes.ENTITY_PERSON_SWAP,
-    CorrectnessErrorTypes.ENTITY_LOCATION_SWAP,
-    CorrectnessErrorTypes.ENTITY_TITLE_SWAP,
-    CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP
-]
+# hebrew_llm_transformations = [
+#     # CorrectnessErrorTypes.NOUN_GENDER_SWAP,
+#     # CorrectnessErrorTypes.VERB_GENDER_SWAP,
+#     # CorrectnessErrorTypes.VERB_TENSE_SWAP,
+#     CorrectnessErrorTypes.PRONOUN_REFERENCE_ERRORS,
+#     CorrectnessErrorTypes.SPECIFICITY_SHIFT_ERRORS,
+#     CorrectnessErrorTypes.HOMOGRAPHIC_GENDER_ERRORS,
+#     CorrectnessErrorTypes.IMPERSONAL_TO_PERSONAL_VERB_ERRORS
+#     #CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP
+# ]
+#
+# general_llm_transformations = [
+#     CorrectnessErrorTypes.SENTENCE_NEGATION,
+#     CorrectnessErrorTypes.MEASURE_UNIT_SWAP,
+#     CorrectnessErrorTypes.ENTITY_EVENT_SWAP,
+#     CorrectnessErrorTypes.ENTITY_DATE_SWAP
+# ]
+#
+# ner_based_transformation = [
+#     CorrectnessErrorTypes.ENTITY_PERSON_SWAP,
+#     CorrectnessErrorTypes.ENTITY_LOCATION_SWAP,
+#     CorrectnessErrorTypes.ENTITY_TITLE_SWAP,
+#     CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP
+# ]
 def map_ner_to_error_types(
         ner_results: Dict[str, List[str]],
         desired_error_types: List[CorrectnessErrorTypes]
@@ -100,22 +93,11 @@ def map_ner_to_error_types(
 
     return mapped_results
 
-def ner_instructions(mapped_ner_results: Dict[CorrectnessErrorTypes, List[str]]) -> str:
-    # Instruction templates for each error type
-    instructions = []
-
-    for error_type, entities in mapped_ner_results.items():
-        template = INSTRUCTION_TEMPLATES.get(error_type)
-        if template:
-            instruction = template.format(entities=", ".join(entities))
-            instructions.append(instruction)
-
-    return "\n".join(instructions)
-
-def all_suitable_transformation_possible(text:str, claim_decomposition):
 
 
-    #static_based_transformation = [CorrectnessErrorTypes.NUMBER_SWAP]
+def all_suitable_transformation_possible(text: str, claim_decomposition):
+    # static_based_transformation = [CorrectnessErrorTypes.NUMBER_SWAP]
+    hebrew_llm_transformations, general_llm_transformations, ner_based_transformation = get_enabled_transformations_as_lists()
 
     # Create separate transformation type lists
     hebrew_transformation_types_list = [t.strip() for t in hebrew_llm_transformations]
@@ -159,15 +141,15 @@ def all_suitable_transformation_possible(text:str, claim_decomposition):
         for err_type in general_llm_transformations:
             # build a single‐type examples dict (skip if no examples)
             if err_type in general_filtered_examples:
-                examples = { err_type: general_filtered_examples[err_type]}
+                examples = {err_type: general_filtered_examples[err_type]}
             else:
                 continue
 
             # run the prompt for just this one error type
             result = choose_suitable_claim(
                 claim_decomposition,
-                [err_type],         # only this type
-                examples            # only its examples
+                [err_type],  # only this type
+                examples  # only its examples
             )
 
             # collect any suitable_claims
@@ -182,8 +164,7 @@ def all_suitable_transformation_possible(text:str, claim_decomposition):
     except Exception as e:
         print(f"Error in LLM choose suitable claims for general transformation: {e}")
 
-
-    #NER-based transformation
+    # NER-based transformation
     # try:
     #     # Get NER entities with their positions
     #     summary_ner = extract_named_entities(text)
@@ -245,7 +226,6 @@ def all_suitable_transformation_possible(text:str, claim_decomposition):
     # except Exception as e:
     #     print(f"Error in NER processing: {str(e)}")
 
-
     try:
         # Group NER entities by our error types
         entities_by_type = get_entities_by_type(text)
@@ -284,7 +264,6 @@ def all_suitable_transformation_possible(text:str, claim_decomposition):
     except Exception as e:
         print(f"Error in Number swap processing: {str(e)}")
 
-
     grouped_results = {}
     for result in transformation_results:
         claim = result["claim"]
@@ -316,7 +295,8 @@ def all_suitable_transformation_possible(text:str, claim_decomposition):
     # Static
 
 
-def apply_factuality_transformation_on_claims(source_article: str, transformation_results: Dict[str, List[Dict[str, Any]]]):
+def apply_factuality_transformation_on_claims(source_article: str,
+                                              transformation_results: Dict[str, List[Dict[str, Any]]]):
     """
     Apply transformations to claims based on the identified transformation types.
 
@@ -327,21 +307,27 @@ def apply_factuality_transformation_on_claims(source_article: str, transformatio
     Returns:
         A dictionary mapping original claims to their transformed versions
     """
-    hebrew_llm_transformations = {
-        CorrectnessErrorTypes.NOUN_GENDER_SWAP: [],
-        CorrectnessErrorTypes.VERB_GENDER_SWAP: [],
-        CorrectnessErrorTypes.VERB_TENSE_SWAP: [],
-        CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP: [],
-    }
-    general_llm_transformations = {
-        CorrectnessErrorTypes.SENTENCE_NEGATION: [],
-        CorrectnessErrorTypes.MEASURE_UNIT_SWAP: [],
-        #CorrectnessErrorTypes.ENTITY_EVENT_SWAP: [],
-        CorrectnessErrorTypes.ENTITY_DATE_SWAP: [],
-    }
-    # Extract named entities from the source article
+    # hebrew_llm_transformations = {
+    #     # CorrectnessErrorTypes.NOUN_GENDER_SWAP: [],
+    #     # CorrectnessErrorTypes.VERB_GENDER_SWAP: [],
+    #     # CorrectnessErrorTypes.VERB_TENSE_SWAP: [],
+    #     # CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP: [],
+    #     CorrectnessErrorTypes.PRONOUN_REFERENCE_ERRORS: [],
+    #     CorrectnessErrorTypes.SPECIFICITY_SHIFT_ERRORS: [],
+    #     CorrectnessErrorTypes.HOMOGRAPHIC_GENDER_ERRORS: [],
+    #     CorrectnessErrorTypes.IMPERSONAL_TO_PERSONAL_VERB_ERRORS: []
+    # }
+    # general_llm_transformations = {
+    #     CorrectnessErrorTypes.SENTENCE_NEGATION: [],
+    #     CorrectnessErrorTypes.MEASURE_UNIT_SWAP: [],
+    #     #CorrectnessErrorTypes.ENTITY_EVENT_SWAP: [],
+    #     CorrectnessErrorTypes.ENTITY_DATE_SWAP: [],
+    # }
+    # # Extract named entities from the source article
+
+    hebrew_llm_transformations_dict, general_llm_transformations_dict = get_enabled_transformations_as_dicts()
     source_entities_by_type = get_entities_by_type(source_article)
-    #source_ner = extract_named_entities(source_article)
+
     # Convert sets back to lists for easier access
     for key in source_entities_by_type:
         source_entities_by_type[key] = list(source_entities_by_type[key])
@@ -350,9 +336,8 @@ def apply_factuality_transformation_on_claims(source_article: str, transformatio
     transformed_claims = {}
     current_claim_versions = {}
 
-    hebrew_transformation_types_list = list(hebrew_llm_transformations.keys())
-    general_transformation_types_list = list(general_llm_transformations.keys())
-
+    hebrew_transformation_types_list = list(hebrew_llm_transformations_dict.keys())
+    general_transformation_types_list = list(general_llm_transformations_dict.keys())
 
     # Filter examples using the appropriate transformation types
     general_filtered_examples = {key: general_error_examples[key] for key in general_transformation_types_list if
@@ -449,19 +434,19 @@ def apply_factuality_transformation_on_claims(source_article: str, transformatio
                         # Skip if we can't convert to a number
                         pass
             # Collect LLM-based transformations to process in batches
-            elif error_type in hebrew_llm_transformations:
-                hebrew_llm_transformations[error_type].append({
+            elif error_type in hebrew_llm_transformations_dict:
+                hebrew_llm_transformations_dict[error_type].append({
                     "claim": original_claim,
                     "word": word_to_replace
                 })
 
-            elif error_type in general_llm_transformations:
-                general_llm_transformations[error_type].append({
+            elif error_type in general_llm_transformations_dict:
+                general_llm_transformations_dict[error_type].append({
                     "claim": original_claim,
                     "word": word_to_replace
                 })
     # Process Hebrew LLM transformations
-    for error_type, claims_list in hebrew_llm_transformations.items():
+    for error_type, claims_list in hebrew_llm_transformations_dict.items():
         if claims_list:
             try:
                 # Prepare data for LLM transformation
@@ -473,15 +458,15 @@ def apply_factuality_transformation_on_claims(source_article: str, transformatio
                         "correctness_error_type": error_type,
                         "applicable_transformation_text_within_claim": claim_data["word"]
                     })
-                    #claims_decomposition_list.append(claim_data["claim"])
+                    # claims_decomposition_list.append(claim_data["claim"])
 
                 # Get transformation instructions based on error type
-                unique_transformation_instructions = get_transformation_instructions(error_type)
+                # unique_transformation_instructions = get_transformation_instructions(error_type)
 
                 # Call LLM for transformation
                 llm_result = summary_negative_augmentation(
                     apply_transformation_types=[error_type],
-                    transformation_examples=hebrew_filtered_examples,
+                    transformation_examples=hebrew_filtered_examples.get(error_type, []),
                     suitable_claims_decomposition_list=suitable_claims_decomposition_list,
                     unique_transformation_instructions=""
                 )
@@ -490,17 +475,19 @@ def apply_factuality_transformation_on_claims(source_article: str, transformatio
                 if hasattr(llm_result, "original_and_corrupted_transformed_claims"):
                     for transformed_claim, original_claim in llm_result.original_and_corrupted_transformed_claims:
                         if original_claim in transformed_claims:
+                            diffs = compute_all_diffs(original_claim, transformed_claim)
                             transformed_claims[original_claim].append({
                                 "transformed_claim": transformed_claim,
                                 "error_type": error_type,
                                 "llm_generated": True,
-                                "original_claim": original_claim
+                                "original_claim": original_claim,
+                                "diffs": diffs
                             })
             except Exception as e:
                 print(f"Error in Hebrew LLM transformation {error_type}: {e}")
 
     # Process General LLM transformations
-    for error_type, claims_list in general_llm_transformations.items():
+    for error_type, claims_list in general_llm_transformations_dict.items():
         if claims_list:
             try:
                 # Prepare data for LLM transformation
@@ -513,12 +500,12 @@ def apply_factuality_transformation_on_claims(source_article: str, transformatio
                     })
 
                 # Get transformation instructions based on error type
-                unique_transformation_instructions = get_transformation_instructions(error_type)
+                # unique_transformation_instructions = get_transformation_instructions(error_type)
 
                 # Call LLM for transformation
                 llm_result = summary_negative_augmentation(
                     apply_transformation_types=[error_type],
-                    transformation_examples=general_filtered_examples,
+                    transformation_examples=general_filtered_examples.get(error_type, []),
                     suitable_claims_decomposition_list=suitable_claims_decomposition_list,
                     unique_transformation_instructions=""
                 )
@@ -527,18 +514,29 @@ def apply_factuality_transformation_on_claims(source_article: str, transformatio
                 if hasattr(llm_result, "original_and_corrupted_transformed_claims"):
                     for transformed_claim, original_claim in llm_result.original_and_corrupted_transformed_claims:
                         if original_claim in transformed_claims:
+                            diffs = compute_all_diffs(original_claim, transformed_claim)
                             transformed_claims[original_claim].append({
                                 "transformed_claim": transformed_claim,
                                 "error_type": error_type,
                                 "llm_generated": True,
-                                "original_claim": original_claim
+                                "original_claim": original_claim,
+                                "diffs": diffs
                             })
             except Exception as e:
                 print(f"Error in General LLM transformation {error_type}: {e}")
 
+    # Remove claims that the transformation failed
+    for k, v in transformed_claims.items():
+        new_v = []
+        for t in v:
+            if t.get("original_claim") != t.get("transformed_claim"):
+                new_v.append(t)
+            else:
+                logger.info(f"Removed transformation for claim: '{k}' with error_type: {t.get('error_type')}")
+        transformed_claims[k] = new_v
     # Remove claims with no transformations
     transformed_claims = {k: v for k, v in transformed_claims.items() if v}
-    logger.info("Returning %d claims with transformations applied",len(transformed_claims))
+    logger.info("Returning %d claims with transformations applied", len(transformed_claims))
 
     return transformed_claims
 
@@ -580,8 +578,6 @@ def apply_hallucinations_transformation_on_claims(claims_list: List[str],
         for transformation in transformations:
             error_type = transformation["error_type"]
             word_to_replace = transformation["word"]
-
-
 
             # Collect NER-based hallucination transformations
             if error_type in hallucination_ner_types:
@@ -666,34 +662,6 @@ def apply_hallucinations_transformation_on_claims(claims_list: List[str],
     return transformed_claims
 
 
-def get_hallucination_instructions(error_type):
-    """Helper function to get hallucination instructions based on error type"""
-    # Define instructions for each hallucination type
-    instructions = {
-        CorrectnessErrorTypes.ENTITY_PERSON_REPLACE: "Replace the person entity with a different plausible person that would make sense in context but is factually incorrect",
-        CorrectnessErrorTypes.ENTITY_LOCATION_REPLACE: "Replace the location entity with a different plausible location that would make sense in context but is factually incorrect",
-        CorrectnessErrorTypes.ENTITY_ORGANIZATION_REPLACE: "Replace the organization entity with a different plausible organization that would make sense in context but is factually incorrect",
-        CorrectnessErrorTypes.ENTITY_DATE_REPLACE: "Replace the date entity with a different plausible date that would make sense in context but is factually incorrect",
-        CorrectnessErrorTypes.NUMBER_ADD: "Add a specific, plausible number to the claim where it would naturally fit (like quantities, measurements, or statistics)"
-    }
-
-    return instructions.get(error_type,
-                            "Apply a hallucination transformation that is contextually plausible but factually incorrect")
-
-def get_transformation_instructions(error_type):
-    """Helper function to get transformation instructions based on error type"""
-    # Define instructions for each error type
-    instructions = {
-        CorrectnessErrorTypes.SENTENCE_NEGATION: "Negate the meaning of the sentence",
-        CorrectnessErrorTypes.MEASURE_UNIT_SWAP: "Replace the measurement unit with a different one",
-        CorrectnessErrorTypes.NOUN_GENDER_SWAP: "Change the gender of the noun",
-        CorrectnessErrorTypes.VERB_TENSE_SWAP: "Change the tense of the verb",
-        CorrectnessErrorTypes.VERB_GENDER_SWAP: "Change the gender of the verb",
-        CorrectnessErrorTypes.ENTITY_EVENT_SWAP: "Replace the event with a different event",
-        CorrectnessErrorTypes.ENTITY_DATE_SWAP: "Replace the date with a different date"
-    }
-
-    return instructions.get(error_type, "Apply the transformation")
 # def apply_transformation_on_claims(source_article: str, transformation_results: Dict[str, List[Dict[str, Any]]]):
 #     """
 #     Apply transformations to claims based on the identified transformation types.
@@ -786,23 +754,26 @@ def get_transformation_instructions(error_type):
 #
 #     return transformed_claims
 
-def correctness_errors_transformation_workflow(summary: str, source_article: str, transformation_types: List[CorrectnessErrorTypes], amount_claims_to_apply_transformation=1):
+def correctness_errors_transformation_workflow(summary: str, source_article: str,
+                                               transformation_types: List[CorrectnessErrorTypes],
+                                               amount_claims_to_apply_transformation=1):
     candidate_corrupted_augmented_summaries = []
     count = 0
-    claim_decomposition = text_decomposition(text=summary,decomposition_method=ClaimDecompositionMethod.SENTENCES)
+    claim_decomposition = text_decomposition(text=summary, decomposition_method=CLAIM_DECOMPOSITION_METHOD)
     logger.info(f"Performed claim decomposition: {claim_decomposition}")
 
-    suitable_transformation_claims = all_suitable_transformation_possible(summary,claim_decomposition)
+    suitable_transformation_claims = all_suitable_transformation_possible(summary, claim_decomposition)
     logger.info(f"Performed detecting on suitable transformation claims: {suitable_transformation_claims}")
     logger.info(f"Detected {len(suitable_transformation_claims)} suitable transformation allocations")
     if not suitable_transformation_claims:
         logger.warning("No suitable transformation claims found — nothing to transform.")
 
-    claims_after_transformation = apply_factuality_transformation_on_claims(source_article,suitable_transformation_claims)
+    claims_after_transformation = apply_factuality_transformation_on_claims(source_article,
+                                                                            suitable_transformation_claims)
     logger.info(f"Claims after transformation: {len(claims_after_transformation)} claims modified")
     transformed_claims_variations = control_claims_after_transformation(
         claims_after_transformation,
-        percentage_of_correctness_errors_transformation=93.0
+        percentage_of_correctness_errors_transformation=PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY
     )
     logger.info(f"Generated {len(transformed_claims_variations)} transformed claim variations")
     if not transformed_claims_variations:
@@ -826,19 +797,21 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
         count += 1
 
     if len(claims_after_transformation) > 1 and len(candidate_corrupted_augmented_summaries) == 0:
-        logger.debug(f"Summary recompose return 0 corrupted summaries  but there is {len(claims_after_transformation)} amount of claims after transformation")
+        logger.debug(
+            f"Summary recompose return 0 corrupted summaries  but there is {len(claims_after_transformation)} amount of claims after transformation")
         return
 
     diverse = filter_diverse_summaries(
         golden=summary,
         cands=candidate_corrupted_augmented_summaries,
-        max_same=0.95
+        max_same=MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD
     )
     logger.info(f"After diversity filtering, {len(diverse)} summaries remain")
 
     if len(diverse) == 0:
         logger.info(f"After diversity filtering, {len(diverse)} summaries remain.")
-        logger.info(f"Set the total summary without filtering, about {len(candidate_corrupted_augmented_summaries)} summaries.")
+        logger.info(
+            f"Set the total summary without filtering, about {len(candidate_corrupted_augmented_summaries)} summaries.")
         final_summaries = candidate_corrupted_augmented_summaries
     else:
         logger.info(f"After diversity filtering, {len(diverse)} summaries remain.")
@@ -849,16 +822,15 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
     else:
         logger.info(f"Total final augmented corrupted summaries {len(final_summaries)}")
         return final_summaries
-    #return candidate_corrupted_augmented_summaries
-    #sum = verify_transformed_summary_grammar(summary_after_augmentation['corrupted_summary'])
+    # return candidate_corrupted_augmented_summaries
+    # sum = verify_transformed_summary_grammar(summary_after_augmentation['corrupted_summary'])
 
-    #claims_after_transformation_hallu=apply_hallucinations_transformation_on_claims(claim_decomposition,suitable_transformation_claims)
-    #logger.info(f"Performed transformation on suitable: {claims_after_transformation}")
+    # claims_after_transformation_hallu=apply_hallucinations_transformation_on_claims(claim_decomposition,suitable_transformation_claims)
+    # logger.info(f"Performed transformation on suitable: {claims_after_transformation}")
 
-    #number_swap = number_swap_transformation(summary_decomposition_claims=claim_decomposition,number_swap_transformation_amount=1)
-    #claim_decomposition = summary_claim_decomposition(text=summary)
+    # number_swap = number_swap_transformation(summary_decomposition_claims=claim_decomposition,number_swap_transformation_amount=1)
+    # claim_decomposition = summary_claim_decomposition(text=summary)
     # logger.info(f"Perform claim decomposition: {claim_decomposition}")
-
 
 
 # def main():
@@ -988,7 +960,6 @@ def process_row(row, transform_types):
         source = row['premise']
         gold = row['hypothesis']
 
-
         corrupted_list = correctness_errors_transformation_workflow(
             summary=gold,
             source_article=source,
@@ -1012,9 +983,9 @@ def process_row(row, transform_types):
 
 def main():
     # Hardcoded configuration
-    max_workers = 2           # Number of parallel threads to use
-    start_row = 36            # <-- first row index (inclusive)
-    end_row = 50             # <-- one past the last row index (exclusive)
+    max_workers = 3  # Number of parallel threads to use
+    start_row = 40  # <-- first row index (inclusive)
+    end_row = 55  # <-- one past the last row index (exclusive)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"
@@ -1100,7 +1071,6 @@ def main():
         raise
 
 
-
 if __name__ == "__main__":
     try:
         main()
@@ -1145,7 +1115,6 @@ if __name__ == "__main__":
 #
 #     print(f"Successfully processed {len(new_rows)} rows and saved to {output_csv_path}")
 #     return result_df
-
 
 
 # Example of how to call the main function:

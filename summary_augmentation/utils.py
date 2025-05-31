@@ -20,6 +20,7 @@ from summary_augmentation.correctness_errors_prompts import TransformationDetail
 
 from difflib import SequenceMatcher
 
+
 import re
 from Levenshtein import ratio
 import itertools
@@ -39,6 +40,12 @@ class CorrectnessErrorTypes(str, Enum):
     VERB_GENDER_SWAP = "verb_gender_swap"
     VERB_TENSE_SWAP = "verb_tense_swap"
     DIRECTIONAL_PREPOSITION_SWAP = "directional_preposition_swap"
+
+    PRONOUN_REFERENCE_ERRORS = "pronoun_reference_errors"
+    SPECIFICITY_SHIFT_ERRORS = "specificity_shift_errors"
+    HOMOGRAPHIC_GENDER_ERRORS = "homographic_gender_errors"
+    IMPERSONAL_TO_PERSONAL_VERB_ERRORS = "impersonal_to_personal_verb_errors"
+
 
     # Misc
     MEASURE_UNIT_SWAP = "measure_unit_swap"
@@ -128,9 +135,11 @@ def extract_named_entities(text: str, min_score: float = 0.6):
             score = entity.get('score', 0)
             if score < min_score:
                 continue
+            if "#" in entity['word'] or len(entity['word']) < 2:
+                continue
             entities_list.append({
                 "entity_group": entity['entity_group'],
-                "word": entity['word'].replace("##", ""),
+                "word": entity['word'].replace("#", "").strip(),
                 "start": entity['start'],
                 "end": entity['end'],
                 "score": score
@@ -444,7 +453,33 @@ def number_swap_transformation(
 #
 #     return result
 
+INSTRUCTION_TEMPLATES = {
+    CorrectnessErrorTypes.ENTITY_PERSON_SWAP: (
+        "For the 'entity_person_swap' error transformation type, you can perform word swaps "
+        "only from the given person list: {entities}."
+    ),
+    CorrectnessErrorTypes.ENTITY_LOCATION_SWAP: (
+        "For the 'entity_location_swap' error transformation type, consider swapping locations "
+        "from the following list: {entities}."
+    ),
+    CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP: (
+        "For the 'entity_organization_swap' error transformation type, you can replace organization "
+        "names using the provided list: {entities}."
+    ),
+    # Add other instruction templates as needed
+}
 
+def ner_instructions(mapped_ner_results: Dict[CorrectnessErrorTypes, List[str]]) -> str:
+    # Instruction templates for each error type
+    instructions = []
+
+    for error_type, entities in mapped_ner_results.items():
+        template = INSTRUCTION_TEMPLATES.get(error_type)
+        if template:
+            instruction = template.format(entities=", ".join(entities))
+            instructions.append(instruction)
+
+    return "\n".join(instructions)
 def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
     """
     Rebuilds the summary by replacing original claims with their transformed versions,
@@ -515,43 +550,51 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
                         "replacement": repl
                     })
                     total_transformations += 1
-                    break
 
             # 3b) LLM-generated minimal patch
-            elif t.get("llm_generated"):
-                o = t["original_claim"]
-                n = t["transformed_claim"]
-                # find common prefix
-                i = 0
-                while i < len(o) and i < len(n) and o[i] == n[i]:
-                    i += 1
-                # find common suffix
-                j_o, j_n = len(o), len(n)
-                while j_o > i and j_n > i and o[j_o - 1] == n[j_n - 1]:
-                    j_o -= 1
-                    j_n -= 1
-                o_mid = o[i:j_o]
-                n_mid = n[i:j_n]
+            elif t.get("llm_generated") and "diffs" in t:
+                diffs = t["diffs"]
+                current_claim = apply_diffs(current_claim, diffs)
+                applied.append({
+                    "type": t["error_type"],
+                    "diffs": diffs
+                })
+                total_transformations += len(diffs)
 
-                if o_mid and o_mid in current_claim:
-                    current_claim = current_claim.replace(o_mid, n_mid)
-                    applied.append({
-                        "type": t["error_type"],
-                        "original": o_mid,
-                        "replacement": n_mid
-                    })
-                    total_transformations += 1
-                    break
-
-                elif not o_mid and n_mid:
-                    current_claim = current_claim[:i] + n_mid + current_claim[i:]
-                    applied.append({
-                        "type": t["error_type"],
-                        "original": "",
-                        "replacement": n_mid
-                    })
-                    total_transformations += 1
-                    break
+            # elif t.get("llm_generated"):
+            #     o = t["original_claim"]
+            #     n = t["transformed_claim"]
+            #     # find common prefix
+            #     i = 0
+            #     while i < len(o) and i < len(n) and o[i] == n[i]:
+            #         i += 1
+            #     # find common suffix
+            #     j_o, j_n = len(o), len(n)
+            #     while j_o > i and j_n > i and o[j_o - 1] == n[j_n - 1]:
+            #         j_o -= 1
+            #         j_n -= 1
+            #     o_mid = o[i:j_o]
+            #     n_mid = n[i:j_n]
+            #
+            #     if o_mid and o_mid in current_claim:
+            #         current_claim = current_claim.replace(o_mid, n_mid)
+            #         applied.append({
+            #             "type": t["error_type"],
+            #             "original": o_mid,
+            #             "replacement": n_mid
+            #         })
+            #         total_transformations += 1
+            #         break
+            #
+            #     elif not o_mid and n_mid:
+            #         current_claim = current_claim[:i] + n_mid + current_claim[i:]
+            #         applied.append({
+            #             "type": t["error_type"],
+            #             "original": "",
+            #             "replacement": n_mid
+            #         })
+            #         total_transformations += 1
+            #         break
 
         # 4) Save patched claim
         modified_claims[best_match] = current_claim
@@ -560,7 +603,8 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
             "transformed_claim": current_claim,
             "applied_transformations": applied
         })
-        logger.info(" Finished claim. Applied %d transforms", len(applied))
+        logger.info("recompose_transformed_summary - Finished claim. Applied total %d transforms", len(applied))
+        logger.info(f"recompose_transformed_summary: \noriginal claim: {original_claim}\ntransformed_claim: {current_claim}")
 
     # 5) Rebuild the full summary and score
     corrupted_summary = " ".join(modified_claims)
@@ -574,7 +618,34 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
         "transformation_score": transformation_score
     }
 
+def get_hallucination_instructions(error_type):
+    """Helper function to get hallucination instructions based on error type"""
+    # Define instructions for each hallucination type
+    instructions = {
+        CorrectnessErrorTypes.ENTITY_PERSON_REPLACE: "Replace the person entity with a different plausible person that would make sense in context but is factually incorrect",
+        CorrectnessErrorTypes.ENTITY_LOCATION_REPLACE: "Replace the location entity with a different plausible location that would make sense in context but is factually incorrect",
+        CorrectnessErrorTypes.ENTITY_ORGANIZATION_REPLACE: "Replace the organization entity with a different plausible organization that would make sense in context but is factually incorrect",
+        CorrectnessErrorTypes.ENTITY_DATE_REPLACE: "Replace the date entity with a different plausible date that would make sense in context but is factually incorrect",
+        CorrectnessErrorTypes.NUMBER_ADD: "Add a specific, plausible number to the claim where it would naturally fit (like quantities, measurements, or statistics)"
+    }
 
+    return instructions.get(error_type,
+                            "Apply a hallucination transformation that is contextually plausible but factually incorrect")
+
+def get_transformation_instructions(error_type):
+    """Helper function to get transformation instructions based on error type"""
+    # Define instructions for each error type
+    instructions = {
+        CorrectnessErrorTypes.SENTENCE_NEGATION: "Negate the meaning of the sentence",
+        CorrectnessErrorTypes.MEASURE_UNIT_SWAP: "Replace the measurement unit with a different one",
+        CorrectnessErrorTypes.NOUN_GENDER_SWAP: "Change the gender of the noun",
+        CorrectnessErrorTypes.VERB_TENSE_SWAP: "Change the tense of the verb",
+        CorrectnessErrorTypes.VERB_GENDER_SWAP: "Change the gender of the verb",
+        CorrectnessErrorTypes.ENTITY_EVENT_SWAP: "Replace the event with a different event",
+        CorrectnessErrorTypes.ENTITY_DATE_SWAP: "Replace the date with a different date"
+    }
+
+    return instructions.get(error_type, "Apply the transformation")
 # !!! worked !!!
 # def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
 #     """
@@ -822,6 +893,15 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
 #     return result
 
 
+def apply_diffs(claim, diffs):
+    # Apply from last to first to keep indices correct
+    for diff in sorted(diffs, key=lambda d: d['orig_start'], reverse=True):
+        claim = (
+            claim[:diff['orig_start']] +
+            diff['trans_text'] +
+            claim[diff['orig_end']:]
+        )
+    return claim
 
 def control_claims_after_transformation(
     claims_after_transformation: Dict[str, List[Dict[str, Any]]],
@@ -866,11 +946,27 @@ def control_claims_after_transformation(
         for claim, errs in allocation:
             if errs:
                 grouped[claim] = errs
-        results.append(grouped)
+        grouped_filtered = apply_transformation_restrictions(grouped)
+        results.append(grouped_filtered)
+        # results.append(grouped)
 
     return results
 
-
+def apply_transformation_restrictions(grouped):
+    """Apply restriction rules to a grouped allocation of transformations."""
+    # Rule: sentence_negation only allowed if it is the only transformation for that claim
+    filtered = {}
+    for claim, errors in grouped.items():
+        # get types of errors for this claim
+        types = {e['error_type'] for e in errors}
+        # If 'sentence_negation' is in types, and there are also other types, remove it
+        if 'sentence_negation' in types and len(types) > 1:
+            filtered_errors = [e for e in errors if e['error_type'] != 'sentence_negation']
+            if filtered_errors:
+                filtered[claim] = filtered_errors
+        else:
+            filtered[claim] = errors
+    return filtered
 def normalize_heb(text: str) -> str:
     """
     Lowercase, strip punctuation and extra whitespace.
@@ -1021,37 +1117,6 @@ def token_overlap(a: str, b: str) -> float:
     return len(a_tok & b_tok) / min(len(a_tok), len(b_tok))
 
 
-# def filter_diverse_summaries(
-#     golden: str,
-#     cands: List[dict],
-#     max_same: float = 0.8
-# ) -> List[dict]:
-#     """
-#     Keep only those candidates whose token-overlap with the golden
-#     summary is <= max_same, and which are also <= max_same with any
-#     already-kept candidate.
-#     """
-#     kept = []
-#     for c in cands:
-#         txt = c['corrupted_summary']
-#
-#         # 1) filter vs. golden
-#         if token_overlap(txt, golden) > max_same:
-#             continue
-#
-#         # 2) filter vs. already-kept
-#         too_similar = False
-#         for k in kept:
-#             if token_overlap(txt, k['corrupted_summary']) > max_same:
-#                 too_similar = True
-#                 break
-#         if too_similar:
-#             continue
-#
-#         kept.append(c)
-#     return kept
-
-
 def jaccard(tokens1, tokens2):
     s1, s2 = set(tokens1), set(tokens2)
     if not s1 and not s2:
@@ -1099,6 +1164,40 @@ def filter_diverse_summaries(
 
     return kept
 
+
+
+def find_diff_and_index(original: str, transformed: str):
+    matcher = SequenceMatcher(None, original, transformed)
+    # Returns a list of "opcodes" describing how to turn original into transformed
+    # Each opcode: (tag, i1, i2, j1, j2)
+    # 'replace', 'delete', 'insert', or 'equal'
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != 'equal':
+            # Only process the *first* difference found
+            return {
+                'start': i1,
+                'end': i2,
+                'original_span': original[i1:i2],
+                'replacement_span': transformed[j1:j2]
+            }
+    # No difference found
+    return None
+
+def compute_all_diffs(original, transformed):
+    matcher = SequenceMatcher(None, original, transformed)
+    diffs = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != 'equal':
+            diffs.append({
+                'tag': tag,  # 'replace', 'insert', 'delete'
+                'orig_start': i1,
+                'orig_end': i2,
+                'trans_start': j1,
+                'trans_end': j2,
+                'orig_text': original[i1:i2],
+                'trans_text': transformed[j1:j2]
+            })
+    return diffs
 
 # def llm_query_to_openai(system_message, user_message, output_object: Type[BaseModel]):
 #
