@@ -9,11 +9,12 @@
 # TODO: provide only the relevant example of the error_type to LLM prompt - V
 # TODO: Example to LLM
 # TODO: when perform sentence negation no other transformation occurs - V
+# TODO: NER replacement is not too similar - V
 
 from summary_augmentation.utils import CorrectnessErrorTypes, ClaimDecompositionMethod
 
-MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.9  # Control
-PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY = 93  # Control how much corrupted the negative summary will be (how much error transformations perform on in)
+MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.94  # Control
+PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY = 95  # Control how much corrupted the negative summary will be (how much error transformations perform on in)
 CLAIM_DECOMPOSITION_METHOD = ClaimDecompositionMethod.SENTENCES
 
 # Main configuration - just set True/False for each transformation type
@@ -27,6 +28,11 @@ TRANSFORMATION_CONFIG = {
         CorrectnessErrorTypes.SPECIFICITY_SHIFT_ERRORS: True,
         CorrectnessErrorTypes.HOMOGRAPHIC_GENDER_ERRORS: True,
         CorrectnessErrorTypes.IMPERSONAL_TO_PERSONAL_VERB_ERRORS: True,
+        CorrectnessErrorTypes.INCREMENTAL_TEMPORAL_STATE_MUTATIONS: False,
+        CorrectnessErrorTypes.EVIDENTIALITY_SOURCE_ATTRIBUTION_COLLAPSE: False,
+        CorrectnessErrorTypes.VERB_TEMPLATE_AGENCY_REVERSAL: True,
+        CorrectnessErrorTypes.DOUBLE_VERB_DEPENDENCY_ERRORS: True,
+        CorrectnessErrorTypes.CONSTRUCT_STATE_CONFUSION: True
     },
     "general_llm_transformations": {
         CorrectnessErrorTypes.SENTENCE_NEGATION: True,

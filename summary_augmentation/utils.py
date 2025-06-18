@@ -8,7 +8,6 @@ from enum import Enum
 from pydantic import BaseModel, PrivateAttr, Field
 from openai import OpenAI
 # Define OpenAI API credentials
-import google.generativeai as genai
 import re
 import random
 from typing import List, Dict, Tuple, Optional, Any
@@ -45,6 +44,11 @@ class CorrectnessErrorTypes(str, Enum):
     SPECIFICITY_SHIFT_ERRORS = "specificity_shift_errors"
     HOMOGRAPHIC_GENDER_ERRORS = "homographic_gender_errors"
     IMPERSONAL_TO_PERSONAL_VERB_ERRORS = "impersonal_to_personal_verb_errors"
+    INCREMENTAL_TEMPORAL_STATE_MUTATIONS = "incremental_temporal_state_mutations"
+    EVIDENTIALITY_SOURCE_ATTRIBUTION_COLLAPSE = "evidentiality_source_attribution_collapse"
+    VERB_TEMPLATE_AGENCY_REVERSAL = "verb_template_agency_reversal"
+    DOUBLE_VERB_DEPENDENCY_ERRORS = "double_verb_dependency_errors"
+    CONSTRUCT_STATE_CONFUSION = "construct_state_confusion"
 
 
     # Misc
@@ -79,9 +83,6 @@ OPENAI_API_KEY = "***REMOVED-API-KEY***"
 #OPENAI_API_KEY = "***REMOVED-API-KEY***"
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-GEMINI_API_KEY = "***REMOVED-API-KEY***"
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')
 
 
 # Module-scope initialization
@@ -179,26 +180,7 @@ def extract_named_entities(text: str, min_score: float = 0.6):
 #
 #     return entities_list
 
-def llm_query_to_gemini(system_message, user_message, output_object: Type[BaseModel]):
-    print(f"prompt: {system_message}\n {user_message}")
-    try:
-        response = model.generate_content(
-            f"""
-            {system_message}
-            {user_message}
-            """
-        )
 
-        result_json = response.text.strip()
-        # Remove triple backticks and any markdown-style JSON markers
-        clean_json = re.sub(r"^```(?:json)?|```$", "", result_json.strip(), flags=re.MULTILINE).strip()
-        print("\nRaw response:")
-        print(result_json)
-        result = output_object.model_validate_json(clean_json)
-        return result
-    except Exception as e:
-        print(f"Exception during LLM query or parsing: {e}")
-        return None
 
 def text_decomposition(
     text: str,
@@ -495,6 +477,7 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
 
     total_transformations = 0
     transformations_performed = []
+    error_type_names = set()
     logger.info("Starting recompose: %d claims to check", len(transformed_claims))
 
     # 2) For each claim with transformations
@@ -537,7 +520,7 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
         for t_type, group in items:
             llm_opts = [x for x in group if x.get("llm_generated")]
             t = llm_opts[0] if llm_opts else group[0]
-
+            error_type_names.add(t["error_type"])
             # 3a) Static replace (entity or number)
             if "original_entity" in t and "replacement_entity" in t:
                 orig = t["original_entity"]
@@ -615,7 +598,8 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
         "corrupted_summary": corrupted_summary,
         "transformations_performed": total_transformations,
         "transformation_list": transformations_performed,
-        "transformation_score": transformation_score
+        "transformation_score": transformation_score,
+        "distinct_errors_type_names": list(error_type_names)
     }
 
 def get_hallucination_instructions(error_type):
@@ -1143,10 +1127,11 @@ def filter_diverse_summaries(
         bi  = jaccard(ngram(t1, 2), ngram(t2, 2))
         return max(uni, bi)
 
+
     kept = []
     for c in cands:
         txt = c['corrupted_summary']
-
+        max_same = max_same + 0.0013 * (len(c.get('distinct_errors_type_names', [])) ** 0.75)
         # 1) filter vs. golden
         if overlap(txt, golden) > max_same:
             continue

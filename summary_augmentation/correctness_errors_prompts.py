@@ -325,56 +325,7 @@ def faithfulness_summary_back_translation_and_paraphrasing(faithfulness_summary,
     {output_instructions_parser.get_format_instructions()}
     """
     return system_message, user_message
-# def verify_grammar_transform_summary_prompt(corrupted_transformed_summary, output_instructions_parser):
-#
-#     """
-#     Sends the corrupted summary to an LLM for grammar verification while preserving intentional errors.
-#
-#     Args:
-#         corrupted_transformed_summary: The summary with intentional errors to check
-#
-#     Returns:
-#         Grammar-verified summary that preserves the intentional errors, or the original if too different
-#     """
-#
-#     # Define the system prompt
-#     system_message = """
-#     אתה מומחה דקדוק עברי. המשימה שלך היא לתקן בעיות דקדוקיות בלבד בטקסט, מבלי לשנות את התוכן או לתקן שגיאות עובדתיות או מהותיות.
-#
-#     עקוב אחר ההנחיות הבאות בקפידה:
-#     1. תקן רק שגיאות דקדוקיות (כמו התאמת מגדר, מספר, זמני פעלים).
-#     2. אל תתקן טעויות תוכן, עובדות לא נכונות, מספרים שגויים, או שמות שגויים.
-#     3. אל תוסיף או תמחק מידע.
-#     4. שמור על כל השגיאות העובדתיות והמהותיות - הן הוכנסו בכוונה ואסור לשנות אותן.
-#     5. בצע שינויים מינימליים בלבד - רק מה שנדרש לתקינות דקדוקית ותחבירית.
-#     6. אל תוסיף הערות או הסברים לגבי השינויים שביצעת.
-#
-#     למשל, אם הטקסט אומר "142% משטח שבאו לא מכוסים מים", אל תתקן את המספר הלא הגיוני 142% או את השם "שבאו", אלא רק דאג שהמילים מתאימות זו לזו מבחינה דקדוקית.
-#     דוגמא:
-#
-#          :שגיאת מילת יחס
-#     טקסט שגוי: "החוקרים הגיעו על מסקנה מעניינת."
-#     תיקון דקדוקי: "החוקרים הגיעו למסקנה מעניינת."
-#     הסבר: הביטוי הנכון הוא "להגיע למסקנה" (עם מילת היחס "ל") ולא "להגיע על מסקנה".
-#
-#         שגיאת סדר מילים
-#     טקסט שגוי: "המחקר החדש בוצע על ידי המדענים המובילים בעולם שלושה."
-#     תיקון דקדוקי: "המחקר החדש בוצע על ידי שלושה מהמדענים המובילים בעולם."
-#     הסבר: המספר "שלושה" צריך להופיע לפני המושא ("מדענים") ולא אחריו.
-#
-#     שגיאות מסוג מגדר לשם עצם או פועל ושגיאות מסוג זמן - אסור לך לשנות
-#     """
-#
-#     # Define the user prompt
-#     user_message = f"""
-#     בדוק את הטקסט הבא מבחינה דקדוקית בלבד. תקן רק שגיאות דקדוק כמו התאמת מגדר, מספר וזמני פעלים, אבל אל תשנה שמות, מספרים, עובדות, או תוכן.
-#     הטקסט לבדיקה:
-#     "{corrupted_transformed_summary}"
-#
-#     The response should be in JSON in the EXACT format:
-#     {output_instructions_parser.get_format_instructions()}
-#     """
-#     return system_message, user_message
+
 
 
 

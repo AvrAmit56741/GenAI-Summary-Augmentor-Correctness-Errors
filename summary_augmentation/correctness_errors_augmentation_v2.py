@@ -9,7 +9,8 @@ import os
 from typing import List, Dict, Any
 import logging
 from typing import List
-
+import random
+import Levenshtein
 import datetime
 
 from typing import Dict, List, Any, Tuple
@@ -369,16 +370,31 @@ def apply_factuality_transformation_on_claims(source_article: str,
                         e for e in source_entities_by_type[error_type]
                         if not is_same_entity(e, word_to_replace)
                     ]
+                    logger.info(f"NER replacement candidate for error_type {error_type}: {replacement_candidates}")
                     if replacement_candidates:
                         # Choose a replacement entity (using first one for deterministic behavior)
                         # Could use random.choice(replacement_candidates) for variety
-                        replacement_entity = replacement_candidates[0]
+                        # replacement_entity = replacement_candidates[0]
+                        max_attempts = 5
+                        replacement_entity = None
+
+                        for _ in range(max_attempts):
+                            candidate = random.choice(replacement_candidates)
+                            similarity = Levenshtein.ratio(candidate, word_to_replace)
+                            if similarity < 0.57:
+                                replacement_entity = candidate
+                                break
+
+                        if replacement_entity is None:
+                            logger.info(f"NER error type of: {error_type}: didnt find replacement_entity with lower similarity, choose default {replacement_candidates[0]}")
+                            replacement_entity = replacement_candidates[0]
 
                         current_claim = current_claim_versions.get(original_claim, original_claim)
 
                         pattern = r'\b' + re.escape(word_to_replace) + r'\b'
                         if re.search(pattern, current_claim):
                             transformed_claim = re.sub(pattern, replacement_entity, current_claim)
+                            logger.info(f"Replace NER. replacement_entity: {replacement_entity}, word_to_replace: {word_to_replace}, error_type: {error_type}")
                             # Update the current version of this claim for future transformations
                             current_claim_versions[original_claim] = transformed_claim
                             transformed_claims[original_claim].append({
@@ -464,11 +480,13 @@ def apply_factuality_transformation_on_claims(source_article: str,
                 # unique_transformation_instructions = get_transformation_instructions(error_type)
 
                 # Call LLM for transformation
+                logger.info("Perform summary_negative_augmentation on hebrew")
                 llm_result = summary_negative_augmentation(
                     apply_transformation_types=[error_type],
                     transformation_examples=hebrew_filtered_examples.get(error_type, []),
                     suitable_claims_decomposition_list=suitable_claims_decomposition_list,
-                    unique_transformation_instructions=""
+                    unique_transformation_instructions="",
+                    #model='claude'
                 )
 
                 # Process results
@@ -503,6 +521,7 @@ def apply_factuality_transformation_on_claims(source_article: str,
                 # unique_transformation_instructions = get_transformation_instructions(error_type)
 
                 # Call LLM for transformation
+                logger.info("Perform summary_negative_augmentation on general")
                 llm_result = summary_negative_augmentation(
                     apply_transformation_types=[error_type],
                     transformation_examples=general_filtered_examples.get(error_type, []),
@@ -984,8 +1003,8 @@ def process_row(row, transform_types):
 def main():
     # Hardcoded configuration
     max_workers = 3  # Number of parallel threads to use
-    start_row = 40  # <-- first row index (inclusive)
-    end_row = 55  # <-- one past the last row index (exclusive)
+    start_row = 1  # <-- first row index (inclusive)
+    end_row = 50  # <-- one past the last row index (exclusive)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"

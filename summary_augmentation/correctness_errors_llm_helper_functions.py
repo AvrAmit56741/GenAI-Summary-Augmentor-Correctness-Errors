@@ -16,6 +16,7 @@ import google.generativeai as genai
 from typing import List, Dict, Type
 from langchain_openai import ChatOpenAI
 from difflib import SequenceMatcher
+from anthropic import Anthropic
 
 from summary_augmentation.correctness_errors_prompts import TransformationDetail, SummaryDecompositionClaims, \
     NegativeAugmentationSummary
@@ -25,15 +26,16 @@ from summary_augmentation.correctness_errors_prompts import verify_grammar_trans
     suitable_claim_decomposition_permissive_prompt,faithfulness_summary_back_translation_and_paraphrasing
 
 # Define the main data structure
-
-
+import google.generativeai as genai
 GEMINI_API_KEY = "***REMOVED-API-KEY***"
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.0-flash')
+
 # Define OpenAI API credentials
 # EYAL
 OPENAI_API_KEY = "***REMOVED-API-KEY***"
-
+CLAUDE_API_KEY = "***REMOVED-API-KEY***"
+client_claude = Anthropic(api_key=CLAUDE_API_KEY)
 # AMIT
 # OPENAI_API_KEY = "***REMOVED-API-KEY***"
 llm = ChatOpenAI(
@@ -44,13 +46,87 @@ llm = ChatOpenAI(
     response_format="json_object"
 )
 client = OpenAI(api_key=OPENAI_API_KEY)
+def llm_query_to_claude(system_message: str, user_message: str, output_object: Type[BaseModel], parser=None):
+    """
+    Query Claude AI with system and user messages, expecting a structured JSON response.
+
+    Args:
+        system_message: The system prompt/instructions
+        user_message: The user's message/query
+        output_object: Pydantic BaseModel class for output validation
+        parser: Optional retry parser for handling parsing errors
+
+    Returns:
+        Parsed object of type output_object or None if failed
+    """
+    print(f"prompt: {system_message}\n {user_message}")
+
+    try:
+        # Create the message with explicit JSON request
+        enhanced_user_message = f"{user_message}\n\nPlease respond with valid JSON only."
+
+        response = client_claude.messages.create(
+            #model="claude-3-7-sonnet-20250219",
+            model="claude-3-5-sonnet-20241022",  # or "claude-3-opus-20240229" for more powerful model
+            max_tokens=2000,
+            temperature=0.0,
+            system=system_message,
+            messages=[
+                {"role": "user", "content": enhanced_user_message}
+            ]
+        )
+
+        # Extract the raw response
+        result_json = response.content[0].text
+        print("\nRaw response:")
+        print(result_json.encode('utf-8').decode('utf-8'))
+
+        # Use the retry parser if provided, otherwise fallback to direct validation
+        if parser:
+            # The retry parser will handle any parsing errors and retry if needed
+            try:
+                result = parser.parse(result_json)
+                return result
+            except Exception as parsing_error:
+                # If the retry parser fails after all retries, log it
+                print(f"Retry parser failed: {parsing_error}")
+                # Fallback to direct parsing as a last resort
+                return output_object.model_validate_json(result_json)
+        else:
+            # Direct parsing without retry
+            return output_object.model_validate_json(result_json)
+
+    except Exception as e:
+        print(f"Exception during Claude LLM query or parsing: {e}")
+        return None
+
+def llm_query_to_gemini(system_message, user_message, output_object: Type[BaseModel], parse=None):
+    print(f"prompt: {system_message}\n {user_message}")
+    try:
+        response = model.generate_content(
+            f"""
+            {system_message}
+            {user_message}
+            """
+        )
+
+        result_json = response.text.strip()
+        # Remove triple backticks and any markdown-style JSON markers
+        clean_json = re.sub(r"^```(?:json)?|```$", "", result_json.strip(), flags=re.MULTILINE).strip()
+        print("\nRaw response:")
+        print(result_json)
+        result = output_object.model_validate_json(clean_json)
+        return result
+    except Exception as e:
+        print(f"Exception during LLM query or parsing: {e}")
+        return None
 
 
-def llm_query_to_openai(system_message, user_message, output_object: Type[BaseModel], parser=None):
+def llm_query_to_openai(system_message, user_message, output_object: Type[BaseModel], parser=None, openai_model="gpt-4o"):
     print(f"prompt: {system_message}\n {user_message}")
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=openai_model,
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message}
@@ -85,7 +161,7 @@ def llm_query_to_openai(system_message, user_message, output_object: Type[BaseMo
 
 
 def choose_suitable_claim(claim_decomposition: SummaryDecompositionClaims, apply_transformation_types,
-                          transformation_examples) -> str:
+                          transformation_examples, model="openai") -> str:
     class SuitableClaimDecomposition(BaseModel):
         claim_correctness_error_justification: str = Field(
             description="justification which explain wht this claim can perform the specific correctness error transformation type")
@@ -111,8 +187,12 @@ def choose_suitable_claim(claim_decomposition: SummaryDecompositionClaims, apply
                                                                              ensure_ascii=False),
                                                                   suitable_claims_decomposition_base_parser)
 
-    result = llm_query_to_openai(system_message=system, user_message=user, output_object=TransformationSuitableClaims,
-                                 parser=retry_parser)
+    if model=="openai":
+        result = llm_query_to_openai(system_message=system, user_message=user, output_object=TransformationSuitableClaims,parser=retry_parser)
+    elif model=="claude":
+        result = llm_query_to_claude(system_message=system, user_message=user, output_object=TransformationSuitableClaims,parser=retry_parser)
+    else:
+        result = llm_query_to_openai(system_message=system, user_message=user, output_object=TransformationSuitableClaims,parser=retry_parser)
     return result
 
 
@@ -120,7 +200,8 @@ def summary_negative_augmentation(apply_transformation_types,
                                   transformation_examples: dict,
                                   suitable_claims_decomposition_list,
                                   # claims_decomposition_list: List[str] ,
-                                  unique_transformation_instructions):
+                                  unique_transformation_instructions,
+                                  model='openai'):
     # Initialize the OpenAI client directly
     class CorruptedTransformedClaims(BaseModel):
         original_and_corrupted_transformed_claims: List[Tuple[str, int]] = Field(
@@ -141,7 +222,13 @@ def summary_negative_augmentation(apply_transformation_types,
                                                              transformation_examples=transformation_examples,
                                                              output_instructions_parser=parser)
         # Send request to the model
-        result = llm_query_to_openai(system_message=system, user_message=user, output_object=CorruptedTransformedClaims)
+        if model == "openai":
+            result = llm_query_to_openai(system_message=system, user_message=user, output_object=CorruptedTransformedClaims)
+        elif model == "claude":
+            result = llm_query_to_claude(system_message=system, user_message=user, output_object=CorruptedTransformedClaims)
+        else:
+            result = llm_query_to_openai(system_message=system, user_message=user, output_object=CorruptedTransformedClaims)
+
 
         # Process results to ensure original claims come from suitable_claims_decomposition_list
         # Re‐map the “original” index back to the true claim text
