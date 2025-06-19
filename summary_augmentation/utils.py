@@ -49,6 +49,7 @@ class CorrectnessErrorTypes(str, Enum):
     VERB_TEMPLATE_AGENCY_REVERSAL = "verb_template_agency_reversal"
     DOUBLE_VERB_DEPENDENCY_ERRORS = "double_verb_dependency_errors"
     CONSTRUCT_STATE_CONFUSION = "construct_state_confusion"
+    SUBJECT_VERB_PERSON_MISMATCH = "subject_verb_person_mismatch"
 
 
     # Misc
@@ -497,6 +498,7 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
                 best_match = i
         logger.debug(" Best match index=%s, similarity=%.3f", best_match, best_sim)
         if best_match is None:
+            logger.error(f"!! No suitable match found for original claim: '{original_claim}' (max_sim={best_sim:.3f}), skipping")
             continue
 
         # 2b) Prepare to patch this claim
@@ -508,6 +510,7 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
         for t in transformations:
             key = str(t["error_type"])
             transformations_by_type.setdefault(key, []).append(t)
+        logger.debug(f"   Transformations found for error types: {list(transformations_by_type.keys())}")
 
         # 2d) Sort so LLM-generated patches run first
         items = list(transformations_by_type.items())
@@ -518,6 +521,7 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
 
         # 3) Apply at most one transformation
         for t_type, group in items:
+            logger.debug(f"Attempting group error_type={t_type}, {len(group)} candidates (llm_generated={any(x.get('llm_generated') for x in group)})")
             llm_opts = [x for x in group if x.get("llm_generated")]
             t = llm_opts[0] if llm_opts else group[0]
             error_type_names.add(t["error_type"])
@@ -593,7 +597,8 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
     corrupted_summary = " ".join(modified_claims)
     total_claims = len(all_claims)
     transformation_score = total_transformations / total_claims if total_claims else 0
-
+    logger.info(f"Recompose complete: {total_transformations} transformations applied across {total_claims} claims (score={transformation_score:.3f})")
+    logger.info(f"Error types covered: {list(error_type_names)}")
     return {
         "corrupted_summary": corrupted_summary,
         "transformations_performed": total_transformations,

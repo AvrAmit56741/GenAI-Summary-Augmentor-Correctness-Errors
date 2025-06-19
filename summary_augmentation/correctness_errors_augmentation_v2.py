@@ -1003,13 +1003,17 @@ def process_row(row, transform_types):
 def main():
     # Hardcoded configuration
     max_workers = 3  # Number of parallel threads to use
-    start_row = 1  # <-- first row index (inclusive)
-    end_row = 50  # <-- one past the last row index (exclusive)
+    start_row = 45  # <-- first row index (inclusive)
+    end_row = 60  # <-- one past the last row index (exclusive)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"
-    output_json = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
-    output_csv = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
+    # input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"
+    # output_json = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
+    # output_csv = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
+    input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\train.csv"
+    output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\mafat_train_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
+    output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\mafat_train_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
+
 
     transform_types = [
         CorrectnessErrorTypes.ENTITY_PERSON_SWAP,

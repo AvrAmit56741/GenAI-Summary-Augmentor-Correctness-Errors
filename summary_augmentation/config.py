@@ -32,7 +32,8 @@ TRANSFORMATION_CONFIG = {
         CorrectnessErrorTypes.EVIDENTIALITY_SOURCE_ATTRIBUTION_COLLAPSE: False,
         CorrectnessErrorTypes.VERB_TEMPLATE_AGENCY_REVERSAL: True,
         CorrectnessErrorTypes.DOUBLE_VERB_DEPENDENCY_ERRORS: True,
-        CorrectnessErrorTypes.CONSTRUCT_STATE_CONFUSION: True
+        CorrectnessErrorTypes.CONSTRUCT_STATE_CONFUSION: True,
+        CorrectnessErrorTypes.SUBJECT_VERB_PERSON_MISMATCH: True
     },
     "general_llm_transformations": {
         CorrectnessErrorTypes.SENTENCE_NEGATION: True,
