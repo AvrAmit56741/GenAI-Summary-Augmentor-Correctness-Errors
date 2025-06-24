@@ -10,10 +10,11 @@
 # TODO: Example to LLM
 # TODO: when perform sentence negation no other transformation occurs - V
 # TODO: NER replacement is not too similar - V
+# TODO: Add rule: Homographic gender errors without NER (name swap)
 
 from summary_augmentation.utils import CorrectnessErrorTypes, ClaimDecompositionMethod
 
-MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.94  # Control
+MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.93  # Control
 PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY = 95  # Control how much corrupted the negative summary will be (how much error transformations perform on in)
 CLAIM_DECOMPOSITION_METHOD = ClaimDecompositionMethod.SENTENCES
 

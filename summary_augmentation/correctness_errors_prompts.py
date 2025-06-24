@@ -157,8 +157,9 @@ def apply_transformation_on_claims_prompt(claims_decomposition_list, suitable_cl
         - For each error transformation type, change only *ONE* word
         - Before perform the error transformation type, **VERIFY** that the claims **Suitable Claims Decomposition List** can apply all error transformation type mentioned.
         - **When perform transformation on an chosen text based on the error transformation type, the original claim cannot remain unchanged! perform transformation means to change the original data!**
+        - Ensure each corrupted claim remains **grammatically correct**, **natural**, and **fluent in Hebrew** and do **not** insert gibberish or ungrammatical constructions
 
-    **IMPORTANT**: Check the section of **Apply Error Transformation Rules Examples** to understand better how perform the hebrew error transformations
+    **IMPORTANT**: Consult the section of **Apply Error Transformation Rules Examples** to understand better how perform the hebrew error transformation types
 
     {unique_transformation_instructions}
     """

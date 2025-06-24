@@ -777,7 +777,6 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
                                                transformation_types: List[CorrectnessErrorTypes],
                                                amount_claims_to_apply_transformation=1):
     candidate_corrupted_augmented_summaries = []
-    count = 0
     claim_decomposition = text_decomposition(text=summary, decomposition_method=CLAIM_DECOMPOSITION_METHOD)
     logger.info(f"Performed claim decomposition: {claim_decomposition}")
 
@@ -798,22 +797,19 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
     if not transformed_claims_variations:
         logger.warning("No transformed claim variations were produced.")
 
+    count = 0
     for s in transformed_claims_variations:
         logger.debug(f"there are {len(transformed_claims_variations)} of transformed_claims_variations")
-        # stop as soon as we’ve collected enough valid ones
-        # if count >= 5:
-        #     break
-
-        # re-compose the summary object (dict with 'corrupted_summary', etc.)
         logger.debug(f"enter recompose_transformed_summary for claim variation {s}")
+
         summary_aug = recompose_transformed_summary(claim_decomposition, s)
         logger.debug(f"complete recompose_transformed_summary for claim variation: {s} and summary_aug: {summary_aug}")
-        # text = summary_aug['corrupted_summary']
-        # if not verify_transformed_summary_grammar(text):
-        #     continue
-        # summary_aug['corrupted_summary'] = text.strip()
+        logger.info(f"Appended summary_aug #{count + 1} to candidate_corrupted_augmented_summaries")
         candidate_corrupted_augmented_summaries.append(summary_aug)
         count += 1
+        if count > 50:
+            logger.warning("Reached 100 summary augmentations, breaking loop early.")
+            break
 
     if len(claims_after_transformation) > 1 and len(candidate_corrupted_augmented_summaries) == 0:
         logger.debug(
@@ -1003,8 +999,8 @@ def process_row(row, transform_types):
 def main():
     # Hardcoded configuration
     max_workers = 3  # Number of parallel threads to use
-    start_row = 45  # <-- first row index (inclusive)
-    end_row = 60  # <-- one past the last row index (exclusive)
+    start_row = 65  # <-- first row index (inclusive)
+    end_row = 90  # <-- one past the last row index (exclusive)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     # input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"
