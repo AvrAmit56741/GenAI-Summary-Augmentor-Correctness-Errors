@@ -17,19 +17,17 @@ from typing import Dict, List, Any, Tuple
 from collections import Counter, defaultdict
 
 # Configure the logger (only once, typically at the top of your script or entry point)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+#logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
 import json
 import summary_augmentation.correctness_errors_examples as correctness_errors_examples
 from openai import OpenAI
 # Define OpenAI API credentials
 # import google.generativeai as genai
-from langchain_openai import ChatOpenAI
 
 import threading
-import csv
-import json
-from concurrent.futures import ThreadPoolExecutor
+from summary_augmentation.logger_config import setup_logger
+logger = setup_logger(__name__)
 
 from summary_augmentation.correctness_errors_prompts import suitable_claim_decomposition_prompt, \
     claims_decomposition_prompt, apply_transformation_on_claims_prompt
@@ -113,8 +111,10 @@ def all_suitable_transformation_possible(text: str, claim_decomposition):
 
     # LLM-based transformation - First query with Hebrew examples and Hebrew transformation types
     try:
+        logger.info(
+            f"From all_suitable_transformation_possible - Activate LLM function of choose_suitable_claim - Hebrew Based Errors - Error types {hebrew_transformation_types_list}")
         hebrew_claim_results = choose_suitable_claim(claim_decomposition, hebrew_transformation_types_list,
-                                                     hebrew_filtered_examples)
+                                                     hebrew_filtered_examples, model="gemini")
         # Check if the result has the attribute 'suitable_claims' and process each entry.
         if hebrew_claim_results and hasattr(hebrew_claim_results, "suitable_claims"):
             for suitable_claim in hebrew_claim_results.suitable_claims:
@@ -145,7 +145,7 @@ def all_suitable_transformation_possible(text: str, claim_decomposition):
                 examples = {err_type: general_filtered_examples[err_type]}
             else:
                 continue
-
+            logger.info(f"From all_suitable_transformation_possible - Activate LLM function of choose_suitable_claim - General Based Errors - Error type {[err_type]}")
             # run the prompt for just this one error type
             result = choose_suitable_claim(
                 claim_decomposition,
@@ -325,7 +325,7 @@ def apply_factuality_transformation_on_claims(source_article: str,
     #     CorrectnessErrorTypes.ENTITY_DATE_SWAP: [],
     # }
     # # Extract named entities from the source article
-
+    logger.info("Enter function apply_factuality_transformation_on_claims: perform factuality transformations on suitable claims founs")
     hebrew_llm_transformations_dict, general_llm_transformations_dict = get_enabled_transformations_as_dicts()
     source_entities_by_type = get_entities_by_type(source_article)
 
@@ -348,13 +348,16 @@ def apply_factuality_transformation_on_claims(source_article: str,
 
     # Process each claim and its transformations
     logger.info("Processing %d claims for transformation", len(transformation_results))
+    logger.info("Phase 1 - map each claim to it's founded error type transformations")
     for original_claim, transformations in transformation_results.items():
+        logger.info(f"Start transformation for the claim: {original_claim}")
         transformed_claims[original_claim] = []
 
         for transformation in transformations:
+
             error_type = transformation["error_type"]
             word_to_replace = transformation["word"]
-
+            logger.info(f"Perform the transformation type of: {error_type} on word: {word_to_replace}")
             # Handle NER-based transformations
             if error_type in [
                 CorrectnessErrorTypes.ENTITY_PERSON_SWAP,
@@ -462,6 +465,7 @@ def apply_factuality_transformation_on_claims(source_article: str,
                     "word": word_to_replace
                 })
     # Process Hebrew LLM transformations
+    logger.info("Phase 2 - perform hebrew based transformation on claims")
     for error_type, claims_list in hebrew_llm_transformations_dict.items():
         if claims_list:
             try:
@@ -474,19 +478,20 @@ def apply_factuality_transformation_on_claims(source_article: str,
                         "correctness_error_type": error_type,
                         "applicable_transformation_text_within_claim": claim_data["word"]
                     })
+
                     # claims_decomposition_list.append(claim_data["claim"])
 
                 # Get transformation instructions based on error type
                 # unique_transformation_instructions = get_transformation_instructions(error_type)
 
                 # Call LLM for transformation
-                logger.info("Perform summary_negative_augmentation on hebrew")
+                logger.info(f"Perform summary_negative_augmentation on hebrew - error type of: {[error_type]}")
                 llm_result = summary_negative_augmentation(
                     apply_transformation_types=[error_type],
                     transformation_examples=hebrew_filtered_examples.get(error_type, []),
                     suitable_claims_decomposition_list=suitable_claims_decomposition_list,
                     unique_transformation_instructions="",
-                    #model='claude'
+                    model="gemini"
                 )
 
                 # Process results
@@ -503,8 +508,8 @@ def apply_factuality_transformation_on_claims(source_article: str,
                             })
             except Exception as e:
                 print(f"Error in Hebrew LLM transformation {error_type}: {e}")
-
     # Process General LLM transformations
+    logger.info("Phase 2 - perform general llm based transformation on claims")
     for error_type, claims_list in general_llm_transformations_dict.items():
         if claims_list:
             try:
@@ -780,14 +785,14 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
     claim_decomposition = text_decomposition(text=summary, decomposition_method=CLAIM_DECOMPOSITION_METHOD)
     logger.info(f"Performed claim decomposition: {claim_decomposition}")
 
+    logger.info(f"Start suitable_transformation_claims - find suitable transformation claims from the summary")
     suitable_transformation_claims = all_suitable_transformation_possible(summary, claim_decomposition)
     logger.info(f"Performed detecting on suitable transformation claims: {suitable_transformation_claims}")
     logger.info(f"Detected {len(suitable_transformation_claims)} suitable transformation allocations")
     if not suitable_transformation_claims:
         logger.warning("No suitable transformation claims found — nothing to transform.")
 
-    claims_after_transformation = apply_factuality_transformation_on_claims(source_article,
-                                                                            suitable_transformation_claims)
+    claims_after_transformation = apply_factuality_transformation_on_claims(source_article, suitable_transformation_claims)
     logger.info(f"Claims after transformation: {len(claims_after_transformation)} claims modified")
     transformed_claims_variations = control_claims_after_transformation(
         claims_after_transformation,
@@ -966,7 +971,6 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
 # if __name__ == "__main__":
 #     main()
 
-
 def process_row(row, transform_types):
     """Worker function to process a single row."""
     thread_id = threading.current_thread().name
@@ -997,11 +1001,23 @@ def process_row(row, transform_types):
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(threadName)s - %(levelname)s - %(message)s'
+    )
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = f"augmentation_log_{timestamp}.log"
+
+    # Reconfigure logger with file output
+    global logger
+    logger = setup_logger(__name__, log_level="INFO", log_file=log_file)
     # Hardcoded configuration
     max_workers = 3  # Number of parallel threads to use
     start_row = 65  # <-- first row index (inclusive)
-    end_row = 90  # <-- one past the last row index (exclusive)
+    end_row = 70  # <-- one past the last row index (exclusive)
 
+    logger.info(f"Starting processing with {max_workers} worker threads")
+    logger.info(f"Processing rows {start_row} to {end_row-1}")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     # input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"
     # output_json = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"

@@ -21,20 +21,28 @@ CLAIM_DECOMPOSITION_METHOD = ClaimDecompositionMethod.SENTENCES
 # Main configuration - just set True/False for each transformation type
 TRANSFORMATION_CONFIG = {
     "hebrew_llm_transformations": {
+        # NEW
+        CorrectnessErrorTypes.HEBREW_ROOT_PATTEN_CONFUSION: True,
+        CorrectnessErrorTypes.IDIOM_COLLOCATION_CORRUPTION: True,
+        CorrectnessErrorTypes.MORPHOLOGICAL_CONNECTIVE_CONFUSION: True,
+
+        # OLD
         CorrectnessErrorTypes.NOUN_GENDER_SWAP: False,
         CorrectnessErrorTypes.VERB_GENDER_SWAP: False,
-        CorrectnessErrorTypes.VERB_TENSE_SWAP: True,
-        CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP: True,
-        CorrectnessErrorTypes.PRONOUN_REFERENCE_ERRORS: True,
-        CorrectnessErrorTypes.SPECIFICITY_SHIFT_ERRORS: True,
-        CorrectnessErrorTypes.HOMOGRAPHIC_GENDER_ERRORS: True,
-        CorrectnessErrorTypes.IMPERSONAL_TO_PERSONAL_VERB_ERRORS: True,
+        CorrectnessErrorTypes.VERB_TENSE_SWAP: False,
+        CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP: False,
+        CorrectnessErrorTypes.PRONOUN_REFERENCE_ERRORS: False,
+        CorrectnessErrorTypes.SPECIFICITY_SHIFT_ERRORS: False,
+        CorrectnessErrorTypes.HOMOGRAPHIC_GENDER_ERRORS: False,
+        CorrectnessErrorTypes.IMPERSONAL_TO_PERSONAL_VERB_ERRORS: False,
         CorrectnessErrorTypes.INCREMENTAL_TEMPORAL_STATE_MUTATIONS: False,
         CorrectnessErrorTypes.EVIDENTIALITY_SOURCE_ATTRIBUTION_COLLAPSE: False,
-        CorrectnessErrorTypes.VERB_TEMPLATE_AGENCY_REVERSAL: True,
-        CorrectnessErrorTypes.DOUBLE_VERB_DEPENDENCY_ERRORS: True,
-        CorrectnessErrorTypes.CONSTRUCT_STATE_CONFUSION: True,
-        CorrectnessErrorTypes.SUBJECT_VERB_PERSON_MISMATCH: True
+        CorrectnessErrorTypes.VERB_TEMPLATE_AGENCY_REVERSAL: False,
+        CorrectnessErrorTypes.DOUBLE_VERB_DEPENDENCY_ERRORS: False,
+        CorrectnessErrorTypes.CONSTRUCT_STATE_CONFUSION: False,
+        CorrectnessErrorTypes.SUBJECT_VERB_PERSON_MISMATCH: False
+
+        # Probably Removed
     },
     "general_llm_transformations": {
         CorrectnessErrorTypes.SENTENCE_NEGATION: True,

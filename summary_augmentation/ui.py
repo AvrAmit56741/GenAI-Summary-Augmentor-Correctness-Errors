@@ -213,8 +213,8 @@ def highlight_diff(old: str, new: str) -> str:
     return " ".join(result)
 
 # Create tabs
-tab_json, tab_csv, tab_utils, tab_analysis = st.tabs([
-    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis"
+tab_json, tab_csv, tab_utils, tab_analysis, tab_report = st.tabs([
+    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer"
 ])
 
 ### JSON Analyzer ###
@@ -375,3 +375,43 @@ with tab_analysis:
             mask = df_an['premise'].fillna('').apply(clean) != df_an['hypothesis'].fillna('').apply(clean)
             samples = df_an[mask].head(5)
         st.dataframe(samples)
+
+with tab_report:
+    st.title("Correctness Report Analyzer")
+    report_file = st.file_uploader(
+        "Upload finder JSON report",
+        type=["json"],
+        key="report_uploader"
+    )
+    if report_file:
+        data = json.load(report_file)
+        df = pd.DataFrame(data)
+
+        st.subheader("Data Preview")
+        st.dataframe(df, use_container_width=True)
+
+        # error‐name distribution
+        st.subheader("Error Name Distribution")
+        st.bar_chart(df["correctness_error_name"].value_counts())
+
+        # distribution by source/doc_id if you like
+        st.subheader("Entries per Source")
+        st.bar_chart(df["source"].value_counts())
+
+        # Inspect a single record
+        st.subheader("Inspect a Record")
+        idx = st.number_input(
+            "Record index", 0, len(df) - 1, 0, 1, key="report_idx"
+        )
+        rec = df.iloc[idx]
+        st.markdown(f"**Doc_ID:**  {rec['doc_id']}")
+        st.markdown(f"**Premise:**  {rec['premise']}")
+        st.markdown(f"**AI Summary:**  {rec['ai_summary']}")
+        #st.markdown(f"**generative_summary:**  {rec['generative_summary']}")
+        st.markdown(f"**Error Name:**  {rec['correctness_error_name']}")
+        st.markdown(f"**Reasoning:**  {rec['correctness_error_reasoning']}")
+        st.markdown(f"**Features:**  {rec['mrl_unique_hebrew_features']}")
+        st.markdown(f"**Why_its_factual_error:**  {rec['why_its_factual_error']}")
+        st.markdown(f"**Evidence (Summary):**  {rec['evidence_from_summary']}")
+        st.markdown(f"**Evidence (Source):**  {rec['evidence_from_source_article']}")
+        st.markdown(f"**severity**  {rec['severity']}")
