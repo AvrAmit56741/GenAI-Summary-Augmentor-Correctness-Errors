@@ -5,7 +5,11 @@ from difflib import SequenceMatcher
 import re
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
-st.set_page_config(page_title="Summary & CSV Analyzer & Utils", layout="wide")
+
+st.set_page_config(page_title="Hebrew NLI Analysis Hub", layout="wide", page_icon="🏠")
+
+# Add navigation info for Model Analytics
+st.sidebar.info("🔬 **Model Analytics** is now available as a separate page in the sidebar!")
 
 # Initialize session state for error type filtering
 if 'selected_error_types' not in st.session_state:
@@ -202,8 +206,8 @@ def filter_json_by_error_types(json_data, selected_types):
     return filtered_data
 
 # Create tabs
-tab_json, tab_csv, tab_utils, tab_analysis, tab_report, tab_logs, tab_dataset = st.tabs([
-    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer", "API Logs", "Dataset Analysis"
+tab_json, tab_csv, tab_utils, tab_analysis, tab_report, tab_logs, tab_dataset, tab_modification = st.tabs([
+    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer", "API Logs", "Dataset Analysis", "Dataset Modification"
 ])
 
 ### JSON Analyzer ###
@@ -1199,6 +1203,23 @@ with tab_csv:
                     filtered_error_df = filtered_error_df.sort_values('Count', ascending=False)
                     st.bar_chart(filtered_error_df.set_index('Error Type')['Count'])
 
+        # Additional distribution statistics
+        col1, col2 = st.columns(2)
+        
+        # Source distribution
+        with col1:
+            if 'source' in filtered_df.columns and len(filtered_df) > 0:
+                st.markdown("<div style='color: white;'><strong>Source Distribution</strong></div>", unsafe_allow_html=True)
+                source_counts = filtered_df['source'].value_counts()
+                st.bar_chart(source_counts)
+        
+        # Length group distribution
+        with col2:
+            if 'len_group' in filtered_df.columns and len(filtered_df) > 0:
+                st.markdown("<div style='color: white;'><strong>Length Group Distribution</strong></div>", unsafe_allow_html=True)
+                length_group_counts = filtered_df['len_group'].value_counts()
+                st.bar_chart(length_group_counts)
+
         # Export functionality with dark theme
         if has_err and selected_error_types:
             st.subheader("📥 Export Options")
@@ -1259,40 +1280,604 @@ with tab_csv:
 ### Utils ###
 with tab_utils:
     st.title("Utils")
+    st.markdown('<style>div.stMarkdown p, div.stMarkdown span, div.stMarkdown h1, div.stMarkdown h2, div.stMarkdown h3 { color: white; }</style>', unsafe_allow_html=True)
+    
     # Combine CSV
-    st.subheader("Combine CSV Files")
+    st.subheader("📁 Combine CSV Files")
     csvs = st.file_uploader("CSV to combine", type=["csv"], accept_multiple_files=True, key="ccomb")
     if csvs:
-        dfc = pd.concat([pd.read_csv(f) for f in csvs], ignore_index=True)
-        st.download_button("Download CSV", dfc.to_csv(index=False).encode('utf-8'), "combined.csv")
+        try:
+            dfc = pd.concat([pd.read_csv(f) for f in csvs], ignore_index=True)
+            
+            # Data preview
+            st.markdown("<div style='color: white;'><strong>📊 Combined Data Preview:</strong></div>", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Records", len(dfc))
+            with col2:
+                st.metric("Total Columns", len(dfc.columns))
+            with col3:
+                if 'label' in dfc.columns:
+                    st.metric("Unique Labels", dfc['label'].nunique())
+                else:
+                    st.metric("Files Combined", len(csvs))
+            
+            # Show sample data
+            with st.expander("🔍 Sample Data (First 5 rows)"):
+                st.dataframe(dfc.head(), use_container_width=True)
+            
+            # Label distribution if available
+            if 'label' in dfc.columns:
+                st.markdown("<div style='color: white;'><strong>🏷️ Label Distribution:</strong></div>", unsafe_allow_html=True)
+                label_counts = dfc['label'].value_counts()
+                st.bar_chart(label_counts)
+            
+            st.download_button("📥 Download Combined CSV", dfc.to_csv(index=False).encode('utf-8'), "combined.csv", "text/csv")
+            
+        except Exception as e:
+            st.error(f"❌ Error combining CSV files: {str(e)}")
+    
     # Combine JSON
-    st.subheader("Combine JSON Files")
+    st.subheader("🗂️ Combine JSON Files")
     jsns = st.file_uploader("JSON to combine", type=["json"], accept_multiple_files=True, key="jcomb")
     if jsns:
-        lst = []
-        for f in jsns:
-            lst.extend(json.load(f))
-        st.download_button("Download JSON", json.dumps(lst, ensure_ascii=False), "combined.json")
-    # Split Data
-    st.subheader("Split Data")
-    if 'df' in locals():
-        split_mode = st.selectbox("Mode", ["kfold", "naive"], key="mode")
-        df2 = df.copy()
-        if split_mode == 'kfold':
-            k = st.number_input("K folds", 2, 20, 5, key="k")
-            skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
-            for i, (train_idx, test_idx) in enumerate(skf.split(df2, df2['label'])):
-                tr, te = df2.iloc[train_idx], df2.iloc[test_idx]
-                st.download_button(f"train_{i}.csv", tr.to_csv(index=False).encode(), f"train_{i}.csv")
-                st.download_button(f"test_{i}.csv", te.to_csv(index=False).encode(), f"test_{i}.csv")
+        try:
+            lst = []
+            for f in jsns:
+                data = json.load(f)
+                if isinstance(data, list):
+                    lst.extend(data)
+                else:
+                    lst.append(data)
+            
+            # Data preview
+            st.markdown("<div style='color: white;'><strong>📊 Combined JSON Preview:</strong></div>", unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Records", len(lst))
+            with col2:
+                st.metric("Files Combined", len(jsns))
+            
+            # Show sample structure
+            if lst:
+                with st.expander("🔍 Sample Structure (First record)"):
+                    st.json(lst[0] if len(lst) > 0 else {})
+            
+            st.download_button("📥 Download Combined JSON", json.dumps(lst, ensure_ascii=False), "combined.json", "application/json")
+            
+        except Exception as e:
+            st.error(f"❌ Error combining JSON files: {str(e)}")
+    
+    # Split Data - Enhanced with independent data loading
+    st.subheader("📊 Split Data")
+    
+    # Allow independent CSV upload for splitting
+    split_csv = st.file_uploader("Upload CSV to split", type=["csv"], key="split_csv")
+    
+    # Use either uploaded CSV or existing df from CSV tab
+    df_to_split = None
+    if split_csv:
+        try:
+            df_to_split = pd.read_csv(split_csv)
+            st.success(f"✅ Loaded {len(df_to_split)} records from uploaded file")
+        except Exception as e:
+            st.error(f"❌ Error loading CSV: {str(e)}")
+    elif 'df' in locals():
+        df_to_split = df.copy()
+        st.info("ℹ️ Using data from CSV Reviewer tab")
+    
+    if df_to_split is not None:
+        # Validate required columns
+        if 'label' not in df_to_split.columns:
+            st.error("❌ CSV must contain 'label' column for stratified splitting")
         else:
-            pval = st.slider("Validation %", 0.0, 0.5, 0.1, key="pval")
-            ptr = st.slider("Test %", 0.0, 0.5, 0.1, key="ptr")
-            train, temp = train_test_split(df2, test_size=(pval+ptr), stratify=df2['label'], random_state=42)
-            val, test = train_test_split(temp, test_size=ptr/(pval+ptr), stratify=temp['label'], random_state=42)
-            st.download_button("train.csv", train.to_csv(index=False).encode(), "train.csv")
-            st.download_button("val.csv", val.to_csv(index=False).encode(), "val.csv")
-            st.download_button("test.csv", test.to_csv(index=False).encode(), "test.csv")
+            # Show original dataset stats
+            st.markdown("<div style='color: white;'><strong>📈 Original Dataset Statistics:</strong></div>", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Records", len(df_to_split))
+            with col2:
+                label_dist = df_to_split['label'].value_counts()
+                st.metric("Entailment", label_dist.get('entailment', 0))
+            with col3:
+                st.metric("Contradiction", label_dist.get('contradiction', 0))
+            
+            split_mode = st.selectbox("Split Mode", ["kfold", "naive"], key="mode")
+            
+            if split_mode == 'kfold':
+                st.markdown("<div style='color: white;'><strong>🔄 K-Fold Cross Validation</strong></div>", unsafe_allow_html=True)
+                k = st.number_input("Number of folds (K)", 2, 20, 5, key="k")
+                
+                if st.button("🚀 Generate K-Fold Splits", key="generate_kfold"):
+                    skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
+                    
+                    # Store split data for analysis
+                    split_data = {}
+                    
+                    # Also store in session state for ZIP download
+                    st.session_state.kfold_split_data = {}
+                    st.session_state.kfold_k_value = k
+                    
+                    st.markdown("<div style='color: white;'><strong>📥 Download Split Files:</strong></div>", unsafe_allow_html=True)
+                    
+                    # Generate all splits and collect statistics
+                    for i, (train_idx, test_idx) in enumerate(skf.split(df_to_split, df_to_split['label'])):
+                        train_df = df_to_split.iloc[train_idx].copy()
+                        test_df = df_to_split.iloc[test_idx].copy()
+                        
+                        # Store for analysis
+                        split_data[f'train_{i}'] = train_df
+                        split_data[f'test_{i}'] = test_df
+                        
+                        # Also store in session state for ZIP download
+                        st.session_state.kfold_split_data[f'train_{i}'] = train_df
+                        st.session_state.kfold_split_data[f'test_{i}'] = test_df
+                        
+                        # Download buttons
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.download_button(
+                                f"📥 Train Fold {i+1}", 
+                                train_df.to_csv(index=False).encode('utf-8'), 
+                                f"train_fold_{i+1}.csv",
+                                "text/csv",
+                                key=f"train_{i}"
+                            )
+                        with col2:
+                            st.download_button(
+                                f"📥 Test Fold {i+1}", 
+                                test_df.to_csv(index=False).encode('utf-8'), 
+                                f"test_fold_{i+1}.csv",
+                                "text/csv",
+                                key=f"test_{i}"
+                            )
+                    
+                    # Comprehensive statistics analysis
+                    st.markdown("<div style='color: white;'><strong>📊 Split Quality Analysis:</strong></div>", unsafe_allow_html=True)
+                    
+                    # Create statistics table
+                    stats_data = []
+                    for split_name, split_df in split_data.items():
+                        # Basic stats
+                        total_records = len(split_df)
+                        entailment_count = len(split_df[split_df['label'] == 'entailment'])
+                        contradiction_count = len(split_df[split_df['label'] == 'contradiction'])
+                        entailment_pct = (entailment_count / total_records * 100) if total_records > 0 else 0
+                        
+                        # Error types analysis
+                        error_types_info = "N/A"
+                        if 'error_types' in split_df.columns:
+                            error_counts = {}
+                            for error_str in split_df['error_types'].dropna():
+                                for error in parse_error_types(error_str):
+                                    error_counts[error] = error_counts.get(error, 0) + 1
+                            if error_counts:
+                                all_errors = sorted(error_counts.items(), key=lambda x: x[1], reverse=True)
+                                error_types_info = ", ".join([f"{err}: {cnt}" for err, cnt in all_errors])
+                        
+                        # Text length analysis
+                        premise_lengths = split_df['premise'].str.split().str.len() if 'premise' in split_df.columns else pd.Series([])
+                        hypothesis_lengths = split_df['hypothesis'].str.split().str.len() if 'hypothesis' in split_df.columns else pd.Series([])
+                        
+                        avg_premise_len = premise_lengths.mean() if not premise_lengths.empty else 0
+                        avg_hypothesis_len = hypothesis_lengths.mean() if not hypothesis_lengths.empty else 0
+                        
+                        stats_data.append({
+                            'Split': split_name,
+                            'Total Records': total_records,
+                            'Entailment': entailment_count,
+                            'Contradiction': contradiction_count,
+                            'Entailment %': f"{entailment_pct:.1f}%",
+                            'All Error Types': error_types_info,
+                            'Avg Premise Length': f"{avg_premise_len:.1f}" if avg_premise_len > 0 else "N/A",
+                            'Avg Hypothesis Length': f"{avg_hypothesis_len:.1f}" if avg_hypothesis_len > 0 else "N/A"
+                        })
+                    
+                    # Display statistics table
+                    stats_df = pd.DataFrame(stats_data)
+                    st.dataframe(stats_df, use_container_width=True)
+                    
+                    # Error Type Mapping Table
+                    st.markdown("<div style='color: white;'><strong>📋 Error Type Mapping:</strong></div>", unsafe_allow_html=True)
+                    
+                    # Collect all error types across all splits for mapping table
+                    all_error_types_mapping = {}
+                    for split_name, split_df in split_data.items():
+                        if 'error_types' in split_df.columns:
+                            error_counts = {}
+                            for error_str in split_df['error_types'].dropna():
+                                for error in parse_error_types(error_str):
+                                    error_counts[error] = error_counts.get(error, 0) + 1
+                            all_error_types_mapping[split_name] = error_counts
+                    
+                    if all_error_types_mapping:
+                        # Get all unique error types
+                        all_unique_errors = set()
+                        for error_counts in all_error_types_mapping.values():
+                            all_unique_errors.update(error_counts.keys())
+                        
+                        # Create mapping table data
+                        mapping_data = []
+                        for error_type in sorted(all_unique_errors):
+                            row = {'Error Type': error_type}
+                            total_count = 0
+                            
+                            # Add counts for each split
+                            for split_name in sorted(all_error_types_mapping.keys()):
+                                count = all_error_types_mapping[split_name].get(error_type, 0)
+                                row[split_name] = count
+                                total_count += count
+                            
+                            # Calculate ratios
+                            ratio_parts = []
+                            for split_name in sorted(all_error_types_mapping.keys()):
+                                count = all_error_types_mapping[split_name].get(error_type, 0)
+                                ratio = (count / total_count * 100) if total_count > 0 else 0
+                                ratio_parts.append(f"{ratio:.1f}%")
+                            
+                            row['Ratio'] = " : ".join(ratio_parts)
+                            mapping_data.append(row)
+                        
+                        # Display mapping table
+                        mapping_df = pd.DataFrame(mapping_data)
+                        st.dataframe(mapping_df, use_container_width=True)
+                    
+                    # Error Types Distribution Comparison
+                    st.markdown("<div style='color: white;'><strong>🎯 Error Types Distribution Across Splits:</strong></div>", unsafe_allow_html=True)
+                    
+                    # Collect all error types across all splits
+                    all_error_types_data = {}
+                    for split_name, split_df in split_data.items():
+                        if 'error_types' in split_df.columns:
+                            error_counts = {}
+                            for error_str in split_df['error_types'].dropna():
+                                for error in parse_error_types(error_str):
+                                    error_counts[error] = error_counts.get(error, 0) + 1
+                            all_error_types_data[split_name] = error_counts
+                    
+                    if all_error_types_data:
+                        # Create a comprehensive DataFrame for error types
+                        all_unique_errors = set()
+                        for error_counts in all_error_types_data.values():
+                            all_unique_errors.update(error_counts.keys())
+                        
+                        error_comparison_data = {}
+                        for split_name in all_error_types_data.keys():
+                            error_comparison_data[split_name] = {}
+                            for error_type in all_unique_errors:
+                                error_comparison_data[split_name][error_type] = all_error_types_data[split_name].get(error_type, 0)
+                        
+                        error_comparison_df = pd.DataFrame(error_comparison_data).T
+                        error_comparison_df = error_comparison_df.fillna(0)
+                        
+                        # Display the error types comparison chart
+                        st.bar_chart(error_comparison_df)
+                    
+                    # Visualization of label distribution across splits
+                    st.markdown("<div style='color: white;'><strong>📈 Label Distribution Across Splits:</strong></div>", unsafe_allow_html=True)
+                    
+                    # Prepare data for visualization
+                    viz_data = {}
+                    for split_name, split_df in split_data.items():
+                        label_counts = split_df['label'].value_counts()
+                        viz_data[split_name] = {
+                            'entailment': label_counts.get('entailment', 0),
+                            'contradiction': label_counts.get('contradiction', 0)
+                        }
+                    
+                    # Create comparison chart
+                    viz_df = pd.DataFrame(viz_data).T
+                    st.bar_chart(viz_df)
+                    
+                    # Text length comparison
+                    if 'premise' in df_to_split.columns and 'hypothesis' in df_to_split.columns:
+                        st.markdown("<div style='color: white;'><strong>📏 Text Length Comparison:</strong></div>", unsafe_allow_html=True)
+                        
+                        length_data = {}
+                        for split_name, split_df in split_data.items():
+                            premise_lens = split_df['premise'].str.split().str.len()
+                            hypothesis_lens = split_df['hypothesis'].str.split().str.len()
+                            length_data[split_name] = {
+                                'Avg Premise Length': premise_lens.mean(),
+                                'Avg Hypothesis Length': hypothesis_lens.mean()
+                            }
+                        
+                        length_df = pd.DataFrame(length_data).T
+                        st.bar_chart(length_df)
+                    
+                # Download all splits as ZIP (outside the generate button)
+                if 'kfold_split_data' in st.session_state and st.session_state.kfold_split_data:
+                    st.subheader("📦 Download All Splits")
+                    
+                    import zipfile
+                    import io
+                    
+                    # Create ZIP file in memory
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                        for split_name, split_df in st.session_state.kfold_split_data.items():
+                            csv_data = split_df.to_csv(index=False)
+                            zip_file.writestr(f"{split_name}.csv", csv_data)
+                    
+                    zip_buffer.seek(0)
+                    k_value = st.session_state.get('kfold_k_value', 'unknown')
+                    st.download_button(
+                        "📦 Download All K-Fold Splits as ZIP",
+                        zip_buffer.getvalue(),
+                        f"kfold_splits_{k_value}folds.zip",
+                        "application/zip",
+                        help=f"Download all {len(st.session_state.kfold_split_data)} split files in one ZIP package"
+                    )
+            
+            else:  # naive mode
+                st.markdown("<div style='color: white;'><strong>📈 Train/Validation/Test Split</strong></div>", unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    pval = st.slider("Validation %", 0.0, 0.5, 0.1, key="pval")
+                with col2:
+                    ptr = st.slider("Test %", 0.0, 0.5, 0.1, key="ptr")
+                
+                train_pct = 1.0 - pval - ptr
+                st.markdown(f"<div style='color: white;'>**Split Ratios:** Train: {train_pct:.1%}, Validation: {pval:.1%}, Test: {ptr:.1%}</div>", unsafe_allow_html=True)
+                
+                if train_pct <= 0:
+                    st.error("❌ Train percentage must be positive. Reduce validation and test percentages.")
+                elif st.button("🚀 Generate Train/Val/Test Splits", key="generate_naive"):
+                    try:
+                        # First split: separate train from (val + test)
+                        train_df, temp_df = train_test_split(
+                            df_to_split, 
+                            test_size=(pval + ptr), 
+                            stratify=df_to_split['label'], 
+                            random_state=42
+                        )
+                        
+                        # Second split: separate val from test
+                        if pval > 0 and ptr > 0:
+                            val_df, test_df = train_test_split(
+                                temp_df, 
+                                test_size=ptr/(pval + ptr), 
+                                stratify=temp_df['label'], 
+                                random_state=42
+                            )
+                        elif pval > 0:
+                            val_df = temp_df
+                            test_df = pd.DataFrame(columns=df_to_split.columns)
+                        else:
+                            val_df = pd.DataFrame(columns=df_to_split.columns)
+                            test_df = temp_df
+                        
+                        # Store for analysis
+                        split_data = {
+                            'train': train_df,
+                            'validation': val_df,
+                            'test': test_df
+                        }
+                        
+                        # Also store in session state for ZIP download
+                        st.session_state.naive_split_data = {
+                            'train': train_df,
+                            'validation': val_df,
+                            'test': test_df
+                        }
+                        
+                        # Download buttons
+                        st.markdown("<div style='color: white;'><strong>📥 Download Split Files:</strong></div>", unsafe_allow_html=True)
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.download_button(
+                                "📥 Train Set", 
+                                train_df.to_csv(index=False).encode('utf-8'), 
+                                "train.csv",
+                                "text/csv"
+                            )
+                        with col2:
+                            if len(val_df) > 0:
+                                st.download_button(
+                                    "📥 Validation Set", 
+                                    val_df.to_csv(index=False).encode('utf-8'), 
+                                    "validation.csv",
+                                    "text/csv"
+                                )
+                        with col3:
+                            if len(test_df) > 0:
+                                st.download_button(
+                                    "📥 Test Set", 
+                                    test_df.to_csv(index=False).encode('utf-8'), 
+                                    "test.csv",
+                                    "text/csv"
+                                )
+                        
+                        # Comprehensive statistics analysis
+                        st.markdown("<div style='color: white;'><strong>📊 Split Quality Analysis:</strong></div>", unsafe_allow_html=True)
+                        
+                        # Create statistics table
+                        stats_data = []
+                        for split_name, split_df in split_data.items():
+                            if len(split_df) == 0:
+                                continue
+                                
+                            # Basic stats
+                            total_records = len(split_df)
+                            entailment_count = len(split_df[split_df['label'] == 'entailment'])
+                            contradiction_count = len(split_df[split_df['label'] == 'contradiction'])
+                            entailment_pct = (entailment_count / total_records * 100) if total_records > 0 else 0
+                            
+                            # Error types analysis
+                            error_types_info = "N/A"
+                            if 'error_types' in split_df.columns:
+                                error_counts = {}
+                                for error_str in split_df['error_types'].dropna():
+                                    for error in parse_error_types(error_str):
+                                        error_counts[error] = error_counts.get(error, 0) + 1
+                                if error_counts:
+                                    all_errors = sorted(error_counts.items(), key=lambda x: x[1], reverse=True)
+                                    error_types_info = ", ".join([f"{err}: {cnt}" for err, cnt in all_errors])
+                            
+                            # Text length analysis
+                            premise_lengths = split_df['premise'].str.split().str.len() if 'premise' in split_df.columns else pd.Series([])
+                            hypothesis_lengths = split_df['hypothesis'].str.split().str.len() if 'hypothesis' in split_df.columns else pd.Series([])
+                            
+                            avg_premise_len = premise_lengths.mean() if not premise_lengths.empty else 0
+                            avg_hypothesis_len = hypothesis_lengths.mean() if not hypothesis_lengths.empty else 0
+                            
+                            stats_data.append({
+                                'Split': split_name.capitalize(),
+                                'Total Records': total_records,
+                                'Entailment': entailment_count,
+                                'Contradiction': contradiction_count,
+                                'Entailment %': f"{entailment_pct:.1f}%",
+                                'All Error Types': error_types_info,
+                                'Avg Premise Length': f"{avg_premise_len:.1f}" if avg_premise_len > 0 else "N/A",
+                                'Avg Hypothesis Length': f"{avg_hypothesis_len:.1f}" if avg_hypothesis_len > 0 else "N/A"
+                            })
+                        
+                        # Display statistics table
+                        stats_df = pd.DataFrame(stats_data)
+                        st.dataframe(stats_df, use_container_width=True)
+                        
+                        # Error Type Mapping Table
+                        st.markdown("<div style='color: white;'><strong>📋 Error Type Mapping:</strong></div>", unsafe_allow_html=True)
+                        
+                        # Collect all error types across all splits for mapping table
+                        all_error_types_mapping = {}
+                        for split_name, split_df in split_data.items():
+                            if len(split_df) > 0 and 'error_types' in split_df.columns:
+                                error_counts = {}
+                                for error_str in split_df['error_types'].dropna():
+                                    for error in parse_error_types(error_str):
+                                        error_counts[error] = error_counts.get(error, 0) + 1
+                                all_error_types_mapping[split_name.capitalize()] = error_counts
+                        
+                        if all_error_types_mapping:
+                            # Get all unique error types
+                            all_unique_errors = set()
+                            for error_counts in all_error_types_mapping.values():
+                                all_unique_errors.update(error_counts.keys())
+                            
+                            # Create mapping table data
+                            mapping_data = []
+                            for error_type in sorted(all_unique_errors):
+                                row = {'Error Type': error_type}
+                                total_count = 0
+                                
+                                # Add counts for each split
+                                for split_name in sorted(all_error_types_mapping.keys()):
+                                    count = all_error_types_mapping[split_name].get(error_type, 0)
+                                    row[split_name] = count
+                                    total_count += count
+                                
+                                # Calculate ratios
+                                ratio_parts = []
+                                for split_name in sorted(all_error_types_mapping.keys()):
+                                    count = all_error_types_mapping[split_name].get(error_type, 0)
+                                    ratio = (count / total_count * 100) if total_count > 0 else 0
+                                    ratio_parts.append(f"{ratio:.1f}%")
+                                
+                                row['Ratio'] = " : ".join(ratio_parts)
+                                mapping_data.append(row)
+                            
+                            # Display mapping table
+                            mapping_df = pd.DataFrame(mapping_data)
+                            st.dataframe(mapping_df, use_container_width=True)
+                        
+                        # Error Types Distribution Comparison
+                        st.markdown("<div style='color: white;'><strong>🎯 Error Types Distribution Across Splits:</strong></div>", unsafe_allow_html=True)
+                        
+                        # Collect all error types across all splits
+                        all_error_types_data = {}
+                        for split_name, split_df in split_data.items():
+                            if len(split_df) > 0 and 'error_types' in split_df.columns:
+                                error_counts = {}
+                                for error_str in split_df['error_types'].dropna():
+                                    for error in parse_error_types(error_str):
+                                        error_counts[error] = error_counts.get(error, 0) + 1
+                                all_error_types_data[split_name.capitalize()] = error_counts
+                        
+                        if all_error_types_data:
+                            # Create a comprehensive DataFrame for error types
+                            all_unique_errors = set()
+                            for error_counts in all_error_types_data.values():
+                                all_unique_errors.update(error_counts.keys())
+                            
+                            error_comparison_data = {}
+                            for split_name in all_error_types_data.keys():
+                                error_comparison_data[split_name] = {}
+                                for error_type in all_unique_errors:
+                                    error_comparison_data[split_name][error_type] = all_error_types_data[split_name].get(error_type, 0)
+                            
+                            error_comparison_df = pd.DataFrame(error_comparison_data).T
+                            error_comparison_df = error_comparison_df.fillna(0)
+                            
+                            # Display the error types comparison chart
+                            st.bar_chart(error_comparison_df)
+                        
+                        # Visualization of label distribution across splits
+                        st.markdown("<div style='color: white;'><strong>📈 Label Distribution Across Splits:</strong></div>", unsafe_allow_html=True)
+                        
+                        # Prepare data for visualization
+                        viz_data = {}
+                        for split_name, split_df in split_data.items():
+                            if len(split_df) > 0:
+                                label_counts = split_df['label'].value_counts()
+                                viz_data[split_name.capitalize()] = {
+                                    'entailment': label_counts.get('entailment', 0),
+                                    'contradiction': label_counts.get('contradiction', 0)
+                                }
+                        
+                        # Create comparison chart
+                        if viz_data:
+                            viz_df = pd.DataFrame(viz_data).T
+                            st.bar_chart(viz_df)
+                        
+                        # Text length comparison
+                        if 'premise' in df_to_split.columns and 'hypothesis' in df_to_split.columns:
+                            st.markdown("<div style='color: white;'><strong>📏 Text Length Comparison:</strong></div>", unsafe_allow_html=True)
+                            
+                            length_data = {}
+                            for split_name, split_df in split_data.items():
+                                if len(split_df) > 0:
+                                    premise_lens = split_df['premise'].str.split().str.len()
+                                    hypothesis_lens = split_df['hypothesis'].str.split().str.len()
+                                    length_data[split_name.capitalize()] = {
+                                        'Avg Premise Length': premise_lens.mean(),
+                                        'Avg Hypothesis Length': hypothesis_lens.mean()
+                                    }
+                            
+                            if length_data:
+                                length_df = pd.DataFrame(length_data).T
+                                st.bar_chart(length_df)
+                        
+                        # Download all splits as ZIP (outside the generate button)
+                        if 'naive_split_data' in st.session_state and st.session_state.naive_split_data:
+                            st.subheader("📦 Download All Splits")
+                            
+                            import zipfile
+                            import io
+                            
+                            # Create ZIP file in memory
+                            zip_buffer = io.BytesIO()
+                            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                                for split_name, split_df in st.session_state.naive_split_data.items():
+                                    if len(split_df) > 0:
+                                        csv_data = split_df.to_csv(index=False)
+                                        zip_file.writestr(f"{split_name}.csv", csv_data)
+                            
+                            zip_buffer.seek(0)
+                            st.download_button(
+                                "📦 Download All Train/Val/Test Splits as ZIP",
+                                zip_buffer.getvalue(),
+                                f"train_val_test_splits.zip",
+                                "application/zip",
+                                help=f"Download all split files in one ZIP package"
+                            )
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error creating splits: {str(e)}")
+    else:
+        st.info("📁 Upload a CSV file or load data in the CSV Reviewer tab to enable splitting functionality")
 
 ### Analysis ###
 with tab_analysis:
@@ -1708,3 +2293,268 @@ with tab_dataset:
         - Overlap percentage calculation
         - Export detailed comparison report
         """)
+
+### Dataset Modification ###
+with tab_modification:
+    st.title("🔧 Dataset Modification")
+    st.markdown('<style>div.stMarkdown p, div.stMarkdown span, div.stMarkdown h1, div.stMarkdown h2, div.stMarkdown h3 { color: white; }</style>', unsafe_allow_html=True)
+    
+    st.markdown("Filter your CSV dataset based on categorical feature values with SQL-like functionality.")
+    
+    # File upload section
+    st.subheader("📁 Data Loading")
+    modification_csv = st.file_uploader("Upload CSV to modify", type=["csv"], key="modification_csv")
+    
+    # Use either uploaded CSV or existing df from CSV tab
+    df_to_modify = None
+    if modification_csv:
+        try:
+            df_to_modify = pd.read_csv(modification_csv)
+            st.success(f"✅ Loaded {len(df_to_modify)} records from uploaded file")
+        except Exception as e:
+            st.error(f"❌ Error loading CSV: {str(e)}")
+    elif 'df' in locals():
+        df_to_modify = df.copy()
+        st.info("ℹ️ Using data from CSV Reviewer tab")
+    
+    if df_to_modify is not None:
+        # Initialize session state for filter configuration
+        if 'filter_config' not in st.session_state:
+            st.session_state.filter_config = {
+                'mode': 'Filter Out',
+                'selected_columns': [],
+                'column_values': {}
+            }
+        
+        # Show original dataset stats
+        st.subheader("📊 Original Dataset Overview")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Records", len(df_to_modify))
+        with col2:
+            st.metric("Total Columns", len(df_to_modify.columns))
+        with col3:
+            # Get categorical columns (non-numeric)
+            categorical_cols = []
+            for col in df_to_modify.columns:
+                if df_to_modify[col].dtype == 'object' or df_to_modify[col].dtype.name == 'category':
+                    categorical_cols.append(col)
+            st.metric("Categorical Columns", len(categorical_cols))
+        
+        if not categorical_cols:
+            st.error("❌ No categorical columns found in the dataset. Please upload a CSV with categorical features.")
+        else:
+            # Filter configuration section
+            st.subheader("🎛️ Filter Configuration")
+            
+            # Filter mode selection
+            filter_mode = st.radio(
+                "Filter Mode:",
+                ["Filter Out", "Filter In"],
+                index=0,  # Filter Out is default
+                help="Filter Out: Remove rows matching criteria | Filter In: Keep only rows matching criteria"
+            )
+            st.session_state.filter_config['mode'] = filter_mode
+            
+            # Column selection
+            st.markdown("<div style='color: white;'><strong>Select Columns to Filter On:</strong></div>", unsafe_allow_html=True)
+            selected_columns = st.multiselect(
+                "Choose categorical columns:",
+                options=categorical_cols,
+                default=st.session_state.filter_config['selected_columns'],
+                key="filter_columns"
+            )
+            st.session_state.filter_config['selected_columns'] = selected_columns
+            
+            if selected_columns:
+                # Value selection for each column
+                st.markdown("<div style='color: white;'><strong>Select Values for Each Column:</strong></div>", unsafe_allow_html=True)
+                
+                column_filters = {}
+                for col in selected_columns:
+                    with st.expander(f"📋 {col} - Value Selection"):
+                        # Get unique values and their counts
+                        value_counts = df_to_modify[col].value_counts()
+                        
+                        # Create options with counts
+                        options_with_counts = []
+                        for value, count in value_counts.items():
+                            if pd.notna(value):  # Skip NaN values
+                                options_with_counts.append(f"{value} ({count})")
+                        
+                        # Multi-select for values
+                        selected_values_with_counts = st.multiselect(
+                            f"Select values to {filter_mode.lower()}:",
+                            options=options_with_counts,
+                            key=f"values_{col}"
+                        )
+                        
+                        # Extract actual values (remove counts)
+                        selected_values = []
+                        for item in selected_values_with_counts:
+                            actual_value = item.split(' (')[0]
+                            selected_values.append(actual_value)
+                        
+                        column_filters[col] = selected_values
+                        
+                        if selected_values:
+                            st.markdown(f"<div style='color: #ffd700;'>Selected: {', '.join(selected_values)}</div>", unsafe_allow_html=True)
+                
+                st.session_state.filter_config['column_values'] = column_filters
+                
+                # Filter preview section
+                if any(values for values in column_filters.values()):
+                    st.subheader("📊 Filter Preview")
+                    
+                    # Build filter summary
+                    filter_conditions = []
+                    for col, values in column_filters.items():
+                        if values:
+                            if len(values) == 1:
+                                filter_conditions.append(f"{col} = '{values[0]}'")
+                            else:
+                                values_str = "', '".join(values)
+                                filter_conditions.append(f"{col} IN ('{values_str}')")
+                    
+                    if filter_conditions:
+                        filter_summary = " AND ".join(filter_conditions)
+                        mode_text = "Remove" if filter_mode == "Filter Out" else "Keep only"
+                        
+                        st.markdown("<div style='color: white;'><strong>Filter Summary:</strong></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='color: #ffd700; background-color: #2d2d2d; padding: 10px; border-radius: 5px; border: 1px solid #666;'>{mode_text} rows where: {filter_summary}</div>", unsafe_allow_html=True)
+                        
+                        # Calculate preview counts
+                        try:
+                            # Build pandas query
+                            query_conditions = []
+                            for col, values in column_filters.items():
+                                if values:
+                                    if len(values) == 1:
+                                        query_conditions.append(f"`{col}` == '{values[0]}'")
+                                    else:
+                                        values_list = "', '".join(values)
+                                        query_conditions.append(f"`{col}` in ['{values_list}']")
+                            
+                            if query_conditions:
+                                query_string = " and ".join(query_conditions)
+                                matching_rows = df_to_modify.query(query_string)
+                                matching_count = len(matching_rows)
+                                
+                                if filter_mode == "Filter Out":
+                                    final_count = len(df_to_modify) - matching_count
+                                    preview_text = f"Will remove {matching_count} rows, keeping {final_count} rows"
+                                else:
+                                    final_count = matching_count
+                                    preview_text = f"Will keep {final_count} rows, removing {len(df_to_modify) - matching_count} rows"
+                                
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Original Records", len(df_to_modify))
+                                with col2:
+                                    st.metric("Matching Criteria", matching_count)
+                                with col3:
+                                    st.metric("Final Records", final_count)
+                                
+                                st.markdown(f"<div style='color: white;'><strong>{preview_text}</strong></div>", unsafe_allow_html=True)
+                                
+                                # Apply filters button
+                                if st.button("🚀 Apply Filters", key="apply_filters"):
+                                    try:
+                                        if filter_mode == "Filter Out":
+                                            # Remove matching rows
+                                            filtered_df = df_to_modify.query(f"not ({query_string})")
+                                        else:
+                                            # Keep only matching rows
+                                            filtered_df = matching_rows.copy()
+                                        
+                                        # Store filtered data in session state
+                                        st.session_state.filtered_data = filtered_df
+                                        st.success(f"✅ Filter applied successfully! Dataset now has {len(filtered_df)} records.")
+                                        
+                                    except Exception as e:
+                                        st.error(f"❌ Error applying filters: {str(e)}")
+                        
+                        except Exception as e:
+                            st.warning(f"⚠️ Unable to preview filter results: {str(e)}")
+                
+                # Results section
+                if 'filtered_data' in st.session_state:
+                    st.subheader("📈 Filtered Results")
+                    
+                    filtered_df = st.session_state.filtered_data
+                    
+                    # Results statistics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Original Records", len(df_to_modify))
+                    with col2:
+                        st.metric("Filtered Records", len(filtered_df))
+                    with col3:
+                        reduction_pct = ((len(df_to_modify) - len(filtered_df)) / len(df_to_modify) * 100) if len(df_to_modify) > 0 else 0
+                        st.metric("Reduction %", f"{reduction_pct:.1f}%")
+                    
+                    # Show sample of filtered data
+                    with st.expander("🔍 Preview Filtered Data (First 10 rows)"):
+                        st.dataframe(filtered_df.head(10), use_container_width=True)
+                    
+                    # Comparison statistics
+                    st.markdown("<div style='color: white;'><strong>📊 Before vs After Comparison:</strong></div>", unsafe_allow_html=True)
+                    
+                    comparison_data = []
+                    for col in selected_columns:
+                        if col in filtered_df.columns:
+                            original_unique = df_to_modify[col].nunique()
+                            filtered_unique = filtered_df[col].nunique()
+                            
+                            comparison_data.append({
+                                'Column': col,
+                                'Original Unique Values': original_unique,
+                                'Filtered Unique Values': filtered_unique,
+                                'Values Removed': original_unique - filtered_unique
+                            })
+                    
+                    if comparison_data:
+                        comparison_df = pd.DataFrame(comparison_data)
+                        st.dataframe(comparison_df, use_container_width=True)
+                    
+                    # Export section
+                    st.subheader("📥 Export Filtered Dataset")
+                    
+                    # Generate filename with timestamp
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"filtered_data_{timestamp}.csv"
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.download_button(
+                            "📥 Download Filtered CSV",
+                            filtered_df.to_csv(index=False).encode('utf-8'),
+                            filename,
+                            "text/csv",
+                            help=f"Download filtered dataset with {len(filtered_df)} records"
+                        )
+                    
+                    with col2:
+                        # Option to clear results
+                        if st.button("🗑️ Clear Results", key="clear_results"):
+                            if 'filtered_data' in st.session_state:
+                                del st.session_state.filtered_data
+                            st.experimental_rerun()
+    
+    else:
+        st.info("📁 Upload a CSV file or load data in the CSV Reviewer tab to start filtering")
+        st.markdown("""
+        **Dataset Modification Features:**
+        - 🎯 **Filter Mode**: Choose to filter out or filter in specific values
+        - 📋 **Multi-column filtering**: Apply filters across multiple categorical columns
+        - 🔢 **Value counts**: See how many records each value has
+        - 🔍 **Filter preview**: See the impact before applying changes
+        - 📊 **Before/after comparison**: Understand the filtering impact
+        - 📥 **Export functionality**: Download filtered dataset with timestamp
+        
+                 **Supported Logic:**
+         - **AND between columns**: All column conditions must be met
+         - **OR within columns**: Any selected value within a column matches
+         - **Example**: `(len_group: b1 OR b2) AND (source: news OR wiki)`
+         """)
