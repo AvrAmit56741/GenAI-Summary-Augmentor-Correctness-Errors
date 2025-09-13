@@ -318,6 +318,19 @@ with tab_json:
                     
                     if all_claims_for_error_types:
                         st.markdown(f"<div style='color: white;'><strong>Found {len(all_claims_for_error_types)} claim transformations</strong></div>", unsafe_allow_html=True)
+                        # Download JSON of all displayed claim transformations (without source_article, gold_summary)
+                        sanitized_claims = [
+                            {k: v for k, v in claim.items() if k not in ("source_article", "gold_summary")}
+                            for claim in all_claims_for_error_types
+                        ]
+                        export_payload = json.dumps(sanitized_claims, ensure_ascii=False, indent=2).encode('utf-8')
+                        st.download_button(
+                            "📥 Download Claims JSON",
+                            export_payload,
+                            f"claims_{'_'.join(selected_error_types[:2])}.json",
+                            "application/json",
+                            help="Download all visible claim-level transformations for the selected error types"
+                        )
                         
                         # Display claims in expandable table
                         st.subheader("📋 All Claims with Selected Error Types")
@@ -390,11 +403,11 @@ with tab_json:
             with st.expander("📰 Source Article", expanded=False):
                 st.markdown(f"<div dir='rtl' style='background-color: #2d2d2d; color: white; padding: 15px; border-radius: 5px;'>{entry.get('source_article', '')}</div>", unsafe_allow_html=True)
             
-            # Show gold summary
+                        # Show gold summary
             st.markdown("<div style='color: white;'><strong>🏆 Gold Summary:</strong></div>", unsafe_allow_html=True)
             gold = entry.get("gold_summary", "")
             st.markdown(f"<div dir='rtl' style='background-color: #1a4d1a; color: white; padding: 15px; border-radius: 5px; border: 2px solid #4CAF50;'>{gold}</div>", unsafe_allow_html=True)
-            
+
             # Show corrupted summaries
             corrupted = entry.get("correctness_corrupted_summaries", [])
             if corrupted:
@@ -1169,16 +1182,16 @@ with tab_csv:
                 st.markdown(f"<div style='color: white;'><strong>Label:</strong> {row['label']}</div>", unsafe_allow_html=True)
                 if 'doc_id' in row:
                     st.markdown(f"<div style='color: white;'><strong>Doc ID:</strong> {row['doc_id']}</div>", unsafe_allow_html=True)
-                if has_err:
-                    st.markdown(f"<div style='color: white;'><strong>Error Types:</strong> {row['error_types']}</div>", unsafe_allow_html=True)
-                    # Parse and display individual error types as badges
-                    individual_errors = parse_error_types(row['error_types'])
-                    if individual_errors:
-                        st.markdown("<div style='color: white;'><strong>Individual Error Types:</strong></div>", unsafe_allow_html=True)
-                        badge_html = ""
-                        for error in individual_errors:
-                            badge_html += f"<span style='background-color: #333; color: #ffd700; padding: 4px 12px; margin: 2px; border-radius: 12px; font-size: 0.9em; border: 1px solid #ffd700;'>{error}</span> "
-                        st.markdown(badge_html, unsafe_allow_html=True)
+            if has_err:
+                st.markdown(f"<div style='color: white;'><strong>Error Types:</strong> {row['error_types']}</div>", unsafe_allow_html=True)
+                # Parse and display individual error types as badges
+                individual_errors = parse_error_types(row['error_types'])
+                if individual_errors:
+                    st.markdown("<div style='color: white;'><strong>Individual Error Types:</strong></div>", unsafe_allow_html=True)
+                    badge_html = ""
+                    for error in individual_errors:
+                        badge_html += f"<span style='background-color: #333; color: #ffd700; padding: 4px 12px; margin: 2px; border-radius: 12px; font-size: 0.9em; border: 1px solid #ffd700;'>{error}</span> "
+                    st.markdown(badge_html, unsafe_allow_html=True)
 
         # Enhanced statistics section with dark theme
         st.subheader("📊 Dataset Statistics")
