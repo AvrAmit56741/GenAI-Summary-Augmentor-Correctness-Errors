@@ -12,9 +12,17 @@
 # TODO: NER replacement is not too similar - V
 # TODO: Add rule: Homographic gender errors without NER (name swap)
 
-from summary_augmentation.utils import CorrectnessErrorTypes, ClaimDecompositionMethod
+# 12.09
+# TODO: Add score filtering to NER -
+# TODO: Add another Hebrew NER model -
+# TODO: UI evidence extraction - V
+# TODO: Add json dump transformation dump for optimzation - V
+# Add an option to download the error dump
 
-MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.93  # Control
+
+from summary_augmentation.utils import CorrectnessErrorTypes, ClaimDecompositionMethod
+from dataclasses import dataclass
+MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.9  # Control
 PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY = 95  # Control how much corrupted the negative summary will be (how much error transformations perform on in)
 CLAIM_DECOMPOSITION_METHOD = ClaimDecompositionMethod.SENTENCES
 
@@ -29,17 +37,17 @@ TRANSFORMATION_CONFIG = {
         # OLD
         CorrectnessErrorTypes.NOUN_GENDER_SWAP: False,
         CorrectnessErrorTypes.VERB_GENDER_SWAP: False,
-        CorrectnessErrorTypes.VERB_TENSE_SWAP: False,
+        CorrectnessErrorTypes.VERB_TENSE_SWAP: True,
         CorrectnessErrorTypes.DIRECTIONAL_PREPOSITION_SWAP: False,
-        CorrectnessErrorTypes.PRONOUN_REFERENCE_ERRORS: False,
-        CorrectnessErrorTypes.SPECIFICITY_SHIFT_ERRORS: False,
+        CorrectnessErrorTypes.PRONOUN_REFERENCE_ERRORS: True,
+        CorrectnessErrorTypes.SPECIFICITY_SHIFT_ERRORS: True,
+        CorrectnessErrorTypes.CONSTRUCT_STATE_CONFUSION: True,
         CorrectnessErrorTypes.HOMOGRAPHIC_GENDER_ERRORS: False,
         CorrectnessErrorTypes.IMPERSONAL_TO_PERSONAL_VERB_ERRORS: False,
         CorrectnessErrorTypes.INCREMENTAL_TEMPORAL_STATE_MUTATIONS: False,
         CorrectnessErrorTypes.EVIDENTIALITY_SOURCE_ATTRIBUTION_COLLAPSE: False,
         CorrectnessErrorTypes.VERB_TEMPLATE_AGENCY_REVERSAL: False,
         CorrectnessErrorTypes.DOUBLE_VERB_DEPENDENCY_ERRORS: False,
-        CorrectnessErrorTypes.CONSTRUCT_STATE_CONFUSION: False,
         CorrectnessErrorTypes.SUBJECT_VERB_PERSON_MISMATCH: False
 
         # Probably Removed
@@ -58,6 +66,34 @@ TRANSFORMATION_CONFIG = {
     }
 }
 
+
+@dataclass
+class WorkflowConfig:
+    """Configuration for pipeline workflow"""
+    # Model selection for different stages
+    choose_suitable_claim_model: str = "gemini"  # Model for choosing suitable claims
+    apply_factuality_transformation_model_hebrew: str = "gemini"  # Model for applying transformations
+    apply_factuality_transformation_model_general: str = "openai"  # Model for applying transformations
+    verification_model: str = "openai"  # Model for grammar verification
+
+    # Processing limits
+    max_candidate_summaries: int = 50
+    max_final_summaries: int = 10
+
+    # NER Configuration
+    ner_min_score: float = 0.6
+    ner_model: str = "dicta-il/dictabert-ner"
+
+    # Logging
+    log_llm_calls: bool = True
+    log_directory: str = "llm_api_logs"
+
+
+# Default workflow configuration
+WORKFLOW_CONFIG = WorkflowConfig()
+def get_workflow_config() -> WorkflowConfig:
+    """Get current workflow configuration"""
+    return WORKFLOW_CONFIG
 
 def get_enabled_transformations_as_lists():
     """

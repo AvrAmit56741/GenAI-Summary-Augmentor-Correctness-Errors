@@ -32,9 +32,14 @@ from tokenizers import Tokenizer
 from tokenizers.decoders import WordPiece as WPDecoder
 import logging
 
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
+from summary_augmentation.logger_config import LoggerFactory
+logger = LoggerFactory.get_logger(__name__)
 
 class CorrectnessErrorTypes(str, Enum):
+    # NEW
+    IDIOM_COLLOCATION_CORRUPTION = "idiom_collocation_corruption"
+    MORPHOLOGICAL_CONNECTIVE_CONFUSION = "morphological_connective_confusion"
     NOUN_GENDER_SWAP = "noun_gender_swap"
     VERB_GENDER_SWAP = "verb_gender_swap"
     VERB_TENSE_SWAP = "verb_tense_swap"
@@ -43,6 +48,7 @@ class CorrectnessErrorTypes(str, Enum):
     PRONOUN_REFERENCE_ERRORS = "pronoun_reference_errors"
     SPECIFICITY_SHIFT_ERRORS = "specificity_shift_errors"
     HOMOGRAPHIC_GENDER_ERRORS = "homographic_gender_errors"
+    HEBREW_ROOT_PATTEN_CONFUSION = "hebrew_root_pattern_confusion"
     IMPERSONAL_TO_PERSONAL_VERB_ERRORS = "impersonal_to_personal_verb_errors"
     INCREMENTAL_TEMPORAL_STATE_MUTATIONS = "incremental_temporal_state_mutations"
     EVIDENTIALITY_SOURCE_ATTRIBUTION_COLLAPSE = "evidentiality_source_attribution_collapse"
@@ -50,7 +56,6 @@ class CorrectnessErrorTypes(str, Enum):
     DOUBLE_VERB_DEPENDENCY_ERRORS = "double_verb_dependency_errors"
     CONSTRUCT_STATE_CONFUSION = "construct_state_confusion"
     SUBJECT_VERB_PERSON_MISMATCH = "subject_verb_person_mismatch"
-
 
     # Misc
     MEASURE_UNIT_SWAP = "measure_unit_swap"
@@ -635,6 +640,7 @@ def get_transformation_instructions(error_type):
     }
 
     return instructions.get(error_type, "Apply the transformation")
+
 # !!! worked !!!
 # def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[str, List[Dict]]):
 #     """

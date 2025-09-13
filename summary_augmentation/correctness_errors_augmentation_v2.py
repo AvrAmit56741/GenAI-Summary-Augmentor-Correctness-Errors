@@ -12,7 +12,7 @@ from typing import List
 import random
 import Levenshtein
 import datetime
-
+from summary_augmentation.config import get_workflow_config
 from typing import Dict, List, Any, Tuple
 from collections import Counter, defaultdict
 
@@ -28,6 +28,7 @@ from openai import OpenAI
 import threading
 from summary_augmentation.logger_config import setup_logger
 logger = setup_logger(__name__)
+workflow_config = get_workflow_config()
 
 from summary_augmentation.correctness_errors_prompts import suitable_claim_decomposition_prompt, \
     claims_decomposition_prompt, apply_transformation_on_claims_prompt
@@ -89,9 +90,7 @@ def map_ner_to_error_types(
         error_type = NER_TO_ERROR_TYPE_MAP.get(ner_label)
         if error_type in desired_error_types:
             mapped_results[error_type] = entities
-
     return mapped_results
-
 
 
 def all_suitable_transformation_possible(text: str, claim_decomposition):
@@ -114,9 +113,11 @@ def all_suitable_transformation_possible(text: str, claim_decomposition):
         logger.info(
             f"From all_suitable_transformation_possible - Activate LLM function of choose_suitable_claim - Hebrew Based Errors - Error types {hebrew_transformation_types_list}")
         hebrew_claim_results = choose_suitable_claim(claim_decomposition, hebrew_transformation_types_list,
-                                                     hebrew_filtered_examples, model="gemini")
+                                                     hebrew_filtered_examples, model=workflow_config.choose_suitable_claim_model)
         # Check if the result has the attribute 'suitable_claims' and process each entry.
         if hebrew_claim_results and hasattr(hebrew_claim_results, "suitable_claims"):
+            # Line 118 - ADD this line:
+            logger.info(f"HEB-SUITABLE | types={len(hebrew_transformation_types_list)} | claims={len(getattr(hebrew_claim_results, 'suitable_claims', []))}")
             for suitable_claim in hebrew_claim_results.suitable_claims:
                 transformation_results.append({
                     "claim": suitable_claim.original_claim,
@@ -466,6 +467,7 @@ def apply_factuality_transformation_on_claims(source_article: str,
                 })
     # Process Hebrew LLM transformations
     logger.info("Phase 2 - perform hebrew based transformation on claims")
+    logger.info(f"HEB-QUEUE | types={len(hebrew_llm_transformations_dict)} | items={sum(len(v) for v in hebrew_llm_transformations_dict.values())}")
     for error_type, claims_list in hebrew_llm_transformations_dict.items():
         if claims_list:
             try:
@@ -486,14 +488,16 @@ def apply_factuality_transformation_on_claims(source_article: str,
 
                 # Call LLM for transformation
                 logger.info(f"Perform summary_negative_augmentation on hebrew - error type of: {[error_type]}")
+                logger.debug(f"HEB-LLM-CALL | type={error_type} | model=gemini | claims={len(suitable_claims_decomposition_list)} | examples={len(hebrew_filtered_examples.get(error_type, []))}")
                 llm_result = summary_negative_augmentation(
                     apply_transformation_types=[error_type],
                     transformation_examples=hebrew_filtered_examples.get(error_type, []),
                     suitable_claims_decomposition_list=suitable_claims_decomposition_list,
                     unique_transformation_instructions="",
-                    model="gemini"
+                    model=workflow_config.apply_factuality_transformation_model_hebrew
                 )
 
+                logger.debug(f"HEB-LLM-RESULT | type={error_type} | ok={llm_result is not None} | pairs={len(getattr(llm_result, 'original_and_corrupted_transformed_claims', []))}")
                 # Process results
                 if hasattr(llm_result, "original_and_corrupted_transformed_claims"):
                     for transformed_claim, original_claim in llm_result.original_and_corrupted_transformed_claims:
@@ -508,6 +512,7 @@ def apply_factuality_transformation_on_claims(source_article: str,
                             })
             except Exception as e:
                 print(f"Error in Hebrew LLM transformation {error_type}: {e}")
+                #logger.exception(f"HEB-LLM-EXC | type={error_type} | model=gemini | claims={len(suitable_claims_decomposition_list)}")
     # Process General LLM transformations
     logger.info("Phase 2 - perform general llm based transformation on claims")
     for error_type, claims_list in general_llm_transformations_dict.items():
@@ -531,7 +536,8 @@ def apply_factuality_transformation_on_claims(source_article: str,
                     apply_transformation_types=[error_type],
                     transformation_examples=general_filtered_examples.get(error_type, []),
                     suitable_claims_decomposition_list=suitable_claims_decomposition_list,
-                    unique_transformation_instructions=""
+                    unique_transformation_instructions="",
+                    model=workflow_config.apply_factuality_transformation_model_general
                 )
 
                 # Process results
@@ -1013,8 +1019,8 @@ def main():
     logger = setup_logger(__name__, log_level="INFO", log_file=log_file)
     # Hardcoded configuration
     max_workers = 3  # Number of parallel threads to use
-    start_row = 65  # <-- first row index (inclusive)
-    end_row = 70  # <-- one past the last row index (exclusive)
+    start_row = 31 # <-- first row index (inclusive)
+    end_row = 40  # <-- one past the last row index (exclusive)
 
     logger.info(f"Starting processing with {max_workers} worker threads")
     logger.info(f"Processing rows {start_row} to {end_row-1}")
