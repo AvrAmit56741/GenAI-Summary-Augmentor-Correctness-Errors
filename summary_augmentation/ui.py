@@ -10,6 +10,7 @@ st.set_page_config(page_title="Hebrew NLI Analysis Hub", layout="wide", page_ico
 
 # Add navigation info for Model Analytics
 st.sidebar.info("🔬 **Model Analytics** is now available as a separate page in the sidebar!")
+st.sidebar.info("📊 **Mafat Dataset Analysis** is now available as a separate page in the sidebar!")
 
 # Initialize session state for error type filtering
 if 'selected_error_types' not in st.session_state:
