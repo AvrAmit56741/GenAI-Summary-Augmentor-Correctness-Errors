@@ -1,0 +1,13 @@
+{
+  "text_raw": "אין חניה תקן חדש במרכז ת\"א: חניה אחת לכל שתי דיר אביבn",
+  "metadata": {
+    "ai_summary": "עיריית תל אביב אישרה תקן חניה חדש לפיו במרכז  ועידוד תחבורה שיתופית.",
+    "annotator": "kfir",
+    "doc_id": "business-7851243",
+    "source": "Israel_Hayom",
+    "type": "silver",
+    "url": "= https://www.israelhayom.co.il/business/real-estate/article/7851243/"
+  },
+  "user": "kfir",
+  "summary": "עיריית תל אביב אישרה תקן חניה חדש לפיו במרכז העיר יו אופניים, עבודה מהבית ועידוד תחבורה שיתופית."
+}
