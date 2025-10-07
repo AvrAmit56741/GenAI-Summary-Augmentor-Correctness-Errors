@@ -17,13 +17,17 @@
 # TODO: Add another Hebrew NER model -
 # TODO: UI evidence extraction - V
 # TODO: Add json dump transformation dump for optimzation - V
+# TODO: Generate summaries using close source ollama
+# TODO: Optimze trasnformation
+# TODO: ask cursor to create zeroshot prompts
+# TODO: add syntax\grammer validation
 # Add an option to download the error dump
 
 
 from summary_augmentation.utils import CorrectnessErrorTypes, ClaimDecompositionMethod
 from dataclasses import dataclass
-MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.9  # Control
-PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY = 95  # Control how much corrupted the negative summary will be (how much error transformations perform on in)
+MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.85  # Control
+PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY = 90  # Control how much corrupted the negative summary will be (how much error transformations perform on in)
 CLAIM_DECOMPOSITION_METHOD = ClaimDecompositionMethod.SENTENCES
 
 # Main configuration - just set True/False for each transformation type
@@ -71,10 +75,17 @@ TRANSFORMATION_CONFIG = {
 class WorkflowConfig:
     """Configuration for pipeline workflow"""
     # Model selection for different stages
-    choose_suitable_claim_model: str = "gemini"  # Model for choosing suitable claims
-    apply_factuality_transformation_model_hebrew: str = "gemini"  # Model for applying transformations
+    # choose_suitable_claim_model: str = "gemini"  # Model for choosing suitable claims
+    # apply_factuality_transformation_model_hebrew: str = "gemini"  # Model for applying transformations
+    # apply_factuality_transformation_model_general: str = "openai"  # Model for applying transformations
+    # verification_model: str = "openai"  # Model for grammar verification
+
+    # Model selection for different stages
+    choose_suitable_claim_model: str = "openai"  # Model for choosing suitable claims
+    apply_factuality_transformation_model_hebrew: str = "openai"  # Model for applying transformations
     apply_factuality_transformation_model_general: str = "openai"  # Model for applying transformations
     verification_model: str = "openai"  # Model for grammar verification
+
 
     # Processing limits
     max_candidate_summaries: int = 50

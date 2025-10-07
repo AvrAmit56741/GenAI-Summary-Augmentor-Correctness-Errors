@@ -27,13 +27,13 @@ from summary_augmentation.correctness_errors_llm_helper_functions import correct
 
 def main():
     # configuration
-    start_row = 91
-    end_row   = 110
+    start_row = 85
+    end_row   = 95
     #input_jsonl_path = r"C:\Users\amita\Desktop\Thesis\Correctness\data\summarization-7-heb.jsonl\summarization-7-heb.jsonl"
-    input_jsonl_path = r"C:\Users\amita\Desktop\Thesis\summaries_dicta_30_200.jsonl"
+    input_jsonl_path = r"C:\Users\amita\Desktop\Thesis\summaries_ollama_qwen3-14b_20250923_184510_start_row_150_end_row_250.jsonl"
     timestamp        = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_json_path = rf"C:\Users\amita\Downloads\finder_{timestamp}_{start_row}_{end_row}_dicta2.0_summaries_gemini_finder.json"
-    output_csv_path  = rf"C:\Users\amita\Downloads\finder_{timestamp}_{start_row}_{end_row}_dicta2.0_summaries_gemini_finder.csv"
+    output_json_path = rf"C:\Users\amita\Downloads\finder_{timestamp}_{start_row}_{end_row}_ollama_gemma3-12b_summaries_gpt_finder.json"
+    output_csv_path  = rf"C:\Users\amita\Downloads\finder_{timestamp}_{start_row}_{end_row}_ollama_gemma3-12b_summaries_gpt_finder.csv"
 
     records: List[Dict] = []
 
