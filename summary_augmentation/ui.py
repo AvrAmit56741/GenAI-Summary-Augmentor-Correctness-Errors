@@ -8,9 +8,10 @@ from sklearn.model_selection import train_test_split, StratifiedKFold
 
 st.set_page_config(page_title="Hebrew NLI Analysis Hub", layout="wide", page_icon="🏠")
 
-# Add navigation info for Model Analytics
+# Add navigation info for separate pages
 st.sidebar.info("🔬 **Model Analytics** is now available as a separate page in the sidebar!")
 st.sidebar.info("📊 **Mafat Dataset Analysis** is now available as a separate page in the sidebar!")
+st.sidebar.info("📏 **Correctness Evaluation Metrics** is now available as a separate page in the sidebar!")
 
 # Initialize session state for error type filtering
 if 'selected_error_types' not in st.session_state:
@@ -410,8 +411,8 @@ with tab_json:
             st.markdown(f"<div dir='rtl' style='background-color: #1a4d1a; color: white; padding: 15px; border-radius: 5px; border: 2px solid #4CAF50;'>{gold}</div>", unsafe_allow_html=True)
 
             # Show corrupted summaries
-            corrupted = entry.get("correctness_corrupted_summaries", [])
-            if corrupted:
+        corrupted = entry.get("correctness_corrupted_summaries", [])
+        if corrupted:
                 st.markdown("<div style='color: white;'><strong>🔍 Corrupted Summaries vs Gold:</strong></div>", unsafe_allow_html=True)
                 
                 for i, corr in enumerate(corrupted):
@@ -1183,7 +1184,7 @@ with tab_csv:
                 st.markdown(f"<div style='color: white;'><strong>Label:</strong> {row['label']}</div>", unsafe_allow_html=True)
                 if 'doc_id' in row:
                     st.markdown(f"<div style='color: white;'><strong>Doc ID:</strong> {row['doc_id']}</div>", unsafe_allow_html=True)
-            if has_err:
+        if has_err:
                 st.markdown(f"<div style='color: white;'><strong>Error Types:</strong> {row['error_types']}</div>", unsafe_allow_html=True)
                 # Parse and display individual error types as badges
                 individual_errors = parse_error_types(row['error_types'])
@@ -1338,27 +1339,27 @@ with tab_utils:
         try:
             lst = []
             for f in jsns:
-                data = json.load(f)
-                if isinstance(data, list):
-                    lst.extend(data)
-                else:
-                    lst.append(data)
-            
-            # Data preview
-            st.markdown("<div style='color: white;'><strong>📊 Combined JSON Preview:</strong></div>", unsafe_allow_html=True)
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Records", len(lst))
-            with col2:
-                st.metric("Files Combined", len(jsns))
-            
-            # Show sample structure
-            if lst:
-                with st.expander("🔍 Sample Structure (First record)"):
-                    st.json(lst[0] if len(lst) > 0 else {})
-            
-            st.download_button("📥 Download Combined JSON", json.dumps(lst, ensure_ascii=False), "combined.json", "application/json")
-            
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        lst.extend(data)
+                    else:
+                        lst.append(data)
+
+                    # Data preview
+                    st.markdown("<div style='color: white;'><strong>📊 Combined JSON Preview:</strong></div>", unsafe_allow_html=True)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Total Records", len(lst))
+                    with col2:
+                        st.metric("Files Combined", len(jsns))
+
+                    # Show sample structure
+                    if lst:
+                        with st.expander("🔍 Sample Structure (First record)"):
+                            st.json(lst[0] if len(lst) > 0 else {})
+
+                    st.download_button("📥 Download Combined JSON", json.dumps(lst, ensure_ascii=False), "combined.json", "application/json")
+
         except Exception as e:
             st.error(f"❌ Error combining JSON files: {str(e)}")
     
@@ -1398,7 +1399,7 @@ with tab_utils:
             
             split_mode = st.selectbox("Split Mode", ["kfold", "naive"], key="mode")
             
-            if split_mode == 'kfold':
+        if split_mode == 'kfold':
                 st.markdown("<div style='color: white;'><strong>🔄 K-Fold Cross Validation</strong></div>", unsafe_allow_html=True)
                 k = st.number_input("Number of folds (K)", 2, 20, 5, key="k")
                 
@@ -1623,14 +1624,14 @@ with tab_utils:
                         help=f"Download all {len(st.session_state.kfold_split_data)} split files in one ZIP package"
                     )
             
-            else:  # naive mode
-                st.markdown("<div style='color: white;'><strong>📈 Train/Validation/Test Split</strong></div>", unsafe_allow_html=True)
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    pval = st.slider("Validation %", 0.0, 0.5, 0.1, key="pval")
-                with col2:
-                    ptr = st.slider("Test %", 0.0, 0.5, 0.1, key="ptr")
+                else:  # naive mode
+                    st.markdown("<div style='color: white;'><strong>📈 Train/Validation/Test Split</strong></div>", unsafe_allow_html=True)
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        pval = st.slider("Validation %", 0.0, 0.5, 0.1, key="pval")
+                    with col2:
+                        ptr = st.slider("Test %", 0.0, 0.5, 0.1, key="ptr")
                 
                 train_pct = 1.0 - pval - ptr
                 st.markdown(f"<div style='color: white;'>**Split Ratios:** Train: {train_pct:.1%}, Validation: {pval:.1%}, Test: {ptr:.1%}</div>", unsafe_allow_html=True)
@@ -1963,17 +1964,18 @@ with tab_report:
             "Record index", 0, len(df) - 1, 0, 1, key="report_idx"
         )
         rec = df.iloc[idx]
+        st.markdown(f"**severity**  {rec['severity']}")
         st.markdown(f"**Doc_ID:**  {rec['doc_id']}")
         st.markdown(f"**Premise:**  {rec['premise']}")
         st.markdown(f"**AI Summary:**  {rec['ai_summary']}")
-        #st.markdown(f"**generative_summary:**  {rec['generative_summary']}")
+        st.markdown(f"**Generative_summary:**  {rec['generative_summary']}")
         st.markdown(f"**Error Name:**  {rec['correctness_error_name']}")
         st.markdown(f"**Reasoning:**  {rec['correctness_error_reasoning']}")
         st.markdown(f"**Features:**  {rec['mrl_unique_hebrew_features']}")
         st.markdown(f"**Why_its_factual_error:**  {rec['why_its_factual_error']}")
         st.markdown(f"**Evidence (Summary):**  {rec['evidence_from_summary']}")
         st.markdown(f"**Evidence (Source):**  {rec['evidence_from_source_article']}")
-        st.markdown(f"**severity**  {rec['severity']}")
+        #st.markdown(f"**severity**  {rec['severity']}")
 
 # Helper functions for dataset analysis (added after existing helpers)
 def analyze_dataset_structure(data, file_format, filename):
