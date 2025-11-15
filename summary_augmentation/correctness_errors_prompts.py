@@ -525,6 +525,15 @@ def apply_transformation_on_claims_prompt(claims_decomposition_list, suitable_cl
         - Ensure each corrupted claim remains **grammatically correct**, **natural**, and **fluent in Hebrew** and do **not** insert gibberish or ungrammatical constructions
 
     **IMPORTANT**: Consult the section of **Apply Error Transformation Rules Examples** to understand better how perform the hebrew error transformation types
+    
+    **🔴 CRITICAL CONSTRAINT - Mutual Exclusivity Test 🔴**
+    Before accepting ANY transformation, apply this test:
+    **Question: Can the original claim and the transformed claim BOTH be true simultaneously about the same event/entity/situation?**
+    - If YES (both can be true together) → **REJECT** - This is stylistic variation, NOT factual change
+    - If NO (they contradict each other) → **ACCEPT** - This is a factual change
+    
+    !**THE CLAIM TRANSFORMATION MUST CREATE DIFFERENT FACT**!
+    !** DO NOT TRY TO PLEASE ME BY PERFORM HEBREW COMPLEX TRANSFORMATION WITH NO FACTUAL MODIFACTIONS **!
 
     {unique_transformation_instructions}
     """

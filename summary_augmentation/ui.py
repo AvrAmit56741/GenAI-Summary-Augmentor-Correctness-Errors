@@ -1336,32 +1336,149 @@ with tab_utils:
     st.subheader("🗂️ Combine JSON Files")
     jsns = st.file_uploader("JSON to combine", type=["json"], accept_multiple_files=True, key="jcomb")
     if jsns:
+        lst = []
+        errors = []
+        for f in jsns:
+            try:
+                data = json.load(f)
+                if isinstance(data, list):
+                    lst.extend(data)
+                else:
+                    lst.append(data)
+            except json.JSONDecodeError as e:
+                errors.append(f"❌ {f.name}: {str(e)}")
+            except Exception as e:
+                errors.append(f"❌ {f.name}: {str(e)}")
+        
+        # Show errors if any
+        if errors:
+            st.warning(f"⚠️ Skipped {len(errors)} file(s) with errors:")
+            for error in errors:
+                st.error(error)
+        
+        # Show results if we have valid data
+        if lst:
+            # Data preview
+            st.markdown("<div style='color: white;'><strong>📊 Combined JSON Preview:</strong></div>", unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Records", len(lst))
+            with col2:
+                st.metric("Files Combined", f"{len(jsns) - len(errors)}/{len(jsns)}")
+
+            # Show sample structure
+            with st.expander("🔍 Sample Structure (First record)"):
+                st.json(lst[0] if len(lst) > 0 else {})
+
+            st.download_button("📥 Download Combined JSON", json.dumps(lst, ensure_ascii=False), "combined.json", "application/json", key="download_combined_json")
+        elif not errors:
+            st.warning("⚠️ No valid JSON data found in uploaded files")
+    
+    # Convert JSON Augmentation to CSV (Claim-Level)
+    st.subheader("🔄 Convert JSON Augmentation to CSV (Claim-Level)")
+    st.markdown("<div style='color: white;'>Convert augmented JSON files to CSV format with claim-level labels for model training.</div>", unsafe_allow_html=True)
+    
+    json_to_csv_file = st.file_uploader("Upload JSON augmentation file", type=["json"], key="json_to_csv")
+    
+    if json_to_csv_file:
         try:
-            lst = []
-            for f in jsns:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        lst.extend(data)
-                    else:
-                        lst.append(data)
-
-                    # Data preview
-                    st.markdown("<div style='color: white;'><strong>📊 Combined JSON Preview:</strong></div>", unsafe_allow_html=True)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Total Records", len(lst))
-                    with col2:
-                        st.metric("Files Combined", len(jsns))
-
-                    # Show sample structure
-                    if lst:
-                        with st.expander("🔍 Sample Structure (First record)"):
-                            st.json(lst[0] if len(lst) > 0 else {})
-
-                    st.download_button("📥 Download Combined JSON", json.dumps(lst, ensure_ascii=False), "combined.json", "application/json")
-
+            json_data = json.load(json_to_csv_file)
+            
+            # Convert to list if single object
+            if isinstance(json_data, dict):
+                json_data = [json_data]
+            
+            # Extract claim-level data
+            rows = []
+            for doc in json_data:
+                source = doc.get('source_article', '')
+                doc_id = doc.get('doc_id', '')
+                
+                for corrupted_summary in doc.get('correctness_corrupted_summaries', []):
+                    for transformation in corrupted_summary.get('transformation_list', []):
+                        # Extract error types for this specific claim
+                        error_types = ','.join([
+                            t['type'] for t in transformation.get('applied_transformations', [])
+                        ])
+                        
+                        rows.append({
+                            'premise': source,
+                            'hypothesis': transformation.get('transformed_claim', ''),
+                            'error_types': error_types,
+                            'label': 'contradiction',  # All transformed claims are contradictions
+                            'doc_id': doc_id,
+                            'original_claim': transformation.get('original_claim', '')
+                        })
+            
+            if rows:
+                df_converted = pd.DataFrame(rows)
+                
+                # Show preview
+                st.markdown("<div style='color: white;'><strong>📊 Conversion Preview:</strong></div>", unsafe_allow_html=True)
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Claims", len(df_converted))
+                with col2:
+                    st.metric("Unique Error Types", df_converted['error_types'].nunique())
+                with col3:
+                    st.metric("Unique Documents", df_converted['doc_id'].nunique())
+                
+                # Show error type distribution
+                st.markdown("<div style='color: white;'><strong>🎯 Error Type Distribution:</strong></div>", unsafe_allow_html=True)
+                error_type_counts = {}
+                for error_str in df_converted['error_types'].dropna():
+                    for error in error_str.split(','):
+                        error = error.strip()
+                        if error:
+                            error_type_counts[error] = error_type_counts.get(error, 0) + 1
+                
+                if error_type_counts:
+                    error_dist_df = pd.DataFrame(list(error_type_counts.items()), columns=['Error Type', 'Count'])
+                    error_dist_df = error_dist_df.sort_values('Count', ascending=False)
+                    st.bar_chart(error_dist_df.set_index('Error Type')['Count'])
+                
+                # Show sample data
+                with st.expander("🔍 Sample Data (First 5 rows)"):
+                    st.dataframe(df_converted.head(), use_container_width=True)
+                
+                # Download button
+                csv_data = df_converted.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Download Claim-Level CSV",
+                    csv_data,
+                    "augmentation_claim_level.csv",
+                    "text/csv",
+                    key="download_json_to_csv",
+                    help="Download CSV with claim-level labels ready for model training"
+                )
+                
+                st.success(f"✅ Successfully converted {len(df_converted)} claims from JSON augmentation!")
+            else:
+                st.warning("⚠️ No claim transformations found in the JSON file")
+        
+        except json.JSONDecodeError as e:
+            st.error(f"❌ Invalid JSON file: {str(e)}")
         except Exception as e:
-            st.error(f"❌ Error combining JSON files: {str(e)}")
+            st.error(f"❌ Error converting JSON to CSV: {str(e)}")
+    else:
+        st.info("📁 Upload a JSON augmentation file to convert to claim-level CSV format")
+        st.markdown("""
+        **Expected JSON structure:**
+        - Root array of documents with `source_article`, `doc_id`
+        - Each document contains `correctness_corrupted_summaries`
+        - Each summary contains `transformation_list` with claim transformations
+        - Each transformation has `original_claim`, `transformed_claim`, and `applied_transformations`
+        
+        **Output CSV columns:**
+        - `premise`: Source article text
+        - `hypothesis`: Transformed claim text
+        - `error_types`: Comma-separated error types for this claim
+        - `label`: Always 'contradiction' (transformed claims)
+        - `doc_id`: Document identifier
+        - `original_claim`: Original claim before transformation
+        
+        **Use case:** Training multi-label error type classifiers on claim-level data
+        """)
     
     # Split Data - Enhanced with independent data loading
     st.subheader("📊 Split Data")

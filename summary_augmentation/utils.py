@@ -10,6 +10,7 @@ from openai import OpenAI
 # Define OpenAI API credentials
 import re
 import random
+import threading
 from typing import List, Dict, Tuple, Optional, Any
 from pydantic import BaseModel, Field, PrivateAttr
 import re
@@ -91,14 +92,32 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 
 
-# Module-scope initialization
-tokenizer = AutoTokenizer.from_pretrained('dicta-il/dictabert-ner')
-ner_pipeline = pipeline(
-    'ner',
-    model='dicta-il/dictabert-ner',
-    aggregation_strategy='simple'
-)
-ner_pipeline.tokenizer.backend_tokenizer.decoder = WPDecoder()
+# Thread-safe lazy singleton for NER model
+_ner_model = None
+_ner_tokenizer = None
+_ner_lock = threading.Lock()
+
+def _get_ner_model():
+    """Thread-safe lazy initialization of NER model (singleton pattern)"""
+    global _ner_model, _ner_tokenizer
+    
+    if _ner_model is None:
+        with _ner_lock:
+            if _ner_model is None:  # Double-check pattern
+                logger.info("Loading DictaBERT-NER model (first time only)...")
+                _ner_tokenizer = AutoTokenizer.from_pretrained('dicta-il/dictabert-ner')
+                _ner_model = pipeline(
+                    'ner',
+                    model='dicta-il/dictabert-ner',
+                    aggregation_strategy='simple'
+                )
+                _ner_model.tokenizer.backend_tokenizer.decoder = WPDecoder()
+                logger.info("DictaBERT-NER model loaded successfully")
+    
+    return _ner_tokenizer, _ner_model
+
+# For backward compatibility
+tokenizer, ner_pipeline = None, None
 
 def detach_hebrew_clitics(txt: str) -> str:
     """
@@ -125,6 +144,9 @@ def extract_named_entities(text: str, min_score: float = 0.6):
     runs NER on each chunk, and aggregates results.
     Returns a list of dicts with keys: entity_group, word, start, end, score.
     """
+    # Get singleton model instance (thread-safe)
+    tokenizer, ner_pipeline = _get_ner_model()
+    
     text = normalize_hebrew(text)
     tokens = tokenizer.tokenize(text)
 
@@ -902,7 +924,8 @@ def control_claims_after_transformation(
     claims_after_transformation: Dict[str, List[Dict[str, Any]]],
     amount_of_transformed_claims: int = None,
     amount_of_correctness_errors: int = None,
-    percentage_of_correctness_errors_transformation: float = None
+    percentage_of_correctness_errors_transformation: float = None,
+    max_results: int = 20000
 ) -> List[Dict[str, List[Dict[str, Any]]]]:
 
     # 1. Prepare list of claims and their errors
@@ -934,7 +957,7 @@ def control_claims_after_transformation(
                 for rest in gen(i+1, rem - c):
                     yield [(claim, list(combo))] + rest
 
-    # 4. Build results
+    # 4. Build results with early termination
     results = []
     for allocation in gen(0, k):
         grouped: Dict[str, List[Dict[str, Any]]] = {}
@@ -943,7 +966,11 @@ def control_claims_after_transformation(
                 grouped[claim] = errs
         grouped_filtered = apply_transformation_restrictions(grouped)
         results.append(grouped_filtered)
-        # results.append(grouped)
+        
+        # Early termination to prevent combinatorial explosion
+        if len(results) >= max_results:
+            logger.info(f"Reached max_results limit ({max_results}) - stopping combination generation early")
+            break
 
     return results
 
@@ -1222,3 +1249,127 @@ def compute_all_diffs(original, transformed):
 #     except Exception as e:
 #         print(f"Exception during openai LLM query or parsing: {e}")
 #         return None
+
+# === Word Validity Utilities with logging (add-only) ===
+import os
+import re
+import datetime
+from typing import Any, List, Optional
+import Levenshtein
+from summary_augmentation.logger_config import LoggerFactory
+
+_HEBREW_RE = re.compile(r"[\u0590-\u05FF]+")
+_CLITIC_PREFIXES = ("ו", "ב", "כ", "ל", "מ", "ש", "ה")
+
+_word_validity_logger = LoggerFactory.get_logger(
+    "summary_augmentation.word_validity",
+    console_level="INFO",
+    file_level="DEBUG",
+    log_file=None
+)
+
+def _attach_file_handler_if_needed(enable_file_logging: bool):
+    if not enable_file_logging:
+        return
+    date_str = datetime.datetime.now().strftime("%Y%m%d")
+    log_file = os.path.join("word_validity_logs", f"word_validity_{date_str}.log")
+    LoggerFactory.enable_file_logging_for_all(log_file=log_file, file_level="DEBUG")
+
+def _tokenize_hebrew_words(text: str) -> List[str]:
+    return _HEBREW_RE.findall(text or "")
+
+def _build_valid_vocab_from_texts(texts: List[str]) -> set:
+    vocab: set = set()
+    for t in texts or []:
+        if not t:
+            continue
+        for w in _tokenize_hebrew_words(t):
+            vocab.add(w)
+    return vocab
+
+def _build_fallback_vocab_from_candidates(candidates: List[Any]) -> set:
+    texts: List[str] = []
+    for item in candidates or []:
+        if isinstance(item, dict) and "corrupted_summary" in item and isinstance(item["corrupted_summary"], str):
+            texts.append(item["corrupted_summary"])
+        elif isinstance(item, str):
+            texts.append(item)
+    return _build_valid_vocab_from_texts(texts)
+
+def _defuse_prefix_if_valid(token: str, vocab: set) -> Optional[str]:
+    for cut in (1, 2):
+        if len(token) > cut and all(token[i] in _CLITIC_PREFIXES for i in range(cut)):
+            rest = token[cut:]
+            if rest in vocab:
+                return rest
+    return None
+
+def _closest_vocab_candidate_levenshtein(token: str, vocab: set, max_dist: int = 1) -> Optional[str]:
+    best, best_d = None, max_dist + 1
+    min_len, max_len = max(1, len(token) - 1), len(token) + 1
+    for v in vocab:
+        if min_len <= len(v) <= max_len:
+            d = Levenshtein.distance(token, v)
+            if d < best_d:
+                best, best_d = v, d
+                if best_d == 0:
+                    break
+    return best if best_d <= max_dist else None
+
+def _fix_non_words(text: str, vocab: set, item_idx: int) -> str:
+    if not text:
+        return text
+    parts = re.split(r"([\W_]+)", text)
+    out: List[str] = []
+    for part in parts:
+        if not part or not _HEBREW_RE.search(part):
+            out.append(part)
+            continue
+        tokens = re.split(r"([^א-ת]+)", part)
+        rebuilt: List[str] = []
+        for tok in tokens:
+            if not tok or not _HEBREW_RE.fullmatch(tok):
+                rebuilt.append(tok)
+                continue
+            if tok in vocab:
+                rebuilt.append(tok)
+                continue
+            cand = _defuse_prefix_if_valid(tok, vocab)
+            if not cand:
+                cand = _closest_vocab_candidate_levenshtein(tok, vocab, max_dist=1)
+            if cand and cand != tok:
+                _word_validity_logger.info(f"[item={item_idx}] fix: '{tok}' -> '{cand}'")
+                rebuilt.append(cand)
+            else:
+                rebuilt.append(tok)
+        out.append("".join(rebuilt))
+    return "".join(out)
+
+def validate_and_fix_candidate_summaries(
+    candidate_corrupted_augmented_summaries: List[Any],
+    vocab_texts: Optional[List[str]] = None,
+    enable_file_logging: bool = True
+) -> List[Any]:
+    """
+    Deterministically fixes non-words in candidate summaries, logs token-level fixes to console and to a dated file.
+    Preserves item shapes (dict with 'corrupted_summary' or str).
+    """
+    _attach_file_handler_if_needed(enable_file_logging)
+
+    valid_vocab = _build_valid_vocab_from_texts(vocab_texts) if vocab_texts else _build_fallback_vocab_from_candidates(candidate_corrupted_augmented_summaries)
+
+    fixed_list: List[Any] = []
+    for idx, item in enumerate(candidate_corrupted_augmented_summaries or []):
+        try:
+            if isinstance(item, dict) and "corrupted_summary" in item and isinstance(item["corrupted_summary"], str):
+                new_item = dict(item)
+                new_item["corrupted_summary"] = _fix_non_words(item["corrupted_summary"], valid_vocab, item_idx=idx)
+                fixed_list.append(new_item)
+            elif isinstance(item, str):
+                fixed_list.append(_fix_non_words(item, valid_vocab, item_idx=idx))
+            else:
+                fixed_list.append(item)
+        except Exception as e:
+            _word_validity_logger.error(f"[item={idx}] validation error: {e}")
+            fixed_list.append(item)
+    return fixed_list

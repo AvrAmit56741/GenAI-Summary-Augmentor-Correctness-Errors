@@ -140,28 +140,38 @@ def all_suitable_transformation_possible(text: str, claim_decomposition):
     # except Exception as e:
     #     print(f"Error in LLM choose suitable claims for general transformation: {e}")
     try:
-        for err_type in general_llm_transformations:
-            # build a single‐type examples dict (skip if no examples)
-            if err_type in general_filtered_examples:
-                examples = {err_type: general_filtered_examples[err_type]}
-            else:
-                continue
-            logger.info(f"From all_suitable_transformation_possible - Activate LLM function of choose_suitable_claim - General Based Errors - Error type {[err_type]}")
-            # run the prompt for just this one error type
-            result = choose_suitable_claim(
-                claim_decomposition,
-                [err_type],  # only this type
-                examples  # only its examples
-            )
+        # Parallel execution for general error types
+        def process_general_error_type(err_type, claim_decomposition, examples):
+            try:
+                logger.info(f"From all_suitable_transformation_possible - Activate LLM function of choose_suitable_claim - General Based Errors - Error type {[err_type]}")
+                result = choose_suitable_claim(
+                    claim_decomposition,
+                    [err_type],
+                    examples,
+                    model=workflow_config.choose_suitable_claim_model
+                )
+                return result
+            except Exception as e:
+                logger.error(f"Error processing general error type {err_type}: {e}")
+                return None
 
-            # collect any suitable_claims
-            if result and hasattr(result, "suitable_claims"):
-                for sc in result.suitable_claims:
-                    transformation_results.append({
-                        "claim": sc.original_claim,
-                        "error_type": sc.correctness_error_type,
-                        "word": sc.applicable_transformation_text_within_claim
-                    })
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = []
+            for err_type in general_llm_transformations:
+                if err_type in general_filtered_examples:
+                    examples = {err_type: general_filtered_examples[err_type]}
+                    future = executor.submit(process_general_error_type, err_type, claim_decomposition, examples)
+                    futures.append(future)
+
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result and hasattr(result, "suitable_claims"):
+                    for sc in result.suitable_claims:
+                        transformation_results.append({
+                            "claim": sc.original_claim,
+                            "error_type": sc.correctness_error_type,
+                            "word": sc.applicable_transformation_text_within_claim
+                        })
 
     except Exception as e:
         print(f"Error in LLM choose suitable claims for general transformation: {e}")
@@ -468,92 +478,100 @@ def apply_factuality_transformation_on_claims(source_article: str,
     # Process Hebrew LLM transformations
     logger.info("Phase 2 - perform hebrew based transformation on claims")
     logger.info(f"HEB-QUEUE | types={len(hebrew_llm_transformations_dict)} | items={sum(len(v) for v in hebrew_llm_transformations_dict.values())}")
-    for error_type, claims_list in hebrew_llm_transformations_dict.items():
-        if claims_list:
-            try:
-                # Prepare data for LLM transformation
-                suitable_claims_decomposition_list = []
+    
+    # Parallel execution for Hebrew error types
+    def process_hebrew_error_type(error_type, claims_list, hebrew_filtered_examples):
+        try:
+            suitable_claims_decomposition_list = []
+            for claim_data in claims_list:
+                suitable_claims_decomposition_list.append({
+                    "original_claim": claim_data["claim"],
+                    "correctness_error_type": error_type,
+                    "applicable_transformation_text_within_claim": claim_data["word"]
+                })
+            
+            logger.info(f"Perform summary_negative_augmentation on hebrew - error type of: {[error_type]}")
+            logger.debug(f"HEB-LLM-CALL | type={error_type} | model=gemini | claims={len(suitable_claims_decomposition_list)} | examples={len(hebrew_filtered_examples.get(error_type, []))}")
+            llm_result = summary_negative_augmentation(
+                apply_transformation_types=[error_type],
+                transformation_examples=hebrew_filtered_examples.get(error_type, []),
+                suitable_claims_decomposition_list=suitable_claims_decomposition_list,
+                unique_transformation_instructions="",
+                model=workflow_config.apply_factuality_transformation_model_hebrew
+            )
+            logger.debug(f"HEB-LLM-RESULT | type={error_type} | ok={llm_result is not None} | pairs={len(getattr(llm_result, 'original_and_corrupted_transformed_claims', []))}")
+            return error_type, llm_result
+        except Exception as e:
+            logger.error(f"Error in Hebrew LLM transformation {error_type}: {e}")
+            return error_type, None
 
-                for claim_data in claims_list:
-                    suitable_claims_decomposition_list.append({
-                        "original_claim": claim_data["claim"],
-                        "correctness_error_type": error_type,
-                        "applicable_transformation_text_within_claim": claim_data["word"]
-                    })
-
-                    # claims_decomposition_list.append(claim_data["claim"])
-
-                # Get transformation instructions based on error type
-                # unique_transformation_instructions = get_transformation_instructions(error_type)
-
-                # Call LLM for transformation
-                logger.info(f"Perform summary_negative_augmentation on hebrew - error type of: {[error_type]}")
-                logger.debug(f"HEB-LLM-CALL | type={error_type} | model=gemini | claims={len(suitable_claims_decomposition_list)} | examples={len(hebrew_filtered_examples.get(error_type, []))}")
-                llm_result = summary_negative_augmentation(
-                    apply_transformation_types=[error_type],
-                    transformation_examples=hebrew_filtered_examples.get(error_type, []),
-                    suitable_claims_decomposition_list=suitable_claims_decomposition_list,
-                    unique_transformation_instructions="",
-                    model=workflow_config.apply_factuality_transformation_model_hebrew
-                )
-
-                logger.debug(f"HEB-LLM-RESULT | type={error_type} | ok={llm_result is not None} | pairs={len(getattr(llm_result, 'original_and_corrupted_transformed_claims', []))}")
-                # Process results
-                if hasattr(llm_result, "original_and_corrupted_transformed_claims"):
-                    for transformed_claim, original_claim in llm_result.original_and_corrupted_transformed_claims:
-                        if original_claim in transformed_claims:
-                            diffs = compute_all_diffs(original_claim, transformed_claim)
-                            transformed_claims[original_claim].append({
-                                "transformed_claim": transformed_claim,
-                                "error_type": error_type,
-                                "llm_generated": True,
-                                "original_claim": original_claim,
-                                "diffs": diffs
-                            })
-            except Exception as e:
-                print(f"Error in Hebrew LLM transformation {error_type}: {e}")
-                #logger.exception(f"HEB-LLM-EXC | type={error_type} | model=gemini | claims={len(suitable_claims_decomposition_list)}")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = []
+        for error_type, claims_list in hebrew_llm_transformations_dict.items():
+            if claims_list:
+                future = executor.submit(process_hebrew_error_type, error_type, claims_list, hebrew_filtered_examples)
+                futures.append(future)
+        
+        for future in concurrent.futures.as_completed(futures):
+            error_type, llm_result = future.result()
+            if llm_result and hasattr(llm_result, "original_and_corrupted_transformed_claims"):
+                for transformed_claim, original_claim in llm_result.original_and_corrupted_transformed_claims:
+                    if original_claim in transformed_claims:
+                        diffs = compute_all_diffs(original_claim, transformed_claim)
+                        transformed_claims[original_claim].append({
+                            "transformed_claim": transformed_claim,
+                            "error_type": error_type,
+                            "llm_generated": True,
+                            "original_claim": original_claim,
+                            "diffs": diffs
+                        })
     # Process General LLM transformations
     logger.info("Phase 2 - perform general llm based transformation on claims")
-    for error_type, claims_list in general_llm_transformations_dict.items():
-        if claims_list:
-            try:
-                # Prepare data for LLM transformation
-                suitable_claims_decomposition_list = []
-                for claim_data in claims_list:
-                    suitable_claims_decomposition_list.append({
-                        "original_claim": claim_data["claim"],
-                        "correctness_error_type": error_type,
-                        "applicable_transformation_text_within_claim": claim_data["word"]
-                    })
+    
+    # Parallel execution for General error types
+    def process_general_error_type_transform(error_type, claims_list, general_filtered_examples):
+        try:
+            suitable_claims_decomposition_list = []
+            for claim_data in claims_list:
+                suitable_claims_decomposition_list.append({
+                    "original_claim": claim_data["claim"],
+                    "correctness_error_type": error_type,
+                    "applicable_transformation_text_within_claim": claim_data["word"]
+                })
+            
+            logger.info(f"Perform summary_negative_augmentation on general - error type of: {[error_type]}")
+            llm_result = summary_negative_augmentation(
+                apply_transformation_types=[error_type],
+                transformation_examples=general_filtered_examples.get(error_type, []),
+                suitable_claims_decomposition_list=suitable_claims_decomposition_list,
+                unique_transformation_instructions="",
+                model=workflow_config.apply_factuality_transformation_model_general
+            )
+            return error_type, llm_result
+        except Exception as e:
+            logger.error(f"Error in General LLM transformation {error_type}: {e}")
+            return error_type, None
 
-                # Get transformation instructions based on error type
-                # unique_transformation_instructions = get_transformation_instructions(error_type)
-
-                # Call LLM for transformation
-                logger.info("Perform summary_negative_augmentation on general")
-                llm_result = summary_negative_augmentation(
-                    apply_transformation_types=[error_type],
-                    transformation_examples=general_filtered_examples.get(error_type, []),
-                    suitable_claims_decomposition_list=suitable_claims_decomposition_list,
-                    unique_transformation_instructions="",
-                    model=workflow_config.apply_factuality_transformation_model_general
-                )
-
-                # Process results
-                if hasattr(llm_result, "original_and_corrupted_transformed_claims"):
-                    for transformed_claim, original_claim in llm_result.original_and_corrupted_transformed_claims:
-                        if original_claim in transformed_claims:
-                            diffs = compute_all_diffs(original_claim, transformed_claim)
-                            transformed_claims[original_claim].append({
-                                "transformed_claim": transformed_claim,
-                                "error_type": error_type,
-                                "llm_generated": True,
-                                "original_claim": original_claim,
-                                "diffs": diffs
-                            })
-            except Exception as e:
-                print(f"Error in General LLM transformation {error_type}: {e}")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = []
+        for error_type, claims_list in general_llm_transformations_dict.items():
+            if claims_list:
+                future = executor.submit(process_general_error_type_transform, error_type, claims_list, general_filtered_examples)
+                futures.append(future)
+        
+        for future in concurrent.futures.as_completed(futures):
+            error_type, llm_result = future.result()
+            if llm_result and hasattr(llm_result, "original_and_corrupted_transformed_claims"):
+                for transformed_claim, original_claim in llm_result.original_and_corrupted_transformed_claims:
+                    if original_claim in transformed_claims:
+                        diffs = compute_all_diffs(original_claim, transformed_claim)
+                        transformed_claims[original_claim].append({
+                            "transformed_claim": transformed_claim,
+                            "error_type": error_type,
+                            "llm_generated": True,
+                            "original_claim": original_claim,
+                            "diffs": diffs
+                        })
 
     # Remove claims that the transformation failed
     for k, v in transformed_claims.items():
@@ -800,6 +818,14 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
 
     claims_after_transformation = apply_factuality_transformation_on_claims(source_article, suitable_transformation_claims)
     logger.info(f"Claims after transformation: {len(claims_after_transformation)} claims modified")
+    
+    logger.info(f"About to call control_claims_after_transformation with {len(claims_after_transformation)} claims")
+    logger.info(f"Percentage to transform: {PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY}%")
+    # Count total transformation variants
+    total_variants = sum(len(transforms) for transforms in claims_after_transformation.values())
+    logger.info(f"Total transformation variants across all claims: {total_variants}")
+    logger.warning(f"This may generate up to 2^{len(claims_after_transformation)} combinations - could take a while!")
+    
     transformed_claims_variations = control_claims_after_transformation(
         claims_after_transformation,
         percentage_of_correctness_errors_transformation=PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY
@@ -810,11 +836,11 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
 
     count = 0
     for s in transformed_claims_variations:
-        logger.debug(f"there are {len(transformed_claims_variations)} of transformed_claims_variations")
-        logger.debug(f"enter recompose_transformed_summary for claim variation {s}")
+        logger.info(f"there are {len(transformed_claims_variations)} of transformed_claims_variations")
+        logger.info(f"enter recompose_transformed_summary for claim variation {s}")
 
         summary_aug = recompose_transformed_summary(claim_decomposition, s)
-        logger.debug(f"complete recompose_transformed_summary for claim variation: {s} and summary_aug: {summary_aug}")
+        logger.info(f"complete recompose_transformed_summary for claim variation: {s} and summary_aug: {summary_aug}")
         logger.info(f"Appended summary_aug #{count + 1} to candidate_corrupted_augmented_summaries")
         candidate_corrupted_augmented_summaries.append(summary_aug)
         count += 1
@@ -823,9 +849,21 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
             break
 
     if len(claims_after_transformation) > 1 and len(candidate_corrupted_augmented_summaries) == 0:
-        logger.debug(
+        logger.info(
             f"Summary recompose return 0 corrupted summaries  but there is {len(claims_after_transformation)} amount of claims after transformation")
         return
+
+    # # NEW: deterministic word validity pass (add-only)
+    # try:
+    #     from summary_augmentation.utils import validate_and_fix_candidate_summaries
+    #     candidate_corrupted_augmented_summaries = validate_and_fix_candidate_summaries(
+    #         candidate_corrupted_augmented_summaries,
+    #         vocab_texts=[summary, source_article],
+    #         enable_file_logging=True
+    #     )
+    #     logger.info(f"Applied word validity pass on {len(candidate_corrupted_augmented_summaries)} candidates")
+    # except Exception as e:
+    #     logger.error(f"Word validity pass failed: {e}")
 
     diverse = filter_diverse_summaries(
         golden=summary,
@@ -843,8 +881,8 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
         logger.info(f"After diversity filtering, {len(diverse)} summaries remain.")
         final_summaries = diverse
 
-    if len(final_summaries) > 10:
-        return final_summaries[:10]
+    if len(final_summaries) > 7:
+        return final_summaries[:7]
     else:
         logger.info(f"Total final augmented corrupted summaries {len(final_summaries)}")
         return final_summaries
@@ -1018,19 +1056,21 @@ def main():
     global logger
     logger = setup_logger(__name__, log_level="INFO", log_file=log_file)
     # Hardcoded configuration
-    max_workers = 3  # Number of parallel threads to use
-    start_row = 31 # <-- first row index (inclusive)
-    end_row = 40  # <-- one past the last row index (exclusive)
+    max_workers = 3
+    start_row = 51
+    end_row = 65
 
     logger.info(f"Starting processing with {max_workers} worker threads")
     logger.info(f"Processing rows {start_row} to {end_row-1}")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    # input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"
-    # output_json = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
-    # output_csv = rf"C:\Users\amita\Downloads\b2_a2_not_in_mafat_800_article_150_augmented_dataset_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
-    input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\train.csv"
-    output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\mafat_train_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
-    output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\mafat_train_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
+    dataset_type = "validation"
+    # input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\train.csv"
+    # output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\mafat_train_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
+    # output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\mafat_train_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
+    input_csv_path = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\{dataset_type}.csv"
+    output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\mafat_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
+    output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\mafat_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
+
 
 
     transform_types = [
@@ -1056,9 +1096,9 @@ def main():
         slice_df = df.iloc[start_row:end_row]
         total_rows = len(slice_df)
 
-        # Thread-safe container for results
-        all_records = []
-        results_lock = threading.Lock()
+        # Thread-safe file writing locks
+        json_lock = threading.Lock()
+        csv_lock = threading.Lock()
 
         # Progress tracking
         completed = 0
@@ -1077,6 +1117,13 @@ def main():
 
         print(f"Processing rows {start_row} to {end_row - 1} ({total_rows} total) with {max_workers} worker threads")
 
+        # Initialize JSON file with opening bracket
+        with open(output_json, 'w', encoding='utf-8') as json_file:
+            json_file.write('[\n')
+
+        # Initialize CSV file with headers
+        csv_initialized = False
+
         # Use ThreadPoolExecutor to manage threads
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
@@ -1084,28 +1131,77 @@ def main():
                 for _, row in slice_df.iterrows()
             ]
 
+            record_count = 0
             for future in concurrent.futures.as_completed(futures):
                 try:
                     result = future.result()
                     if result:
-                        with results_lock:
-                            all_records.append(result)
+                        logger.info(f"✓ Sample augmentation completed for doc_id={result.get('doc_id', 'unknown')} | corrupted_summaries={len(result.get('correctness_corrupted_summaries', []))}")
+                        # Write JSON incrementally (thread-safe)
+                        with json_lock:
+                            with open(output_json, 'a', encoding='utf-8') as json_file:
+                                if record_count > 0:
+                                    json_file.write(',\n')
+                                json_text = json.dumps(result, ensure_ascii=False, indent=2)
+                                json_file.write(json_text)
+                            record_count += 1
+
+                        # Write CSV incrementally (thread-safe)
+                        with csv_lock:
+                            # Convert record to CSV rows
+                            rows = []
+                            # Entailment pair
+                            rows.append({
+                                'premise': result['source_article'],
+                                'hypothesis': result['gold_summary'],
+                                'label': 'entailment',
+                                'len_group': result['len_group'],
+                                'doc_id': result['doc_id'],
+                                'source': result['source'],
+                                'error_types': ''
+                            })
+                            # Contradiction pairs
+                            for corrupt in result.get('correctness_corrupted_summaries', []):
+                                ets = []
+                                for t in corrupt.get('transformation_list', []):
+                                    for at in t.get('applied_transformations', []):
+                                        ty = at.get('type')
+                                        if isinstance(ty, CorrectnessErrorTypes):
+                                            ets.append(ty.value)
+                                        elif isinstance(ty, str):
+                                            ets.append(ty)
+                                rows.append({
+                                    'premise': result['source_article'],
+                                    'hypothesis': corrupt['corrupted_summary'],
+                                    'label': 'contradiction',
+                                    'len_group': result['len_group'],
+                                    'doc_id': result['doc_id'],
+                                    'source': result['source'],
+                                    'error_types': ','.join(set(ets))
+                                })
+                            
+                            # Write to CSV (append mode after first write)
+                            df_chunk = pd.DataFrame(rows)
+                            if not csv_initialized:
+                                df_chunk.to_csv(output_csv, mode='w', index=False, encoding='utf-8')
+                                csv_initialized = True
+                            else:
+                                df_chunk.to_csv(output_csv, mode='a', index=False, header=False, encoding='utf-8')
+
                         update_progress(success=True)
+                        logger.info(f"Saved record {record_count} to disk")
                     else:
                         update_progress(success=False)
                 except Exception as e:
                     logger.error(f"Error getting task result: {e}")
                     update_progress(success=False)
 
-        print("\nProcessing completed")
+        # Close JSON array
+        with open(output_json, 'a', encoding='utf-8') as json_file:
+            json_file.write('\n]\n')
 
-        # Write out
-        if all_records:
-            save_dataset_json(all_records, output_json)
-            save_dataset_csv(all_records, output_csv)
-            print(f"Written {len(all_records)} examples to:\n  JSON: {output_json}\n  CSV: {output_csv}")
-        else:
-            print("No records were successfully processed. Check the logs for errors.")
+        print("\nProcessing completed")
+        print(f"Written {record_count} examples to:\n  JSON: {output_json}\n  CSV: {output_csv}")
 
     except Exception as e:
         logger.error(f"Error in main processing: {e}")
