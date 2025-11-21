@@ -107,10 +107,10 @@ def _get_ner_model():
                 logger.info("Loading DictaBERT-NER model (first time only)...")
                 _ner_tokenizer = AutoTokenizer.from_pretrained('dicta-il/dictabert-ner')
                 _ner_model = pipeline(
-                    'ner',
-                    model='dicta-il/dictabert-ner',
-                    aggregation_strategy='simple'
-                )
+    'ner',
+    model='dicta-il/dictabert-ner',
+    aggregation_strategy='simple'
+)
                 _ner_model.tokenizer.backend_tokenizer.decoder = WPDecoder()
                 logger.info("DictaBERT-NER model loaded successfully")
     
@@ -617,8 +617,8 @@ def recompose_transformed_summary(claim_decomposition, transformed_claims: Dict[
             "transformed_claim": current_claim,
             "applied_transformations": applied
         })
-        logger.info("recompose_transformed_summary - Finished claim. Applied total %d transforms", len(applied))
-        logger.info(f"recompose_transformed_summary: \noriginal claim: {original_claim}\ntransformed_claim: {current_claim}")
+        #logger.info("recompose_transformed_summary - Finished claim. Applied total %d transforms", len(applied))
+        #logger.info(f"recompose_transformed_summary: \noriginal claim: {original_claim}\ntransformed_claim: {current_claim}")
 
     # 5) Rebuild the full summary and score
     corrupted_summary = " ".join(modified_claims)
@@ -1125,6 +1125,131 @@ def save_dataset_csv(records: List[dict], path: str):
 
     df = pd.DataFrame(rows)
     df.to_csv(path, index=False)
+
+
+def save_workflow_summary(
+    output_path: str,
+    input_csv_path: str,
+    output_json: str,
+    output_csv: str,
+    transformation_types: List[CorrectnessErrorTypes],
+    start_row: int,
+    end_row: int,
+    total_samples: int,
+    start_time: float,
+    end_time: float,
+    workflow_config: Any,
+    filter_by_label: str = None
+):
+    """
+    Save a summary text file with workflow metadata and configuration.
+    
+    Args:
+        output_path: Path to save the summary text file
+        input_csv_path: Path to input dataset
+        output_json: Path to output JSON file
+        output_csv: Path to output CSV file
+        transformation_types: List of error types applied
+        start_row: Starting row index
+        end_row: Ending row index
+        total_samples: Total number of samples processed
+        start_time: Start timestamp (from time.time())
+        end_time: End timestamp (from time.time())
+        workflow_config: WorkflowConfig object with model settings
+    """
+    import time
+    
+    duration_seconds = end_time - start_time
+    duration_minutes = duration_seconds / 60
+    duration_hours = duration_minutes / 60
+    
+    # Format error types
+    error_types_str = "\n".join([f"  - {et.value}" for et in transformation_types])
+    
+    # Get model configuration
+    hebrew_model = workflow_config.apply_factuality_transformation_model_hebrew
+    general_model = workflow_config.apply_factuality_transformation_model_general
+    choose_model = workflow_config.choose_suitable_claim_model
+    
+    # Get Hebrew error type to model mapping
+    from summary_augmentation.config import HEBREW_ERROR_TYPE_TO_MODEL_MAPPING, get_model_for_hebrew_error_type
+    
+    # Format Hebrew error type mapping
+    hebrew_mapping_lines = []
+    for error_type, model in HEBREW_ERROR_TYPE_TO_MODEL_MAPPING.items():
+        actual_model = get_model_for_hebrew_error_type(error_type)
+        if model is None:
+            hebrew_mapping_lines.append(f"  - {error_type.value}: {actual_model} (default)")
+        else:
+            hebrew_mapping_lines.append(f"  - {error_type.value}: {actual_model}")
+    hebrew_mapping_str = "\n".join(hebrew_mapping_lines) if hebrew_mapping_lines else "  (No Hebrew error types configured)"
+    
+    summary_text = f"""
+================================================================================
+DATASET AUGMENTATION WORKFLOW SUMMARY
+================================================================================
+
+Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time))}
+
+--------------------------------------------------------------------------------
+INPUT/OUTPUT FILES
+--------------------------------------------------------------------------------
+Input Dataset:  {input_csv_path}
+Output JSON:    {output_json}
+Output CSV:     {output_csv}
+
+--------------------------------------------------------------------------------
+PROCESSING CONFIGURATION
+--------------------------------------------------------------------------------
+Row Range:      {start_row} to {end_row - 1} (Total: {end_row - start_row} rows)
+Samples Processed: {total_samples}
+Label Filter:   {filter_by_label if filter_by_label else "None (all labels)"}
+
+--------------------------------------------------------------------------------
+ERROR TYPES APPLIED
+--------------------------------------------------------------------------------
+{error_types_str}
+
+--------------------------------------------------------------------------------
+MODEL CONFIGURATION
+--------------------------------------------------------------------------------
+Choose Suitable Claim Model:           {choose_model}
+Hebrew Transformation Model (default): {hebrew_model}
+General Transformation Model:          {general_model}
+Verification Model:                    {workflow_config.verification_model}
+
+Hebrew Error Type → Model Mapping:
+{hebrew_mapping_str}
+
+NER Model:                             {workflow_config.ner_model}
+NER Min Score:                         {workflow_config.ner_min_score}
+
+--------------------------------------------------------------------------------
+PROCESSING LIMITS
+--------------------------------------------------------------------------------
+Max Candidate Summaries:  {workflow_config.max_candidate_summaries}
+Max Final Summaries:      {workflow_config.max_final_summaries}
+
+--------------------------------------------------------------------------------
+TIMING
+--------------------------------------------------------------------------------
+Start Time:     {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}
+End Time:       {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time))}
+Total Duration: {duration_hours:.2f} hours ({duration_minutes:.2f} minutes, {duration_seconds:.2f} seconds)
+Avg per Sample: {duration_seconds / total_samples if total_samples > 0 else 0:.2f} seconds
+
+--------------------------------------------------------------------------------
+STATUS
+--------------------------------------------------------------------------------
+Workflow completed successfully.
+
+================================================================================
+"""
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(summary_text.strip())
+    
+    return output_path
 
 
 def token_overlap(a: str, b: str) -> float:

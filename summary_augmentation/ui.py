@@ -8,10 +8,6 @@ from sklearn.model_selection import train_test_split, StratifiedKFold
 
 st.set_page_config(page_title="Hebrew NLI Analysis Hub", layout="wide", page_icon="🏠")
 
-# Add navigation info for separate pages
-st.sidebar.info("🔬 **Model Analytics** is now available as a separate page in the sidebar!")
-st.sidebar.info("📊 **Mafat Dataset Analysis** is now available as a separate page in the sidebar!")
-st.sidebar.info("📏 **Correctness Evaluation Metrics** is now available as a separate page in the sidebar!")
 
 # Initialize session state for error type filtering
 if 'selected_error_types' not in st.session_state:
@@ -1299,10 +1295,49 @@ with tab_utils:
     
     # Combine CSV
     st.subheader("📁 Combine CSV Files")
+    
+    # Mode selection
+    csv_combine_mode = st.radio("Combine Mode:", ["Default", "Custom Sample Size"], key="csv_mode", horizontal=True)
+    
     csvs = st.file_uploader("CSV to combine", type=["csv"], accept_multiple_files=True, key="ccomb")
     if csvs:
         try:
-            dfc = pd.concat([pd.read_csv(f) for f in csvs], ignore_index=True)
+            # Custom sample size configuration
+            file_sample_limits = {}
+            if csv_combine_mode == "Custom Sample Size":
+                st.markdown("<div style='color: white;'><strong>🎛️ Configure Sample Sizes:</strong></div>", unsafe_allow_html=True)
+                for i, f in enumerate(csvs):
+                    df_temp = pd.read_csv(f)
+                    max_samples = len(df_temp)
+                    f.seek(0)  # Reset file pointer
+                    
+                    sample_size = st.number_input(
+                        f"{f.name} (max: {max_samples})",
+                        min_value=1,
+                        max_value=max_samples,
+                        value=max_samples,
+                        key=f"csv_sample_{i}"
+                    )
+                    file_sample_limits[f.name] = sample_size
+            
+            # Combine CSV files
+            combined_dfs = []
+            file_info = []
+            
+            for f in csvs:
+                df_temp = pd.read_csv(f)
+                original_count = len(df_temp)
+                
+                if csv_combine_mode == "Custom Sample Size":
+                    limit = file_sample_limits.get(f.name, original_count)
+                    df_temp = df_temp.head(limit)
+                    file_info.append(f"{f.name}: {len(df_temp)}/{original_count} samples")
+                else:
+                    file_info.append(f"{f.name}: {original_count} samples")
+                
+                combined_dfs.append(df_temp)
+            
+            dfc = pd.concat(combined_dfs, ignore_index=True)
             
             # Data preview
             st.markdown("<div style='color: white;'><strong>📊 Combined Data Preview:</strong></div>", unsafe_allow_html=True)
@@ -1327,24 +1362,100 @@ with tab_utils:
                 label_counts = dfc['label'].value_counts()
                 st.bar_chart(label_counts)
             
-            st.download_button("📥 Download Combined CSV", dfc.to_csv(index=False).encode('utf-8'), "combined.csv", "text/csv")
+            # Create summary file
+            from datetime import datetime
+            import zipfile
+            import io
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            summary_text = f"""CSV Combination Summary
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Mode: {csv_combine_mode}
+Total Files Combined: {len(csvs)}
+Total Records: {len(dfc)}
+
+Files Combined:
+"""
+            for info in file_info:
+                summary_text += f"  - {info}\n"
+            
+            # Create ZIP file
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                # Add combined CSV
+                zip_file.writestr("combined.csv", dfc.to_csv(index=False))
+                # Add summary file
+                zip_file.writestr("combination_summary.txt", summary_text)
+            
+            zip_buffer.seek(0)
+            st.download_button(
+                "📦 Download Combined CSV + Summary (ZIP)",
+                zip_buffer.getvalue(),
+                f"combined_csv_{timestamp}.zip",
+                "application/zip"
+            )
             
         except Exception as e:
             st.error(f"❌ Error combining CSV files: {str(e)}")
     
     # Combine JSON
     st.subheader("🗂️ Combine JSON Files")
+    
+    # Mode selection
+    json_combine_mode = st.radio("Combine Mode:", ["Default", "Custom Sample Size"], key="json_mode", horizontal=True)
+    
     jsns = st.file_uploader("JSON to combine", type=["json"], accept_multiple_files=True, key="jcomb")
     if jsns:
+        # Custom sample size configuration
+        file_sample_limits_json = {}
+        if json_combine_mode == "Custom Sample Size":
+            st.markdown("<div style='color: white;'><strong>🎛️ Configure Sample Sizes:</strong></div>", unsafe_allow_html=True)
+            for i, f in enumerate(jsns):
+                try:
+                    data_temp = json.load(f)
+                    f.seek(0)  # Reset file pointer
+                    
+                    if isinstance(data_temp, list):
+                        max_samples = len(data_temp)
+                    else:
+                        max_samples = 1
+                    
+                    sample_size = st.number_input(
+                        f"{f.name} (max: {max_samples})",
+                        min_value=1,
+                        max_value=max_samples,
+                        value=max_samples,
+                        key=f"json_sample_{i}"
+                    )
+                    file_sample_limits_json[f.name] = sample_size
+                except:
+                    pass
+        
         lst = []
         errors = []
+        file_info = []
+        
         for f in jsns:
             try:
                 data = json.load(f)
+                original_count = 0
+                
                 if isinstance(data, list):
+                    original_count = len(data)
+                    
+                    if json_combine_mode == "Custom Sample Size":
+                        limit = file_sample_limits_json.get(f.name, original_count)
+                        data = data[:limit]
+                        file_info.append(f"{f.name}: {len(data)}/{original_count} records")
+                    else:
+                        file_info.append(f"{f.name}: {original_count} records")
+                    
                     lst.extend(data)
                 else:
+                    original_count = 1
+                    file_info.append(f"{f.name}: 1 record")
                     lst.append(data)
+                    
             except json.JSONDecodeError as e:
                 errors.append(f"❌ {f.name}: {str(e)}")
             except Exception as e:
@@ -1369,8 +1480,45 @@ with tab_utils:
             # Show sample structure
             with st.expander("🔍 Sample Structure (First record)"):
                 st.json(lst[0] if len(lst) > 0 else {})
+            
+            # Create summary file
+            from datetime import datetime
+            import zipfile
+            import io
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            summary_text = f"""JSON Combination Summary
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Mode: {json_combine_mode}
+Total Files Combined: {len(jsns) - len(errors)}
+Total Records: {len(lst)}
 
-            st.download_button("📥 Download Combined JSON", json.dumps(lst, ensure_ascii=False), "combined.json", "application/json", key="download_combined_json")
+Files Combined:
+"""
+            for info in file_info:
+                summary_text += f"  - {info}\n"
+            
+            if errors:
+                summary_text += f"\nSkipped Files ({len(errors)}):\n"
+                for error in errors:
+                    summary_text += f"  - {error}\n"
+            
+            # Create ZIP file
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                # Add combined JSON
+                zip_file.writestr("combined.json", json.dumps(lst, ensure_ascii=False, indent=2))
+                # Add summary file
+                zip_file.writestr("combination_summary.txt", summary_text)
+            
+            zip_buffer.seek(0)
+            st.download_button(
+                "📦 Download Combined JSON + Summary (ZIP)",
+                zip_buffer.getvalue(),
+                f"combined_json_{timestamp}.zip",
+                "application/zip",
+                key="download_combined_json"
+            )
         elif not errors:
             st.warning("⚠️ No valid JSON data found in uploaded files")
     

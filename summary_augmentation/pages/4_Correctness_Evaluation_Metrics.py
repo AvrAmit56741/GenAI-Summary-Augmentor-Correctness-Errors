@@ -5,6 +5,7 @@ import streamlit as st
 from typing import Dict, List, Any, Optional
 from collections import Counter
 import re
+from scipy.stats import kendalltau
 
 # Ensure project root is importable
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,6 +29,9 @@ st.markdown(
 st.markdown("""
 Evaluate summary quality using standard text-overlap metrics. Compare a generated summary against its source document.
 """)
+
+# Create tabs for single vs batch evaluation
+tab_single, tab_batch, tab_classifier = st.tabs(["Single Evaluation", "Batch Evaluation", "Classifier Predictions"])
 
 
 # ==================== METRIC COMPUTATION FUNCTIONS ====================
@@ -286,7 +290,9 @@ def compute_bertscore(reference: str, hypothesis: str, model_name: str) -> Dict[
 
 # ==================== UI LAYOUT ====================
 
-st.markdown("---")
+# ===== SINGLE EVALUATION TAB =====
+with tab_single:
+    st.markdown("---")
 
 # Input section
 col1, col2 = st.columns(2)
@@ -645,8 +651,401 @@ if st.button("🔬 Compute Metrics", type="primary", use_container_width=True):
         help="Download simple text report"
     )
 
-else:
-    st.info("👆 Enter source and summary texts above, select metrics, then click 'Compute Metrics'")
+            # else:
+            #     st.info("👆 Enter source and summary texts above, select metrics, then click 'Compute Metrics'")
+
+# ===== BATCH EVALUATION TAB =====
+with tab_batch:
+    st.markdown("---")
+    st.subheader("📊 Batch Evaluation from CSV")
+    st.markdown("Upload a CSV file with multiple samples to evaluate metrics in batch.")
+    
+    # File upload
+    batch_file = st.file_uploader(
+        "Upload CSV file with premise, hypothesis, and label columns",
+        type=["csv"],
+        key="batch_csv",
+        help="CSV should contain: premise, hypothesis, label (and optionally other columns)"
+    )
+    
+    if batch_file is not None:
+        import pandas as pd
+        
+        try:
+            df_batch = pd.read_csv(batch_file)
+            st.success(f"✅ Loaded {len(df_batch)} records")
+            
+            # Validate required columns
+            required_cols = ['premise', 'hypothesis', 'label']
+            missing_cols = [col for col in required_cols if col not in df_batch.columns]
+            
+            if missing_cols:
+                st.error(f"❌ Missing required columns: {missing_cols}")
+            else:
+                # Show preview
+                with st.expander("🔍 Dataset Preview (first 5 rows)"):
+                    st.dataframe(df_batch.head(), use_container_width=True)
+                
+                # Configuration
+                st.markdown("---")
+                st.subheader("⚙️ Evaluation Configuration")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Sample size selection
+                    max_samples = len(df_batch)
+                    sample_size = st.slider(
+                        "Number of samples to evaluate:",
+                        min_value=1,
+                        max_value=max_samples,
+                        value=min(100, max_samples),
+                        key="batch_sample_size",
+                        help="Select how many samples from the dataset to evaluate"
+                    )
+                    
+                    st.info(f"📊 Will evaluate {sample_size} out of {max_samples} samples")
+                
+                with col2:
+                    # Metric selection
+                    st.markdown("**Select Metrics:**")
+                    
+                    batch_rouge = st.checkbox("ROUGE-1", value=True, key="batch_rouge1")
+                    batch_rouge2 = st.checkbox("ROUGE-2", value=True, key="batch_rouge2")
+                    batch_rougel = st.checkbox("ROUGE-L", value=True, key="batch_rougel")
+                    batch_bleu = st.checkbox("BLEU", value=True, key="batch_bleu")
+                    batch_chrf = st.checkbox("ChrF", value=True, key="batch_chrf")
+                    
+                    # BERTScore option (expensive)
+                    if BERTSCORE_AVAILABLE:
+                        batch_bertscore = st.checkbox(
+                            "BERTScore (⚠️ slow for large batches)", 
+                            value=False, 
+                            key="batch_bertscore",
+                            help="BERTScore requires loading BERT model and is computationally expensive"
+                        )
+                        
+                        if batch_bertscore:
+                            batch_bert_model = st.selectbox(
+                                "Hebrew BERT Model:",
+                                ["avichr/heBERT", "onlplab/alephbert-base", "dicta-il/neodictabert"],
+                                index=0,
+                                key="batch_bert_model"
+                            )
+                    else:
+                        batch_bertscore = False
+                
+                # Compute button
+                if st.button("🚀 Evaluate Batch", type="primary", use_container_width=True):
+                    # Select samples
+                    df_eval = df_batch.head(sample_size).copy()
+                    
+                    # Progress tracking
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    results_list = []
+                    
+                    for idx, row in df_eval.iterrows():
+                        status_text.text(f"Evaluating sample {idx + 1}/{sample_size}...")
+                        progress_bar.progress((idx + 1) / sample_size)
+                        
+                        premise = str(row['premise'])
+                        hypothesis = str(row['hypothesis'])
+                        
+                        result = {'index': idx}
+                        
+                        # Compute ROUGE-1
+                        if batch_rouge:
+                            rouge1 = compute_rouge_n(premise, hypothesis, 1)
+                            result['rouge1_precision'] = rouge1['precision']
+                            result['rouge1_recall'] = rouge1['recall']
+                            result['rouge1_f1'] = rouge1['f1']
+                        
+                        # Compute ROUGE-2
+                        if batch_rouge2:
+                            rouge2 = compute_rouge_n(premise, hypothesis, 2)
+                            result['rouge2_precision'] = rouge2['precision']
+                            result['rouge2_recall'] = rouge2['recall']
+                            result['rouge2_f1'] = rouge2['f1']
+                        
+                        # Compute ROUGE-L
+                        if batch_rougel:
+                            rougel = compute_rouge_l(premise, hypothesis)
+                            result['rougel_precision'] = rougel['precision']
+                            result['rougel_recall'] = rougel['recall']
+                            result['rougel_f1'] = rougel['f1']
+                        
+                        # Compute BLEU
+                        if batch_bleu:
+                            bleu_result = compute_bleu(premise, hypothesis, max_n=4)
+                            result['bleu'] = bleu_result['bleu']
+                            result['bleu_bp'] = bleu_result['brevity_penalty']
+                        
+                        # Compute ChrF
+                        if batch_chrf:
+                            chrf_result = compute_chrf(premise, hypothesis, n=6)
+                            result['chrf'] = chrf_result['chrf']
+                        
+                        # Compute BERTScore (expensive)
+                        if batch_bertscore:
+                            bert_result = compute_bertscore(premise, hypothesis, batch_bert_model)
+                            if 'error' not in bert_result:
+                                result['bertscore_precision'] = bert_result['precision']
+                                result['bertscore_recall'] = bert_result['recall']
+                                result['bertscore_f1'] = bert_result['f1']
+                        
+                        results_list.append(result)
+                    
+                    progress_bar.empty()
+                    status_text.empty()
+                    
+                    # Convert results to DataFrame
+                    results_df = pd.DataFrame(results_list)
+                    
+                    # Merge with original data
+                    df_with_metrics = df_eval.copy()
+                    
+                    # Add metric columns
+                    for col in results_df.columns:
+                        if col != 'index':
+                            df_with_metrics[col] = results_df[col].values
+                    
+                    st.success(f"✅ Evaluation complete! Processed {sample_size} samples.")
+                    
+                    # Display results
+                    st.markdown("---")
+                    st.subheader("📈 Results Summary")
+                    
+                    # Calculate average scores
+                    metric_cols = [col for col in results_df.columns if col != 'index']
+                    
+                    if metric_cols:
+                        avg_scores = {}
+                        for col in metric_cols:
+                            avg_scores[col] = results_df[col].mean()
+                        
+                        # Display averages
+                        st.markdown("**Average Scores Across All Samples:**")
+                        
+                        cols = st.columns(min(4, len(avg_scores)))
+                        for idx, (metric_name, avg_value) in enumerate(avg_scores.items()):
+                            with cols[idx % 4]:
+                                st.metric(metric_name.upper(), f"{avg_value:.4f}")
+                        
+                        # Kendall Tau Correlation Analysis
+                        st.markdown("---")
+                        st.subheader("📊 Kendall Tau Correlation (Metric vs Label)")
+                        st.markdown("""
+                        **Kendall τ measures correlation between metric scores and correctness labels:**
+                        - **τ ≈ 1.0**: Metric strongly predicts correctness (higher score → label=1)
+                        - **τ ≈ 0.0**: No correlation (metric doesn't reflect correctness)
+                        - **τ < 0.0**: Negative correlation (metric misleading)
+                        """)
+                        
+                        # Convert labels to binary (0/1) if they are strings
+                        labels = df_eval['label'].values
+                        label_binary = []
+                        
+                        for label in labels:
+                            if isinstance(label, str):
+                                # Convert string labels to binary
+                                if label.lower() in ['entailment', '1', 'true', 'correct']:
+                                    label_binary.append(1)
+                                elif label.lower() in ['contradiction', '0', 'false', 'incorrect']:
+                                    label_binary.append(0)
+                                else:
+                                    label_binary.append(None)  # Unknown label
+                            else:
+                                label_binary.append(int(label))
+                        
+                        # Filter out None values
+                        valid_indices = [i for i, lbl in enumerate(label_binary) if lbl is not None]
+                        
+                        if len(valid_indices) > 1:
+                            label_binary_clean = [label_binary[i] for i in valid_indices]
+                            
+                            # Calculate Kendall Tau for each metric
+                            kendall_results = {}
+                            
+                            # BLEU vs Label
+                            if 'bleu' in results_df.columns:
+                                bleu_scores = [results_df.iloc[i]['bleu'] for i in valid_indices]
+                                tau, p_value = kendalltau(bleu_scores, label_binary_clean)
+                                kendall_results['BLEU'] = {'tau': tau, 'p_value': p_value}
+                            
+                            # ROUGE-1 F1 vs Label
+                            if 'rouge1_f1' in results_df.columns:
+                                rouge1_scores = [results_df.iloc[i]['rouge1_f1'] for i in valid_indices]
+                                tau, p_value = kendalltau(rouge1_scores, label_binary_clean)
+                                kendall_results['ROUGE-1 F1'] = {'tau': tau, 'p_value': p_value}
+                            
+                            # ROUGE-2 F1 vs Label
+                            if 'rouge2_f1' in results_df.columns:
+                                rouge2_scores = [results_df.iloc[i]['rouge2_f1'] for i in valid_indices]
+                                tau, p_value = kendalltau(rouge2_scores, label_binary_clean)
+                                kendall_results['ROUGE-2 F1'] = {'tau': tau, 'p_value': p_value}
+                            
+                            # ROUGE-L F1 vs Label
+                            if 'rougel_f1' in results_df.columns:
+                                rougel_scores = [results_df.iloc[i]['rougel_f1'] for i in valid_indices]
+                                tau, p_value = kendalltau(rougel_scores, label_binary_clean)
+                                kendall_results['ROUGE-L F1'] = {'tau': tau, 'p_value': p_value}
+                            
+                            # ChrF vs Label
+                            if 'chrf' in results_df.columns:
+                                chrf_scores = [results_df.iloc[i]['chrf'] for i in valid_indices]
+                                tau, p_value = kendalltau(chrf_scores, label_binary_clean)
+                                kendall_results['ChrF'] = {'tau': tau, 'p_value': p_value}
+                            
+                            # BERTScore F1 vs Label
+                            if 'bertscore_f1' in results_df.columns:
+                                bert_scores = [results_df.iloc[i]['bertscore_f1'] for i in valid_indices]
+                                tau, p_value = kendalltau(bert_scores, label_binary_clean)
+                                kendall_results['BERTScore F1'] = {'tau': tau, 'p_value': p_value}
+                            
+                            # Display Kendall Tau results
+                            if kendall_results:
+                                cols = st.columns(min(3, len(kendall_results)))
+                                for idx, (metric_name, result) in enumerate(kendall_results.items()):
+                                    with cols[idx % 3]:
+                                        tau_value = result['tau']
+                                        p_value = result['p_value']
+                                        
+                                        # Color-code based on tau value
+                                        if tau_value > 0.5:
+                                            delta_color = "normal"  # Green
+                                            interpretation = "Strong positive"
+                                        elif tau_value > 0.3:
+                                            delta_color = "normal"
+                                            interpretation = "Moderate positive"
+                                        elif tau_value > 0.1:
+                                            delta_color = "off"
+                                            interpretation = "Weak positive"
+                                        elif tau_value > -0.1:
+                                            delta_color = "off"
+                                            interpretation = "No correlation"
+                                        else:
+                                            delta_color = "inverse"  # Red
+                                            interpretation = "Negative"
+                                        
+                                        st.metric(
+                                            f"{metric_name}",
+                                            f"τ = {tau_value:.4f}",
+                                            f"p = {p_value:.4f}",
+                                            delta_color=delta_color,
+                                            help=f"{interpretation} correlation"
+                                        )
+                                
+                                # Interpretation guide
+                                with st.expander("📖 Understanding Kendall Tau Results"):
+                                    st.markdown("""
+                                    **Kendall τ (Tau) Interpretation:**
+                                    
+                                    **Positive τ (Good):**
+                                    - **τ > 0.7**: Excellent - Metric strongly predicts correctness
+                                    - **τ > 0.5**: Strong - Metric reliably reflects faithfulness
+                                    - **τ > 0.3**: Moderate - Some correlation with correctness
+                                    - **τ > 0.1**: Weak - Limited correlation
+                                    
+                                    **No Correlation:**
+                                    - **-0.1 < τ < 0.1**: Metric doesn't reflect correctness
+                                    
+                                    **Negative τ (Bad):**
+                                    - **τ < -0.1**: Metric is misleading (high scores for incorrect summaries)
+                                    
+                                    **P-value:**
+                                    - **p < 0.05**: Statistically significant (reliable result)
+                                    - **p > 0.05**: Not significant (result may be random)
+                                    
+                                    **What This Means:**
+                                    - High τ means the metric can be used as a proxy for factual correctness
+                                    - Low τ means the metric measures surface similarity, not factuality
+                                    - Negative τ means the metric is actively misleading
+                                    
+                                    **Example:**
+                                    - BLEU τ = 0.8 → High BLEU strongly indicates correct summary
+                                    - ROUGE τ = 0.2 → ROUGE weakly correlates with correctness
+                                    - BERTScore τ = 0.9 → BERTScore excellent for faithfulness detection
+                                    """)
+                            else:
+                                st.info("ℹ️ No metrics available for correlation analysis")
+                        else:
+                            st.warning("⚠️ Need at least 2 valid samples with binary labels (0/1 or entailment/contradiction) for correlation analysis")
+                        
+                        # Show detailed results
+                        st.markdown("---")
+                        st.subheader("📋 Detailed Results")
+                        
+                        # Show results table
+                        display_cols = ['premise', 'hypothesis', 'label'] + metric_cols
+                        available_cols = [col for col in display_cols if col in df_with_metrics.columns]
+                        
+                        with st.expander("🔍 View All Results", expanded=True):
+                            st.dataframe(df_with_metrics[available_cols], use_container_width=True)
+                        
+                        # Download options
+                        st.markdown("---")
+                        st.subheader("📥 Download Results")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Download full CSV with metrics
+                            csv_output = df_with_metrics.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                "📥 Download Full Results (CSV)",
+                                csv_output,
+                                "batch_evaluation_results.csv",
+                                "text/csv",
+                                help="Download CSV with all original columns plus computed metrics"
+                            )
+                        
+                        with col2:
+                            # Download summary statistics
+                            summary_data = {
+                                'metric': list(avg_scores.keys()),
+                                'average': list(avg_scores.values()),
+                                'min': [results_df[col].min() for col in avg_scores.keys()],
+                                'max': [results_df[col].max() for col in avg_scores.keys()],
+                                'std': [results_df[col].std() for col in avg_scores.keys()]
+                            }
+                            summary_df = pd.DataFrame(summary_data)
+                            summary_csv = summary_df.to_csv(index=False).encode('utf-8')
+                            
+                            st.download_button(
+                                "📊 Download Summary Statistics (CSV)",
+                                summary_csv,
+                                "batch_evaluation_summary.csv",
+                                "text/csv",
+                                help="Download summary statistics for each metric"
+                            )
+                
+        except Exception as e:
+            st.error(f"❌ Error processing file: {str(e)}")
+    
+    else:
+        st.info("📁 Upload a CSV file to start batch evaluation")
+        st.markdown("""
+        **Expected CSV Format:**
+        - **Required columns**: premise, hypothesis, label
+        - **Optional columns**: Any additional columns will be preserved in the output
+        
+        **Example:**
+        ```
+        premise,hypothesis,label
+        "Source text 1","Summary 1","entailment"
+        "Source text 2","Summary 2","contradiction"
+        ```
+        
+        **Features:**
+        - 📊 Select how many samples to evaluate (1 to all)
+        - ☑️ Choose which metrics to compute
+        - 📥 Download results with metrics as new columns
+        - 📈 View summary statistics (average, min, max, std)
+        - ⚡ Fast evaluation for surface-level metrics
+        - 🐌 BERTScore available (slower, optional)
+        """)
 
 # Help section
 with st.expander("ℹ️ Metric Explanations"):
@@ -711,4 +1110,356 @@ with st.expander("💡 Tips for Interpretation"):
         
         **Important**: BERTScore measures semantic similarity, not factual accuracy.  
         Always combine with human evaluation for factual consistency.
+        """)
+
+# ===== CLASSIFIER PREDICTIONS TAB =====
+with tab_classifier:
+    st.markdown("---")
+    st.subheader("🎯 Classifier Prediction Analysis")
+    st.markdown("Analyze correlation between model confidence scores and true labels using Kendall Tau.")
+    
+    # File upload
+    classifier_file = st.file_uploader(
+        "Upload CSV with classifier predictions",
+        type=["csv"],
+        key="classifier_csv",
+        help="CSV should contain: premise, hypothesis, true_label, predicted_label, prob_contradiction, prob_entailment"
+    )
+    
+    if classifier_file is not None:
+        import pandas as pd
+        import numpy as np
+        
+        try:
+            df_classifier = pd.read_csv(classifier_file)
+            st.success(f"✅ Loaded {len(df_classifier)} predictions")
+            
+            # Validate required columns
+            required_cols = ['premise', 'hypothesis', 'true_label', 'predicted_label', 'prob_contradiction', 'prob_entailment']
+            missing_cols = [col for col in required_cols if col not in df_classifier.columns]
+            
+            if missing_cols:
+                st.error(f"❌ Missing required columns: {missing_cols}")
+                st.info(f"Available columns: {list(df_classifier.columns)}")
+            else:
+                # Show preview
+                with st.expander("🔍 Dataset Preview (first 5 rows)"):
+                    st.dataframe(df_classifier.head(), use_container_width=True)
+                
+                # Basic statistics
+                st.markdown("---")
+                st.subheader("📊 Dataset Statistics")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total Samples", len(df_classifier))
+                
+                with col2:
+                    # Count correct predictions
+                    correct = (df_classifier['true_label'] == df_classifier['predicted_label']).sum()
+                    accuracy = correct / len(df_classifier) * 100
+                    st.metric("Accuracy", f"{accuracy:.2f}%")
+                
+                with col3:
+                    # Label distribution
+                    true_dist = df_classifier['true_label'].value_counts()
+                    st.metric("True Label Distribution", f"{true_dist.to_dict()}")
+                
+                with col4:
+                    # Average confidence
+                    max_probs = df_classifier[['prob_contradiction', 'prob_entailment']].max(axis=1)
+                    avg_confidence = max_probs.mean()
+                    st.metric("Avg Confidence", f"{avg_confidence:.4f}")
+                
+                # Kendall Tau Analysis
+                st.markdown("---")
+                st.subheader("📈 Kendall Tau Correlation Analysis")
+                st.markdown("""
+                **Measures correlation between model confidence and label correctness:**
+                - High τ → Model is well-calibrated (confident when correct, uncertain when wrong)
+                - Low τ → Model confidence doesn't reflect accuracy
+                """)
+                
+                # Convert labels to binary
+                labels_true = df_classifier['true_label'].values
+                labels_pred = df_classifier['predicted_label'].values
+                
+                # Create binary correctness indicator
+                is_correct = (labels_true == labels_pred).astype(int)
+                
+                # Get probabilities
+                prob_contradiction = df_classifier['prob_contradiction'].values
+                prob_entailment = df_classifier['prob_entailment'].values
+                
+                # Calculate max probability (model confidence)
+                confidence_scores = np.maximum(prob_contradiction, prob_entailment)
+                
+                # Calculate Kendall Tau: Confidence vs Correctness
+                tau_confidence, p_confidence = kendalltau(confidence_scores, is_correct)
+                
+                # Calculate Kendall Tau for each probability column vs binary labels
+                # Convert string labels to binary if needed
+                label_binary = []
+                for label in labels_true:
+                    if isinstance(label, str):
+                        if label.lower() in ['entailment', '1', 'true']:
+                            label_binary.append(1)
+                        elif label.lower() in ['contradiction', '0', 'false']:
+                            label_binary.append(0)
+                        else:
+                            label_binary.append(None)
+                    else:
+                        label_binary.append(int(label))
+                
+                # Filter valid labels
+                valid_indices = [i for i, lbl in enumerate(label_binary) if lbl is not None]
+                
+                if len(valid_indices) > 1:
+                    label_binary_clean = [label_binary[i] for i in valid_indices]
+                    prob_entailment_clean = [prob_entailment[i] for i in valid_indices]
+                    prob_contradiction_clean = [prob_contradiction[i] for i in valid_indices]
+                    
+                    # Kendall Tau: prob_entailment vs true_label
+                    tau_entailment, p_entailment = kendalltau(prob_entailment_clean, label_binary_clean)
+                    
+                    # Kendall Tau: prob_contradiction vs true_label (inverse)
+                    tau_contradiction, p_contradiction = kendalltau(prob_contradiction_clean, [1 - lbl for lbl in label_binary_clean])
+                    
+                    # Display results
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("**Confidence vs Correctness**")
+                        interpretation_conf = ""
+                        if tau_confidence > 0.5:
+                            interpretation_conf = "Strong - Well calibrated ✅"
+                            delta_color = "normal"
+                        elif tau_confidence > 0.3:
+                            interpretation_conf = "Moderate calibration"
+                            delta_color = "normal"
+                        elif tau_confidence > 0.1:
+                            interpretation_conf = "Weak calibration"
+                            delta_color = "off"
+                        else:
+                            interpretation_conf = "Poor calibration ⚠️"
+                            delta_color = "inverse"
+                        
+                        st.metric(
+                            "Kendall τ",
+                            f"{tau_confidence:.4f}",
+                            f"p = {p_confidence:.4f}",
+                            delta_color=delta_color
+                        )
+                        st.caption(interpretation_conf)
+                    
+                    with col2:
+                        st.markdown("**prob_entailment vs Label**")
+                        interpretation_ent = ""
+                        if tau_entailment > 0.5:
+                            interpretation_ent = "Strong correlation ✅"
+                            delta_color = "normal"
+                        elif tau_entailment > 0.3:
+                            interpretation_ent = "Moderate correlation"
+                            delta_color = "normal"
+                        elif tau_entailment > 0.1:
+                            interpretation_ent = "Weak correlation"
+                            delta_color = "off"
+                        elif tau_entailment > -0.1:
+                            interpretation_ent = "No correlation"
+                            delta_color = "off"
+                        else:
+                            interpretation_ent = "Negative correlation ⚠️"
+                            delta_color = "inverse"
+                        
+                        st.metric(
+                            "Kendall τ",
+                            f"{tau_entailment:.4f}",
+                            f"p = {p_entailment:.4f}",
+                            delta_color=delta_color
+                        )
+                        st.caption(interpretation_ent)
+                    
+                    with col3:
+                        st.markdown("**prob_contradiction vs Label**")
+                        interpretation_con = ""
+                        if tau_contradiction > 0.5:
+                            interpretation_con = "Strong correlation ✅"
+                            delta_color = "normal"
+                        elif tau_contradiction > 0.3:
+                            interpretation_con = "Moderate correlation"
+                            delta_color = "normal"
+                        elif tau_contradiction > 0.1:
+                            interpretation_con = "Weak correlation"
+                            delta_color = "off"
+                        elif tau_contradiction > -0.1:
+                            interpretation_con = "No correlation"
+                            delta_color = "off"
+                        else:
+                            interpretation_con = "Negative correlation ⚠️"
+                            delta_color = "inverse"
+                        
+                        st.metric(
+                            "Kendall τ",
+                            f"{tau_contradiction:.4f}",
+                            f"p = {p_contradiction:.4f}",
+                            delta_color=delta_color
+                        )
+                        st.caption(interpretation_con)
+                    
+                    # Detailed analysis
+                    st.markdown("---")
+                    st.subheader("🔍 Detailed Analysis")
+                    
+                    # Confidence by correctness
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Confidence Scores by Correctness**")
+                        
+                        correct_mask = is_correct == 1
+                        wrong_mask = is_correct == 0
+                        
+                        avg_conf_correct = confidence_scores[correct_mask].mean() if correct_mask.sum() > 0 else 0
+                        avg_conf_wrong = confidence_scores[wrong_mask].mean() if wrong_mask.sum() > 0 else 0
+                        
+                        conf_data = pd.DataFrame({
+                            'Category': ['Correct Predictions', 'Wrong Predictions'],
+                            'Avg Confidence': [avg_conf_correct, avg_conf_wrong],
+                            'Count': [correct_mask.sum(), wrong_mask.sum()]
+                        })
+                        
+                        st.dataframe(conf_data, use_container_width=True)
+                        
+                        # Interpretation
+                        if avg_conf_correct > avg_conf_wrong + 0.1:
+                            st.success("✅ Model is well-calibrated: Higher confidence on correct predictions")
+                        elif avg_conf_correct > avg_conf_wrong:
+                            st.info("ℹ️ Model slightly more confident on correct predictions")
+                        else:
+                            st.warning("⚠️ Model is poorly calibrated: Similar or higher confidence on wrong predictions")
+                    
+                    with col2:
+                        st.markdown("**Probability Distribution by Label**")
+                        
+                        # Group by true label
+                        label_stats = []
+                        for label in df_classifier['true_label'].unique():
+                            mask = df_classifier['true_label'] == label
+                            label_stats.append({
+                                'True Label': label,
+                                'Avg prob_entailment': prob_entailment[mask].mean(),
+                                'Avg prob_contradiction': prob_contradiction[mask].mean(),
+                                'Count': mask.sum()
+                            })
+                        
+                        label_stats_df = pd.DataFrame(label_stats)
+                        st.dataframe(label_stats_df, use_container_width=True)
+                    
+                    # Interpretation guide
+                    with st.expander("📖 Understanding the Results"):
+                        st.markdown("""
+                        **Confidence vs Correctness (Calibration):**
+                        - **High τ (> 0.5)**: Model knows when it's right vs wrong ✅
+                        - **Low τ (< 0.3)**: Model overconfident or underconfident ⚠️
+                        - **Ideal**: High confidence on correct, low confidence on errors
+                        
+                        **prob_entailment vs Label:**
+                        - **High τ**: prob_entailment reliably indicates label=entailment
+                        - **Low τ**: Probability scores don't reflect true labels well
+                        
+                        **prob_contradiction vs Label:**
+                        - **High τ**: prob_contradiction reliably indicates label=contradiction
+                        - **Low τ**: Probability scores unreliable
+                        
+                        **What Good Results Look Like:**
+                        ```
+                        Confidence vs Correctness: τ > 0.5 (well-calibrated)
+                        prob_entailment vs Label: τ > 0.7 (strong correlation)
+                        prob_contradiction vs Label: τ > 0.7 (strong correlation)
+                        
+                        Avg confidence (correct): > 0.80
+                        Avg confidence (wrong): < 0.60
+                        ```
+                        
+                        **If Results Are Poor:**
+                        - Consider temperature calibration
+                        - May need more training data
+                        - Check for class imbalance
+                        - Review model architecture
+                        """)
+                    
+                    # Download results
+                    st.markdown("---")
+                    st.subheader("📥 Download Analysis")
+                    
+                    # Create analysis summary
+                    analysis_summary = {
+                        'total_samples': len(df_classifier),
+                        'accuracy': float(accuracy / 100),
+                        'avg_confidence': float(avg_confidence),
+                        'kendall_tau_confidence_correctness': {
+                            'tau': float(tau_confidence),
+                            'p_value': float(p_confidence)
+                        },
+                        'kendall_tau_prob_entailment_label': {
+                            'tau': float(tau_entailment),
+                            'p_value': float(p_entailment)
+                        },
+                        'kendall_tau_prob_contradiction_label': {
+                            'tau': float(tau_contradiction),
+                            'p_value': float(p_contradiction)
+                        },
+                        'avg_confidence_correct': float(avg_conf_correct),
+                        'avg_confidence_wrong': float(avg_conf_wrong)
+                    }
+                    
+                    analysis_json = json.dumps(analysis_summary, indent=2).encode('utf-8')
+                    
+                    st.download_button(
+                        "📊 Download Analysis Summary (JSON)",
+                        analysis_json,
+                        "classifier_analysis.json",
+                        "application/json",
+                        help="Download correlation analysis results"
+                    )
+                
+                else:
+                    st.warning("⚠️ Need at least 2 valid samples with binary labels for correlation analysis")
+                    
+        except Exception as e:
+            st.error(f"❌ Error processing file: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+    
+    else:
+        st.info("📁 Upload a CSV file with classifier predictions to start analysis")
+        st.markdown("""
+        **Expected CSV Format:**
+        ```
+        premise,hypothesis,true_label,predicted_label,prob_contradiction,prob_entailment
+        "text1","claim1","entailment","entailment",0.1234,0.8766
+        "text2","claim2","contradiction","contradiction",0.9234,0.0766
+        ```
+        
+        **Required Columns:**
+        - `premise`: Source text / article
+        - `hypothesis`: Generated text / claim
+        - `true_label`: Ground truth label
+        - `predicted_label`: Model's predicted label
+        - `prob_contradiction`: Probability score for contradiction
+        - `prob_entailment`: Probability score for entailment
+        
+        **Analysis Provided:**
+        - 📊 **Confidence vs Correctness**: Does the model know when it's right?
+        - 🎯 **Probability Calibration**: Do probability scores reflect true labels?
+        - 📈 **Kendall Tau Correlation**: Statistical measure of model calibration
+        - 📋 **Detailed Statistics**: Confidence by correctness, probability distributions
+        - 📥 **Export**: Download analysis summary as JSON
+        
+        **Use Cases:**
+        - Model calibration analysis
+        - Confidence threshold optimization
+        - Model comparison (which is better calibrated?)
+        - Detecting overconfident/underconfident predictions
         """)
