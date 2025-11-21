@@ -118,8 +118,8 @@ def create_training_samples(augmentation_json_path, output_path, use_evidence_wi
 
 if __name__ == "__main__":
     # Configuration
-    AUGMENTATION_JSON = "/home/avramit/llm_finetune/mafat_train_20250909_145639_start_row_121_end_row_140.json"  # Your input file
-    OUTPUT_DATASET = "/home/avramit/llm_finetune/llm_evidence_dataset"  # Output directory
+    AUGMENTATION_JSON = "/home/avramit/llm_finetune/llm_evidence_big_dataset/train.json" # Your input file
+    OUTPUT_DATASET = "/home/avramit/llm_finetune/llm_finetune_big_parse_dataset/llm_evidence_dataset_train"  # Output directory
 
     # Create dataset
     dataset = create_training_samples(

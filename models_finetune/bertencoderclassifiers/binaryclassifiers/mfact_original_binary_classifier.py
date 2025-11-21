@@ -345,6 +345,23 @@ def main():
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
 
+    # Print system info
+    import socket
+    print("\n" + "="*50)
+    print("TRAINING CONFIGURATION")
+    print("="*50)
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
+    print(f"Model: {model_args.model_name_or_path}")
+    print(f"Output dir: {training_args.output_dir}")
+    print(f"Batch size: {training_args.per_device_train_batch_size}")
+    print(f"Learning rate: {training_args.learning_rate}")
+    print(f"Epochs: {training_args.num_train_epochs}")
+    print(f"Max seq length: {data_args.max_seq_length}")
+    print(f"Labels: {label_list}")
+    print("="*50 + "\n")
+
     # Preprocessing the datasets
     # Padding strategy
     if data_args.pad_to_max_length:
@@ -416,6 +433,11 @@ def main():
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on prediction dataset",
             )
+
+    # Print dataset sizes
+    print(f"Dataset sizes - Train: {len(train_dataset) if training_args.do_train else 0}, "
+          f"Val: {len(eval_dataset) if training_args.do_eval else 0}, "
+          f"Test: {len(predict_dataset) if training_args.do_predict else 0}\n")
 
     # Get the metric function
     # metric = evaluate.load("xnli")

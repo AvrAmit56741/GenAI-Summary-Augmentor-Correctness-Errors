@@ -54,19 +54,19 @@ MAX_SEQ_LENGTH = 4096
 # Options: 
 #   - None or [] = Test all samples
 #   - [ErrorTypes.NUMBER_SWAP, ErrorTypes.SENTENCE_NEGATION] = Test only specific error types
-#FILTER_ERROR_TYPES = None
-FILTER_ERROR_TYPES = [ErrorTypes.PRONOUN_REFERENCE_ERRORS, ErrorTypes.MEASURE_UNIT_SWAP, ErrorTypes.IDIOM_COLLOCATION_CORRUPTION]
+FILTER_ERROR_TYPES = None
+#FILTER_ERROR_TYPES = [ErrorTypes.IDIOM_COLLOCATION_CORRUPTION]
 # Test sample limit configuration
 # Options:
 #   - None = Test all samples (after filtering)
 #   - N (integer) = Test only first N samples (after filtering)
-MAX_TEST_SAMPLES = None
+MAX_TEST_SAMPLES = 10
 
 # Print mode configuration
 # Options:
 #   - True = Print each sample's classification (detailed output)
 #   - False = Silent mode (faster, only show progress bar and final summary)
-PRINT_EACH_SAMPLE = True
+PRINT_EACH_SAMPLE = False
 
 # Alpaca prompt template (same as training)
 alpaca_prompt = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
@@ -215,7 +215,7 @@ def run_inference():
     # Load test dataset (your separate test file)
     print(f"Loading test dataset from {TEST_DATASET_PATH}...")
     test_dataset = load_from_disk(TEST_DATASET_PATH)
-    
+
     print(f"Original test dataset size: {len(test_dataset)} samples")
     
     # Filter by error types if specified
@@ -268,7 +268,7 @@ def run_inference():
             expected_error_type = expected_json.get("error_type", "")
         except:
             pass
-        
+
         # Store result
         result = {
             "sample_id": i,

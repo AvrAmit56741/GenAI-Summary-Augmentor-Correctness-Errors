@@ -102,6 +102,21 @@ def main():
 
     set_seed(training_args.seed)
 
+    # Print system info
+    import socket
+    print("\n" + "="*50)
+    print("TRAINING CONFIGURATION")
+    print("="*50)
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
+    print(f"Model: {model_args.model_name_or_path}")
+    print(f"Batch size: {training_args.per_device_train_batch_size} (effective: {training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps})")
+    print(f"Learning rate: {training_args.learning_rate}")
+    print(f"Epochs: {training_args.num_train_epochs}")
+    print(f"Max seq length: {data_args.max_seq_length}")
+    print("="*50 + "\n")
+
     data_files = {}
     extension = None
     if data_args.train_file:
@@ -148,15 +163,22 @@ def main():
 
     for split in ("train", "validation", "test"):
         if split in raw_datasets:
+            cols_to_remove = [col for col in raw_datasets[split].column_names 
+                             if col not in ["premise", "hypothesis"] and col != "labels"]
             raw_datasets[split] = raw_datasets[split].map(
                 encode_error_types,
                 batched=False,
-                remove_columns=["label", "error_types"],
+                remove_columns=cols_to_remove,
             )
 
     train_dataset = raw_datasets.get("train", None)
     eval_dataset = raw_datasets.get("validation", None)
     predict_dataset = raw_datasets.get("test", None)
+    
+    # Print dataset sizes
+    print(f"Dataset sizes - Train: {len(train_dataset) if train_dataset else 0}, "
+          f"Val: {len(eval_dataset) if eval_dataset else 0}, "
+          f"Test: {len(predict_dataset) if predict_dataset else 0}\n")
 
     config = AutoConfig.from_pretrained(
         model_args.config_name or model_args.model_name_or_path,

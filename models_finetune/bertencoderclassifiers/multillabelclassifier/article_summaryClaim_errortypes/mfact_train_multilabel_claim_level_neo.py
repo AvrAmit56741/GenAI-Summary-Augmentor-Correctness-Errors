@@ -34,6 +34,7 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 
+print("check update v3")
 # Ensure minimal versions
 check_min_version("4.25.0.dev0")
 require_version = getattr(transformers.utils.versions, "require_version", None)
@@ -53,6 +54,7 @@ class DataTrainingArguments:
     train_file: Optional[str] = field(default=None)
     validation_file: Optional[str] = field(default=None)
     test_file: Optional[str] = field(default=None)
+    train_dataset_percentage: Optional[float] = field(default=1.0, metadata={"help": "Percentage of training data to use (0.0-1.0)"})
 
 @dataclass
 class ModelArguments:
@@ -100,6 +102,28 @@ def main():
 
     set_seed(training_args.seed)
 
+    # Print system info
+    import socket
+    print("\n" + "="*50)
+    print("TRAINING CONFIGURATION")
+    print("="*50)
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
+    print(f"Model: {model_args.model_name_or_path}")
+    print(f"Output dir: {training_args.output_dir}")
+    print(f"Batch size: {training_args.per_device_train_batch_size} (effective: {training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps})")
+    print(f"Learning rate: {training_args.learning_rate}")
+    print(f"Epochs: {training_args.num_train_epochs}")
+    print(f"Max seq length: {data_args.max_seq_length}")
+    print(f"Train data %: {data_args.train_dataset_percentage*100}%")
+    print("="*50)
+    print("\nAll Arguments:")
+    print(f"  Model: {vars(model_args)}")
+    print(f"  Data: {vars(data_args)}")
+    print(f"  Training: {vars(training_args)}")
+    print("="*50 + "\n")
+
     data_files = {}
     extension = None
     if data_args.train_file:
@@ -116,50 +140,8 @@ def main():
 
     raw_datasets = load_dataset(extension, data_files=data_files, cache_dir=model_args.cache_dir)
 
-    # === UPDATED: handle S2 (claim-level) with batched mapping ===
-    def split_summary_to_claims_batched(examples):
-        """
-        Batched version that properly expands summaries into claims.
-        """
-        all_premises = []
-        all_hypotheses = []
-        all_error_types = []
-
-        for premise, hypothesis, error_types in zip(
-            examples["premise"],
-            examples["hypothesis"],
-            examples.get("error_types", [""]*len(examples["premise"]))
-        ):
-            if not hypothesis:
-                all_premises.append(premise)
-                all_hypotheses.append("")
-                all_error_types.append(error_types)
-                continue
-
-            # Split on sentence boundaries
-            sentences = re.split(r'(?<=[.!?])\s+', hypothesis.strip())
-            for sent in sentences:
-                all_premises.append(premise)
-                all_hypotheses.append(sent)
-                all_error_types.append(error_types)
-
-        return {
-            "premise": all_premises,
-            "hypothesis": all_hypotheses,
-            "error_types": all_error_types
-        }
-
-    for split in ("train", "validation", "test"):
-        if split in raw_datasets and "hypothesis" in raw_datasets[split].column_names:
-            raw_datasets[split] = raw_datasets[split].map(
-                split_summary_to_claims_batched,
-                batched=True,
-                batch_size=1000,
-                remove_columns=raw_datasets[split].column_names,
-                desc=f"Splitting summary into claim-level samples ({split})"
-            )
-    # === END UPDATED BLOCK ===
-
+    # Data is already at claim level - no splitting needed
+    
     def gather_error_types(ds):
         s = set()
         for ex in ds:
@@ -189,10 +171,11 @@ def main():
         example["labels"] = multi_hot
         return example
 
-    # UPDATED: Only remove columns that exist
+    # UPDATED: Remove all columns except premise, hypothesis, and labels
     for split in ("train", "validation", "test"):
         if split in raw_datasets:
-            cols_to_remove = [col for col in ["error_types"] if col in raw_datasets[split].column_names]
+            cols_to_remove = [col for col in raw_datasets[split].column_names 
+                             if col not in ["premise", "hypothesis"] and col != "labels"]
             raw_datasets[split] = raw_datasets[split].map(
                 encode_error_types,
                 batched=False,
@@ -202,6 +185,18 @@ def main():
     train_dataset = raw_datasets.get("train", None)
     eval_dataset = raw_datasets.get("validation", None)
     predict_dataset = raw_datasets.get("test", None)
+    
+    # Apply train dataset percentage filtering
+    if train_dataset is not None and data_args.train_dataset_percentage < 1.0:
+        original_size = len(train_dataset)
+        subset_size = int(original_size * data_args.train_dataset_percentage)
+        train_dataset = train_dataset.select(range(subset_size))
+        logger.info(f"Using {data_args.train_dataset_percentage*100}% of train dataset: {subset_size}/{original_size} examples")
+    
+    # Print dataset sizes
+    print(f"Dataset sizes - Train: {len(train_dataset) if train_dataset else 0}, "
+          f"Val: {len(eval_dataset) if eval_dataset else 0}, "
+          f"Test: {len(predict_dataset) if predict_dataset else 0}\n")
 
     config = AutoConfig.from_pretrained(
         model_args.config_name or model_args.model_name_or_path,
@@ -234,6 +229,9 @@ def main():
     )
 
     padding = "max_length" if data_args.pad_to_max_length else False
+    
+    # Counter for exceeded samples
+    exceeded_samples = {"count": 0, "split": ""}
 
     def preprocess_function(examples):
         lengths = tokenizer(
@@ -246,6 +244,7 @@ def main():
         for i, length in enumerate(lengths):
             if length > data_args.max_seq_length:
                 print(f"WARNING: Example {i} length {length} > max {data_args.max_seq_length}")
+                exceeded_samples["count"] += 1
         return tokenizer(
             examples["premise"],
             examples["hypothesis"],
@@ -257,32 +256,43 @@ def main():
     if training_args.do_train and train_dataset is not None:
         if data_args.max_train_samples:
             train_dataset = train_dataset.select(range(min(len(train_dataset), data_args.max_train_samples)))
+        exceeded_samples["count"] = 0
         train_dataset = train_dataset.map(
             preprocess_function,
             batched=True,
             load_from_cache_file=not data_args.overwrite_cache,
             desc="Tokenizing train dataset",
         ).remove_columns(["premise", "hypothesis"])
+        if exceeded_samples["count"] > 0:
+            print(f"⚠️  TRAIN: {exceeded_samples['count']} samples exceeded max_seq_length and were truncated\n")
 
     if training_args.do_eval and eval_dataset is not None:
         if data_args.max_eval_samples:
             eval_dataset = eval_dataset.select(range(min(len(eval_dataset), data_args.max_eval_samples)))
+        exceeded_samples["count"] = 0
         eval_dataset = eval_dataset.map(
             preprocess_function,
             batched=True,
             load_from_cache_file=not data_args.overwrite_cache,
             desc="Tokenizing validation dataset",
         ).remove_columns(["premise", "hypothesis"])
+        if exceeded_samples["count"] > 0:
+            print(f"⚠️  VALIDATION: {exceeded_samples['count']} samples exceeded max_seq_length and were truncated\n")
 
     if training_args.do_predict and predict_dataset is not None:
         if data_args.max_predict_samples:
             predict_dataset = predict_dataset.select(range(min(len(predict_dataset), data_args.max_predict_samples)))
+        # Store original text and error types before tokenization
+        test_texts = [{"premise": ex["premise"], "hypothesis": ex["hypothesis"], "error_types": ex.get("error_types", "")} for ex in predict_dataset]
+        exceeded_samples["count"] = 0
         predict_dataset = predict_dataset.map(
             preprocess_function,
             batched=True,
             load_from_cache_file=not data_args.overwrite_cache,
             desc="Tokenizing test dataset",
         ).remove_columns(["premise", "hypothesis"])
+        if exceeded_samples["count"] > 0:
+            print(f"⚠️  TEST: {exceeded_samples['count']} samples exceeded max_seq_length and were truncated\n")
 
     if data_args.pad_to_max_length:
         data_collator = default_data_collator
@@ -371,6 +381,16 @@ def main():
     if training_args.do_train:
         trainer.train(resume_from_checkpoint=last_checkpoint)
         trainer.save_model()
+        
+        # Save script arguments
+        import json
+        args_file = os.path.join(training_args.output_dir, "script_arguments.json")
+        with open(args_file, "w") as f:
+            json.dump({
+                "model_args": vars(model_args),
+                "data_args": vars(data_args),
+                "training_args": vars(training_args)
+            }, f, indent=2, default=str)
     if training_args.do_eval:
         metrics = trainer.evaluate()
         trainer.log_metrics("eval", metrics)
@@ -378,12 +398,30 @@ def main():
         preds, labels, metrics = trainer.predict(predict_dataset)
         trainer.log_metrics("predict", metrics)
         output_file = os.path.join(training_args.output_dir, "predictions.txt")
+        output_csv = os.path.join(training_args.output_dir, "predictions.csv")
         if trainer.is_world_process_zero():
             with open(output_file, "w") as writer:
                 writer.write("index\t" + "\t".join(label_list) + "\n")
                 probs = torch.sigmoid(torch.tensor(preds)).numpy()
                 for i, row in enumerate(probs):
                     writer.write(f"{i}\t" + "\t".join(f"{x:.4f}" for x in row) + "\n")
+            
+            # Save CSV with text and scores
+            import csv
+            with open(output_csv, "w", newline="", encoding="utf-8") as csvfile:
+                fieldnames = ["premise", "hypothesis", "ground_truth_error_types"] + label_list
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                probs = torch.sigmoid(torch.tensor(preds)).numpy()
+                for i, row in enumerate(probs):
+                    row_data = {
+                        "premise": test_texts[i]["premise"],
+                        "hypothesis": test_texts[i]["hypothesis"],
+                        "ground_truth_error_types": test_texts[i]["error_types"]
+                    }
+                    for j, label in enumerate(label_list):
+                        row_data[label] = f"{row[j]:.4f}"
+                    writer.writerow(row_data)
 
 if __name__ == "__main__":
     main()
