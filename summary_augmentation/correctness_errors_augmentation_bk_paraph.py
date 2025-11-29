@@ -1,29 +1,8 @@
 # -*- coding: utf-8 -*-
-import concurrent.futures
-import threading
-import datetime
 import pandas as pd
 import logging
-import sys
-import os
-from typing import List, Dict, Any
-import logging
-from typing import List
-
-import datetime
-
-from typing import Dict, List, Any, Tuple
-from collections import Counter, defaultdict
-
-# Configure the logger (only once, typically at the top of your script or entry point)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-import json
-import summary_augmentation.correctness_errors_examples as correctness_errors_examples
-from openai import OpenAI
-# Define OpenAI API credentials
-#import google.generativeai as genai
-from langchain_openai import ChatOpenAI
 
 import threading
 import csv
@@ -31,6 +10,82 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from summary_augmentation.correctness_errors_llm_helper_functions import verify_transformed_summary_grammar, choose_suitable_claim, summary_negative_augmentation, summary_halluzaition_negative_augmentation, back_translation_and_paraphrasing
 
+# Import similarity metrics
+try:
+    from bert_score import score as bertscore_calc
+    BERTSCORE_AVAILABLE = True
+except ImportError:
+    BERTSCORE_AVAILABLE = False
+    logger.warning("bert_score not installed. BERTScore verification will be disabled.")
+
+try:
+    import sacrebleu
+    CHRF_AVAILABLE = True
+except ImportError:
+    CHRF_AVAILABLE = False
+    logger.warning("sacrebleu not installed. ChrF verification will be disabled.")
+
+
+def calculate_chrf_similarity(reference, hypothesis):
+    """Calculate ChrF score between reference and hypothesis."""
+    if not CHRF_AVAILABLE:
+        return None
+    try:
+        chrf = sacrebleu.sentence_chrf(hypothesis, [reference])
+        return chrf.score / 100.0  # Convert to 0-1 range
+    except Exception as e:
+        logger.warning(f"ChrF calculation failed: {e}")
+        return None
+
+
+def calculate_bertscore_similarity(reference, hypothesis, model_type):
+    """Calculate BERTScore F1 between reference and hypothesis."""
+    if not BERTSCORE_AVAILABLE:
+        return None
+    try:
+        # For Hebrew, use lang='he' which will use appropriate multilingual model
+        # Or explicitly set model_type if needed
+        if model_type:
+            P, R, F1 = bertscore_calc([hypothesis], [reference], model_type=model_type, verbose=False)
+        else:
+            P, R, F1 = bertscore_calc([hypothesis], [reference], lang='he', verbose=False)
+        return F1.item()
+    except Exception as e:
+        logger.warning(f"BERTScore calculation failed: {e}")
+        logger.debug(f"Attempted model: {model_type}, reference: {reference[:50]}, hypothesis: {hypothesis[:50]}")
+        return None
+
+
+def verify_similarity(original, generated, similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model):
+    """
+    Verify similarity between original and generated text.
+    Returns: (passed, scores_dict)
+    """
+    scores = {}
+    passed = True
+    
+    if similarity_metric is None or similarity_metric == "none":
+        return True, scores
+    
+    # Calculate ChrF if needed
+    if similarity_metric in ["chrf", "both"]:
+        chrf_score = calculate_chrf_similarity(original, generated)
+        if chrf_score is not None:
+            scores['chrf'] = chrf_score
+            if chrf_score < chrf_threshold:
+                passed = False
+                logger.debug(f"ChrF score {chrf_score:.3f} below threshold {chrf_threshold}")
+    
+    # Calculate BERTScore if needed
+    if similarity_metric in ["bert", "both"]:
+        bert_score = calculate_bertscore_similarity(original, generated, bertscore_model)
+        if bert_score is not None:
+            scores['bertscore'] = bert_score
+            if bert_score < bertscore_threshold:
+                passed = False
+                logger.debug(f"BERTScore {bert_score:.3f} below threshold {bertscore_threshold}")
+    
+    return passed, scores
 
 
 def process_row(row, transform_types):
@@ -64,111 +119,217 @@ import datetime
 from typing import List, Dict
 
 def main():
-    # configuration
-    # NEW: let user pick slice
-    start_row = 40
-    end_row   = 55
-    input_csv_path  = r"C:\Users\amita\Downloads\correctness metric data\b2_a2_not_in_mafat_800_article_150_summary.csv"
-    timestamp       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_json_path = rf"C:\Users\amita\Downloads\bt_paraphrased_{timestamp}_{start_row}_{end_row}.json"
-    output_csv_path  = rf"C:\Users\amita\Downloads\bt_paraphrased_{timestamp}_{start_row}_{end_row}.csv"
+    # Configuration
+    start_row = 300
+    end_row = 320
+    filter_by_label = None  # Options: None, "entailment", "contradiction"
+    max_workers = 5
+    
+    # Quality verification settings
+    similarity_metric = "both"  # Options: "chrf", "bert", "both", None (no verification)
+    chrf_threshold = 0.64  # ChrF score threshold (0.0-1.0)
+    bertscore_threshold = 0.85  # BERTScore F1 threshold (0.0-1.0)
+    bertscore_model = None  # Use default multilingual BERT for Hebrew (or specify: "bert-base-multilingual-cased")
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    dataset_type = "validation"
+    input_csv_path = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\{dataset_type}.csv"
+    output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\bk_pr\{dataset_type}\mafat_bk_pr_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
+    output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\bk_pr\{dataset_type}\mafat_bk_pr_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
 
+    logger.info(f"Starting processing with {max_workers} worker threads")
+    logger.info(f"Processing rows {start_row} to {end_row - 1}")
+    if filter_by_label:
+        logger.info(f"Filtering samples by label: {filter_by_label}")
+    
+    # Log verification settings
+    logger.info(f"Quality verification: metric={similarity_metric}, chrf_threshold={chrf_threshold}, bertscore_threshold={bertscore_threshold}")
+    logger.info(f"Libraries available - ChrF: {CHRF_AVAILABLE}, BERTScore: {BERTSCORE_AVAILABLE}")
+
+    # Read CSV and apply filter
+    df = pd.read_csv(input_csv_path)
+    
+    # Apply label filter if specified
+    if filter_by_label:
+        original_count = len(df)
+        df = df[df['label'] == filter_by_label].reset_index(drop=True)
+        filtered_count = len(df)
+        logger.info(f"Applied label filter '{filter_by_label}': {original_count} → {filtered_count} samples")
+    
+    # Slice the dataframe
+    slice_df = df.iloc[start_row:end_row]
+    logger.info(f"Processing {len(slice_df)} samples")
 
     records: List[Dict] = []
+    failed_samples = []  # Track failed samples for summary
+    start_time = datetime.datetime.now()
 
-    # read the CSV
-    with open(input_csv_path, newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for idx, row in enumerate(reader):
-            if idx < start_row or idx >= end_row:
-                continue
+    # Process each row
+    for idx, row in slice_df.iterrows():
+        premise = row['premise']
+        hypothesis = row['hypothesis']
+        
+        logger.info(f"Processing row {idx}: doc_id={row.get('doc_id', 'unknown')}")
 
-            premise    = row['premise']
-            hypothesis = row['hypothesis']
+        # Call transformer
+        result = back_translation_and_paraphrasing(hypothesis)
+        if not result:
+            logger.warning(f"Skipping row {idx}: transformation failed")
+            continue
 
+        # Validate outputs are not empty
+        if not result.summary_paraphrasing or not result.summary_paraphrasing.strip():
+            logger.warning(f"Skipping row {idx}: paraphrasing returned empty text")
+            continue
+        
+        if not result.summary_back_translation or not result.summary_back_translation.strip():
+            logger.warning(f"Skipping row {idx}: back_translation returned empty text")
+            continue
 
-            # call your transformer
-            result = back_translation_and_paraphrasing(hypothesis)
-            if not result:
-                continue
-
-            # two new entailment records, both under 'hypothesis'
-            records.append({
-                'premise': premise,
-                'hypothesis': result.summary_paraphrasing,
-                'label': 'entailment',
-                'group_len': row['len_group'],
-                'doc_id': row['doc_id'],
-                'source': row['source']
+        # Verify similarity for paraphrasing
+        paraphrase_passed, paraphrase_scores = verify_similarity(
+            hypothesis, result.summary_paraphrasing,
+            similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model
+        )
+        
+        if not paraphrase_passed:
+            logger.warning(f"Skipping row {idx}: paraphrasing failed similarity check - {paraphrase_scores}")
+            failed_samples.append({
+                'doc_id': row.get('doc_id', 'unknown'),
+                'method': 'paraphrasing',
+                'reason': 'similarity_check_failed',
+                'scores': paraphrase_scores
             })
-            records.append({
-                'premise': premise,
-                'hypothesis': result.summary_back_translation,
-                'label': 'entailment',
-                'group_len': row['len_group'],
-                'doc_id': row['doc_id'],
-                'source': row['source']
-
+            continue
+        
+        # Verify similarity for back-translation
+        backtrans_passed, backtrans_scores = verify_similarity(
+            hypothesis, result.summary_back_translation,
+            similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model
+        )
+        
+        if not backtrans_passed:
+            logger.warning(f"Skipping row {idx}: back_translation failed similarity check - {backtrans_scores}")
+            failed_samples.append({
+                'doc_id': row.get('doc_id', 'unknown'),
+                'method': 'back_translation',
+                'reason': 'similarity_check_failed',
+                'scores': backtrans_scores
             })
+            continue
 
-    # write out to JSON
-    with open(output_json_path, 'w', encoding='utf-8') as out_json:
+        logger.info(f"✓ Similarity checks passed - Paraphrase: {paraphrase_scores}, BackTrans: {backtrans_scores}")
+
+        # Two new entailment records with method field
+        records.append({
+            'premise': premise,
+            'hypothesis': result.summary_paraphrasing,
+            'label': 'entailment',
+            'len_group': row['len_group'],
+            'doc_id': row['doc_id'],
+            'source': row['source'],
+            'error_types': '',
+            'method': 'paraphrasing',
+            'original_hypothesis': hypothesis
+        })
+        records.append({
+            'premise': premise,
+            'hypothesis': result.summary_back_translation,
+            'label': 'entailment',
+            'len_group': row['len_group'],
+            'doc_id': row['doc_id'],
+            'source': row['source'],
+            'error_types': '',
+            'method': 'back_translation',
+            'original_hypothesis': hypothesis
+        })
+        
+        logger.info(f"✓ Row {idx} completed: generated 2 samples")
+
+    # Write out to JSON
+    with open(output_json, 'w', encoding='utf-8') as out_json:
         json.dump(records, out_json, ensure_ascii=False, indent=2)
 
-    # write out to CSV
+    # Write out to CSV
     if records:
-        fieldnames = list(records[0].keys())
-        with open(output_csv_path, 'w', newline='', encoding='utf-8') as out_csv:
+        fieldnames = ['premise', 'hypothesis', 'label', 'len_group', 'doc_id', 'source', 'error_types', 'method', 'original_hypothesis']
+        with open(output_csv, 'w', newline='', encoding='utf-8') as out_csv:
             writer = csv.DictWriter(out_csv, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(records)
 
-    print(f"Wrote {len(records)} records to:\n  JSON: {output_json_path}\n  CSV:  {output_csv_path}")
+    # Calculate processing time
+    end_time = datetime.datetime.now()
+    duration = (end_time - start_time).total_seconds()
+    
+    # Generate summary file
+    output_summary = output_csv.replace('.csv', '_summary.txt')
+    
+    total_attempted = len(slice_df)
+    total_generated = len(records)
+    total_failed = len(failed_samples)
+    success_rate = (total_generated / (total_attempted * 2) * 100) if total_attempted > 0 else 0
+    
+    summary_content = f"""
+================================================================================
+DATA AUGMENTATION SUMMARY - Back-Translation & Paraphrasing
+================================================================================
+
+Generated: {end_time.strftime('%Y-%m-%d %H:%M:%S')}
+Duration: {duration:.2f} seconds ({duration/60:.2f} minutes)
+
+INPUT/OUTPUT FILES:
+  Input:  {input_csv_path}
+  Output CSV:  {output_csv}
+  Output JSON: {output_json}
+  
+PROCESSING SCOPE:
+  Rows processed: {start_row} to {end_row-1} ({total_attempted} samples)
+  Label filter: {filter_by_label if filter_by_label else 'None (all labels)'}
+
+QUALITY VERIFICATION SETTINGS:
+  Similarity metric: {similarity_metric}
+  ChrF threshold: {chrf_threshold}
+  BERTScore threshold: {bertscore_threshold}
+  BERTScore model: {bertscore_model if bertscore_model else 'Default (multilingual BERT)'}
+  Libraries available - ChrF: {CHRF_AVAILABLE}, BERTScore: {BERTSCORE_AVAILABLE}
+
+RESULTS:
+  Total samples attempted: {total_attempted}
+  Potential outputs (2 per sample): {total_attempted * 2}
+  Successfully generated: {total_generated}
+  Failed validation: {total_failed}
+  Success rate: {success_rate:.1f}%
+  
+  Breakdown:
+    - Paraphrase samples: {sum(1 for r in records if r['method'] == 'paraphrasing')}
+    - Back-translation samples: {sum(1 for r in records if r['method'] == 'back_translation')}
+
+FAILED SAMPLES DETAILS:
+"""
+    
+    if failed_samples:
+        for i, fail in enumerate(failed_samples, 1):
+            summary_content += f"\n  {i}. Doc ID: {fail['doc_id']}"
+            summary_content += f"\n     Method: {fail['method']}"
+            summary_content += f"\n     Reason: {fail['reason']}"
+            summary_content += f"\n     Scores: {fail['scores']}"
+    else:
+        summary_content += "\n  No failed samples (all passed validation)"
+    
+    summary_content += "\n\n" + "="*80 + "\n"
+    
+    # Write summary file
+    with open(output_summary, 'w', encoding='utf-8') as f:
+        f.write(summary_content)
+    
+    logger.info(f"✓ Wrote {len(records)} records to:")
+    logger.info(f"  JSON: {output_json}")
+    logger.info(f"  CSV:  {output_csv}")
+    logger.info(f"  Summary: {output_summary}")
+    print(f"\n✅ Processing complete: {len(records)} records saved")
+    print(f"⏱️  Duration: {duration:.2f}s | Success rate: {success_rate:.1f}%")
 
 if __name__ == "__main__":
     main()
 
-# def main():
-#     # input_csv_path = r"/sise/home/avramit/dataset_augmentation/output_mafat_less_500_test_new.csv"
-#     #input_csv_path = r"/sise/home/avramit/mfact-summ/mfact/datasets/heb/mafat_800_article_150_summary.csv"
-#     input_csv_path = r"C:\Users\amita\Downloads\mafat_800_article_150_summary.csv"
-#     output_csv_path = r"/sise/home/avramit/dataset_augmentation/output_mafat_less_500_test_negative.csv"
-#     num_rows_to_transform = 20
-#     transformation_types_1 = [CorrectnessErrorTypes.ENTITY_PERSON_SWAP, CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP,
-#                               CorrectnessErrorTypes.ENTITY_LOCATION_SWAP,CorrectnessErrorTypes.ENTITY_DATE_SWAP, CorrectnessErrorTypes.ENTITY_EVENT_SWAP,
-#                               CorrectnessErrorTypes.ENTITY_TITLE_SWAP]
-#
-#     # Load the CSV data
-#     df = pd.read_csv(input_csv_path)
-#     # Take the first n rows to transform
-#     if num_rows_to_transform < len(df):
-#         rows_to_transform = df.sample(n=num_rows_to_transform)
-#     else:
-#         rows_to_transform = df  # Use all rows if requested more than available
-#     # Create a list to store new rows
-#     new_rows = []
-#
-#     # Process each selected row
-#     for _, row in rows_to_transform.iterrows():
-#         # summary = row['hypothesis']
-#         # premise = row['premise']
-#         premise = row['hypothesis']
-#         summary = row['premise']
-#         new_sum=correctness_errors_transformation_workflow(summary=summary, source_article=premise, transformation_types=transformation_types_1)
-#
-#     # Create DataFrame with new rows
-#     new_df = pd.DataFrame(new_rows)
-#
-#     # Append new rows to original DataFrame and save
-#     result_df = pd.concat([df, new_df], ignore_index=True)
-#     result_df.to_csv(output_csv_path, index=False)
-#
-#     print(f"Successfully processed {len(new_rows)} rows and saved to {output_csv_path}")
-#     return result_df
-
-
-
-# Example of how to call the main function:
-# if __name__ == "__main__":
-#     print("hello")
-#     main()

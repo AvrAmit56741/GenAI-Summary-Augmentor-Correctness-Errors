@@ -1,0 +1,36 @@
+# Task Backlog
+
+## Correctness Evaluation Metrics - Add Baseline Metrics
+
+### Neural/Learned Metrics
+- [ ] BLEURT-20
+- [ ] BARTScore
+- [ ] BERTScore
+- [ ] QuestEval
+- [ ] FactCC
+- [ ] ANLI
+- [ ] Q2 (Question Generation Quality)
+- [ ] SCZS (Summary Content Quality Score)
+- [ ] QGQAFactEval
+
+### N-gram Metrics
+- [ ] METEOR
+
+---
+
+## Attention Map Support
+
+- [x] unified_classifier_inference.py (BERT binary + multilabel)
+- [ ] Legacy batch scripts (not needed)
+- N/A LLM scripts (not applicable)
+
+---
+
+## Dataset Augmentation - Add Negative Samples
+
+### Add Non-Corrupted Claims
+- [ ] Setup 1: Add `article [SEP] correct_claim [SEP] [0,0,0]`
+- [ ] Setup 2: Add `original_claim [SEP] original_claim [SEP] [0,0,0]`
+- [ ] Balance corrupted vs correct sample ratio
+- [ ] Update augmentation script
+- [ ] Update CSV parser

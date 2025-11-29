@@ -993,8 +993,8 @@ def main():
     logger = setup_logger(__name__, log_level="INFO", log_file=log_file)
     # Hardcoded configuration
     max_workers = 3
-    start_row = 151
-    end_row = 157
+    start_row = 481
+    end_row = 510
     
     # Filter configuration (optional)
     filter_by_label = None  # Options: None (no filter), "entailment", "contradiction"
@@ -1004,10 +1004,7 @@ def main():
     if filter_by_label:
         logger.info(f"Filtering samples by label: {filter_by_label}")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    dataset_type = "test"
-    # input_csv_path = r"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\train.csv"
-    # output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\mafat_train_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
-    # output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\train\mafat_train_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
+    dataset_type = "train"
     input_csv_path = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\{dataset_type}.csv"
     output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\mafat_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
     output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\mafat_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
