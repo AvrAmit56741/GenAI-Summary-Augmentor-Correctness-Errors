@@ -120,8 +120,8 @@ from typing import List, Dict
 
 def main():
     # Configuration
-    start_row = 300
-    end_row = 320
+    start_row = 1201
+    end_row = 1400
     filter_by_label = None  # Options: None, "entailment", "contradiction"
     max_workers = 5
     
@@ -132,7 +132,7 @@ def main():
     bertscore_model = None  # Use default multilingual BERT for Hebrew (or specify: "bert-base-multilingual-cased")
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    dataset_type = "validation"
+    dataset_type = "train"
     input_csv_path = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\{dataset_type}.csv"
     output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\bk_pr\{dataset_type}\mafat_bk_pr_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
     output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\bk_pr\{dataset_type}\mafat_bk_pr_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
@@ -163,88 +163,113 @@ def main():
     records: List[Dict] = []
     failed_samples = []  # Track failed samples for summary
     start_time = datetime.datetime.now()
+    
+    # Thread-safe locks for shared resources
+    records_lock = threading.Lock()
+    failed_lock = threading.Lock()
 
-    # Process each row
-    for idx, row in slice_df.iterrows():
-        premise = row['premise']
-        hypothesis = row['hypothesis']
-        
-        logger.info(f"Processing row {idx}: doc_id={row.get('doc_id', 'unknown')}")
+    def process_single_sample(row):
+        """Process a single sample with back-translation and paraphrasing."""
+        try:
+            idx = row.name
+            premise = row['premise']
+            hypothesis = row['hypothesis']
+            
+            logger.info(f"Processing row {idx}: doc_id={row.get('doc_id', 'unknown')}")
 
-        # Call transformer
-        result = back_translation_and_paraphrasing(hypothesis)
-        if not result:
-            logger.warning(f"Skipping row {idx}: transformation failed")
-            continue
+            # Call transformer
+            result = back_translation_and_paraphrasing(hypothesis)
+            if not result:
+                logger.warning(f"Skipping row {idx}: transformation failed")
+                return None
 
-        # Validate outputs are not empty
-        if not result.summary_paraphrasing or not result.summary_paraphrasing.strip():
-            logger.warning(f"Skipping row {idx}: paraphrasing returned empty text")
-            continue
-        
-        if not result.summary_back_translation or not result.summary_back_translation.strip():
-            logger.warning(f"Skipping row {idx}: back_translation returned empty text")
-            continue
+            # Validate outputs are not empty
+            if not result.summary_paraphrasing or not result.summary_paraphrasing.strip():
+                logger.warning(f"Skipping row {idx}: paraphrasing returned empty text")
+                return None
+            
+            if not result.summary_back_translation or not result.summary_back_translation.strip():
+                logger.warning(f"Skipping row {idx}: back_translation returned empty text")
+                return None
 
-        # Verify similarity for paraphrasing
-        paraphrase_passed, paraphrase_scores = verify_similarity(
-            hypothesis, result.summary_paraphrasing,
-            similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model
-        )
-        
-        if not paraphrase_passed:
-            logger.warning(f"Skipping row {idx}: paraphrasing failed similarity check - {paraphrase_scores}")
-            failed_samples.append({
-                'doc_id': row.get('doc_id', 'unknown'),
-                'method': 'paraphrasing',
-                'reason': 'similarity_check_failed',
-                'scores': paraphrase_scores
-            })
-            continue
-        
-        # Verify similarity for back-translation
-        backtrans_passed, backtrans_scores = verify_similarity(
-            hypothesis, result.summary_back_translation,
-            similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model
-        )
-        
-        if not backtrans_passed:
-            logger.warning(f"Skipping row {idx}: back_translation failed similarity check - {backtrans_scores}")
-            failed_samples.append({
-                'doc_id': row.get('doc_id', 'unknown'),
-                'method': 'back_translation',
-                'reason': 'similarity_check_failed',
-                'scores': backtrans_scores
-            })
-            continue
+            # Verify similarity for paraphrasing
+            paraphrase_passed, paraphrase_scores = verify_similarity(
+                hypothesis, result.summary_paraphrasing,
+                similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model
+            )
+            
+            if not paraphrase_passed:
+                logger.warning(f"Skipping row {idx}: paraphrasing failed similarity check - {paraphrase_scores}")
+                with failed_lock:
+                    failed_samples.append({
+                        'doc_id': row.get('doc_id', 'unknown'),
+                        'method': 'paraphrasing',
+                        'reason': 'similarity_check_failed',
+                        'scores': paraphrase_scores
+                    })
+                return None
+            
+            # Verify similarity for back-translation
+            backtrans_passed, backtrans_scores = verify_similarity(
+                hypothesis, result.summary_back_translation,
+                similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model
+            )
+            
+            if not backtrans_passed:
+                logger.warning(f"Skipping row {idx}: back_translation failed similarity check - {backtrans_scores}")
+                with failed_lock:
+                    failed_samples.append({
+                        'doc_id': row.get('doc_id', 'unknown'),
+                        'method': 'back_translation',
+                        'reason': 'similarity_check_failed',
+                        'scores': backtrans_scores
+                    })
+                return None
 
-        logger.info(f"✓ Similarity checks passed - Paraphrase: {paraphrase_scores}, BackTrans: {backtrans_scores}")
+            logger.info(f"✓ Similarity checks passed - Paraphrase: {paraphrase_scores}, BackTrans: {backtrans_scores}")
 
-        # Two new entailment records with method field
-        records.append({
-            'premise': premise,
-            'hypothesis': result.summary_paraphrasing,
-            'label': 'entailment',
-            'len_group': row['len_group'],
-            'doc_id': row['doc_id'],
-            'source': row['source'],
-            'error_types': '',
-            'method': 'paraphrasing',
-            'original_hypothesis': hypothesis
-        })
-        records.append({
-            'premise': premise,
-            'hypothesis': result.summary_back_translation,
-            'label': 'entailment',
-            'len_group': row['len_group'],
-            'doc_id': row['doc_id'],
-            'source': row['source'],
-            'error_types': '',
-            'method': 'back_translation',
-            'original_hypothesis': hypothesis
-        })
+            # Create two records for this sample
+            sample_records = [
+                {
+                    'premise': premise,
+                    'hypothesis': result.summary_paraphrasing,
+                    'label': 'entailment',
+                    'len_group': row['len_group'],
+                    'doc_id': row['doc_id'],
+                    'source': row['source'],
+                    'error_types': '',
+                    'method': 'paraphrasing',
+                    'original_hypothesis': hypothesis
+                },
+                {
+                    'premise': premise,
+                    'hypothesis': result.summary_back_translation,
+                    'label': 'entailment',
+                    'len_group': row['len_group'],
+                    'doc_id': row['doc_id'],
+                    'source': row['source'],
+                    'error_types': '',
+                    'method': 'back_translation',
+                    'original_hypothesis': hypothesis
+                }
+            ]
+            
+            logger.info(f"✓ Row {idx} completed: generated 2 samples")
+            return sample_records
+            
+        except Exception as e:
+            logger.error(f"Error processing row {row.name}: {e}")
+            return None
+
+    # Process samples using ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(process_single_sample, row) for idx, row in slice_df.iterrows()]
         
-        logger.info(f"✓ Row {idx} completed: generated 2 samples")
+        for future in futures:
+            result = future.result()
+            if result:
+                with records_lock:
+                    records.extend(result)
 
     # Write out to JSON
     with open(output_json, 'w', encoding='utf-8') as out_json:
