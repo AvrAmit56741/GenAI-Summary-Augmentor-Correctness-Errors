@@ -345,22 +345,45 @@ def main():
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
 
-    # Print system info
+    # Print system info and save to file
     import socket
-    print("\n" + "="*50)
-    print("TRAINING CONFIGURATION")
-    print("="*50)
+    import json as json_lib
+    from datetime import datetime
+    
+    training_info = []
+    
+    def log_and_save(msg):
+        print(msg)
+        training_info.append(msg)
+    
+    log_and_save("\n" + "="*50)
+    log_and_save("TRAINING CONFIGURATION")
+    log_and_save("="*50)
     if torch.cuda.is_available():
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-    print(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
-    print(f"Model: {model_args.model_name_or_path}")
-    print(f"Output dir: {training_args.output_dir}")
-    print(f"Batch size: {training_args.per_device_train_batch_size}")
-    print(f"Learning rate: {training_args.learning_rate}")
-    print(f"Epochs: {training_args.num_train_epochs}")
-    print(f"Max seq length: {data_args.max_seq_length}")
-    print(f"Labels: {label_list}")
-    print("="*50 + "\n")
+        log_and_save(f"GPU: {torch.cuda.get_device_name(0)}")
+    log_and_save(f"Host IP: {socket.gethostbyname(socket.gethostname())}")
+    log_and_save(f"Model: {model_args.model_name_or_path}")
+    log_and_save(f"Output dir: {training_args.output_dir}")
+    log_and_save(f"Batch size: {training_args.per_device_train_batch_size}")
+    log_and_save(f"Learning rate: {training_args.learning_rate}")
+    log_and_save(f"Epochs: {training_args.num_train_epochs}")
+    log_and_save(f"Max seq length: {data_args.max_seq_length}")
+    log_and_save(f"Labels: {label_list}")
+    log_and_save("="*50 + "\n")
+    
+    # Save all arguments to JSON
+    all_args = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "model_args": vars(model_args),
+        "data_args": vars(data_args),
+        "training_args": training_args.to_dict()
+    }
+    
+    args_file = os.path.join(training_args.output_dir, "training_info_args.json")
+    os.makedirs(training_args.output_dir, exist_ok=True)
+    with open(args_file, "w", encoding="utf-8") as f:
+        json_lib.dump(all_args, f, indent=2, ensure_ascii=False)
+    log_and_save(f"✅ Arguments saved to {args_file}\n")
 
     # Preprocessing the datasets
     # Padding strategy
@@ -435,9 +458,19 @@ def main():
             )
 
     # Print dataset sizes
-    print(f"Dataset sizes - Train: {len(train_dataset) if training_args.do_train else 0}, "
-          f"Val: {len(eval_dataset) if training_args.do_eval else 0}, "
-          f"Test: {len(predict_dataset) if training_args.do_predict else 0}\n")
+    dataset_info = f"Dataset sizes - Train: {len(train_dataset) if training_args.do_train else 0}, " \
+                   f"Val: {len(eval_dataset) if training_args.do_eval else 0}, " \
+                   f"Test: {len(predict_dataset) if training_args.do_predict else 0}"
+    log_and_save(dataset_info)
+    
+    # Add dataset file names to info
+    if training_args.do_train and data_args.train_file:
+        log_and_save(f"Train file: {data_args.train_file}")
+    if training_args.do_eval and data_args.validation_file:
+        log_and_save(f"Val file: {data_args.validation_file}")
+    if training_args.do_predict and data_args.test_file:
+        log_and_save(f"Test file: {data_args.test_file}")
+    log_and_save("")
 
     # Get the metric function
     # metric = evaluate.load("xnli")
@@ -516,9 +549,18 @@ def main():
         scores = torch.softmax(torch.tensor(predictions), axis=1) # softmax to normalize
         scores = scores[:,1] # 1 for entailment score
 
+        # Convert predictions to probabilities for CSV
+        probs_all = torch.softmax(torch.tensor(trainer.predict(predict_dataset).predictions), dim=1).numpy()
+        
         predictions = np.argmax(predictions, axis=1)
         output_predict_file = os.path.join(training_args.output_dir, "predictions.txt")
+        
+        # Save predictions as CSV
+        import csv
+        output_csv_file = os.path.join(training_args.output_dir, "predictions.csv")
+        
         if trainer.is_world_process_zero():
+            # Save TXT (original)
             with open(output_predict_file, "w") as writer:
                 writer.write("index\tprediction\n")
                 if data_args.get_predict_scores:
@@ -528,6 +570,36 @@ def main():
                     for index, item in enumerate(predictions):
                         item = label_list[item]
                         writer.write(f"{index}\t{item}\n")
+            
+            # Save CSV with full details
+            with open(output_csv_file, "w", newline='', encoding='utf-8') as csvfile:
+                fieldnames = ['index', 'premise', 'hypothesis', 'true_label', 'predicted_label', 'prob_' + label_list[0], 'prob_' + label_list[1]]
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                for i in range(len(predictions)):
+                    premise_text = predict_dataset[i]['premise']
+                    if len(premise_text) > 200:
+                        premise_text = premise_text[:200] + '...'
+                    
+                    writer.writerow({
+                        'index': i,
+                        'premise': premise_text,
+                        'hypothesis': predict_dataset[i]['hypothesis'],
+                        'true_label': label_list[labels[i]],
+                        'predicted_label': label_list[predictions[i]],
+                        'prob_' + label_list[0]: float(probs_all[i][0]),
+                        'prob_' + label_list[1]: float(probs_all[i][1])
+                    })
+            
+            log_and_save(f"✅ Predictions saved to {output_predict_file}")
+            log_and_save(f"✅ Predictions CSV saved to {output_csv_file}")
+    
+    # Save all training info to text file
+    training_info_file = os.path.join(training_args.output_dir, "training_info.txt")
+    with open(training_info_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(training_info))
+    print(f"\n✅ Training info saved to {training_info_file}")
 
 
 if __name__ == "__main__":

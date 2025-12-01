@@ -673,29 +673,56 @@ def perform_multiple_transformations_on_claim(output_instructions_parser):
 
 def faithfulness_summary_back_translation_and_paraphrasing(faithfulness_summary, output_instructions_parser):
     system_message = """
-    You are an expert bilingual writer and editor.
+    You are an expert Hebrew linguist and bilingual editor specializing in factual preservation.
     
-    Your task is to process Hebrew text (article summary) in TWO distinct ways:
-    Task Back-Translation - return **HEBREW** summary after Back-Translation
-    - Translate the Hebrew text into precise and natural English.
-    - Translate the English version back into natural, idiomatic Hebrew.
-    - Ensure NO factual data is added, omitted, or altered.
-    - Final Hebrew must be factually identical to the original text.
+    Your task: Process Hebrew text in TWO ways while maintaining PERFECT factual accuracy.
     
-    Task Paraphrasing (RICH and NATURAL) - return **HEBREW** summary Paraphrasing
-    - Paraphrase the original Hebrew directly into DIFFERENT and VARIED Hebrew phrasing:
-    - Significantly change sentence structures and vary expressions.
-    - Use synonyms, alternative phrasings, and reordering of ideas where natural.
-    - Make the text flow naturally and elegantly, as if edited by a skilled native writer.
-    - Avoid simple word swaps only — aim for rich, fluid, and stylistically diverse phrasing.
-    - KEEP all factual details strictly unchanged (names, dates, historical facts, claims, etc.).
-    - Ensure the final Hebrew version is FACTUALLY IDENTICAL to the original, but EXPRESSED DIFFERENTLY and NATURALLY. 
+    === CRITICAL FACTUAL PRESERVATION RULES ===
+    ✓ Names (persons, places, organizations) → KEEP EXACTLY as written
+    ✓ Numbers, dates, quantities → KEEP EXACTLY as written  
+    ✓ Temporal expressions (אתמול, בשנה שעברה) → Preserve time meaning
+    ✓ Negations (לא, אין, בלי) → MUST preserve positive/negative meaning
+    ✓ Causal relationships (כי, לכן, בגלל) → Keep logical connections intact
     
-    Both Paraphrasing and Back-Translation are in HEBREW language
+    === Task 1: Back-Translation ===
+    1. Translate Hebrew → English (precise and accurate)
+    2. Translate English → Hebrew (natural and idiomatic)
+    3. Final Hebrew MUST contain the EXACT same facts as original
+    4. Linguistic style can vary, but EVERY fact must be preserved
+    
+    === Task 2: Paraphrasing ===
+    1. Rewrite Hebrew using different sentence structures
+    2. Use synonyms ONLY if they preserve exact meaning
+    3. Vary word order and discourse markers
+    4. Change how it's said, NOT what is said
+    
+    === FORBIDDEN CHANGES ===
+    ✗ Adding information not in original
+    ✗ Removing any factual detail
+    ✗ Changing entity roles (who did what to whom)
+    ✗ Altering quantity/degree (many → few, always → sometimes)
+    ✗ Swapping entities or attributes
+    
+    === Hebrew-Specific Requirements ===
+    - Maintain gender agreement (זכר/נקבה) consistency
+    - Preserve verb tense and aspect accurately
+    - Keep definiteness (ה' הידיעה) when it affects meaning
+    - Maintain possession relationships (construct state)
+    
+    IMPORTANT: If you're uncertain about preserving a fact → be conservative, change less.
+    Both outputs MUST be factually identical to the original - this is NON-NEGOTIABLE.
     """
 
     user_message = f"""
-    Hebrew summary to perform the back translation and the paraphrasing: {faithfulness_summary}
+    Original Hebrew summary:
+    {faithfulness_summary}
+    
+    Generate TWO factually identical versions:
+    1. Back-translation: Hebrew → English → Hebrew
+    2. Paraphrasing: Different Hebrew phrasing
+    
+    Remember: ALL facts must be preserved EXACTLY. Change only linguistic expression, not content.
+    
     Output JSON schema:
     {output_instructions_parser.get_format_instructions()}
     """
