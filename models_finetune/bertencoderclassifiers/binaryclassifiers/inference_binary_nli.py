@@ -23,9 +23,9 @@ print ("update v1")
 # ========================
 # CONFIGURATION (Edit these values)
 # ========================
-MODEL_PATH = "/home/avramit/classifier/binary/neodictabert-finetuned-4096-201125"
-TEST_FILE = "/home/avramit/classifier/datasets/dataset_nfacttrain_mafat/test.csv"
-OUTPUT_DIR = "/home/avramit/classifier/binary/neodictabert-finetuned-4096-201125/inference_output"
+MODEL_PATH = "/home/avramit/classifier/01122025/classifier/binary/neodictabert-finetuned-binary-011225/"
+TEST_FILE = "/home/avramit/classifier/01122025/datasets/classifiers/test.csv"
+OUTPUT_DIR = "/home/avramit/classifier/01122025/classifier/binary/neodictabert-finetuned-binary-011225/binary-inference_output"
 MAX_SEQ_LENGTH = 4096  # Same as training
 BATCH_SIZE = 8  # Adjust based on GPU memory (training used effective batch of 16)
 

@@ -34,7 +34,11 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version, send_example_telemetry
+from transformers.utils import check_min_version
+try:
+    from transformers.utils import send_example_telemetry
+except ImportError:
+    send_example_telemetry = None  # Not available in newer transformers
 
 # Ensure minimal versions
 check_min_version("4.25.0.dev0")
@@ -73,7 +77,8 @@ class ModelArguments:
 def main():
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    send_example_telemetry("run_xnli_multilabel", model_args)
+    if send_example_telemetry is not None:
+        send_example_telemetry("run_xnli_multilabel", model_args)
 
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",

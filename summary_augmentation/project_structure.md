@@ -449,6 +449,295 @@ These errors leverage Hebrew's morphological richness, compactness, and ambiguit
 
 These families are used across the pipeline for augmentation (negative transformations), correctness finding, and evaluation.
 
+---
+
+## Dataset Sources and Preparation
+
+### Primary Data Sources
+
+The project utilizes two main Hebrew NLI dataset sources, each contributing different characteristics to the final training corpus:
+
+#### **1. MAFAT Dataset (Long Summaries - Hebrew Native)**
+
+**Characteristics**:
+- **Size**: ~5,000 samples
+- **Format**: Article-summary pairs with long, detailed summaries
+- **Language**: Native Hebrew (original articles and summaries)
+- **Annotation**: Human-annotated by professional annotators
+- **Label Distribution**: 100% entailment (all summaries are factually consistent)
+- **Summary Length**: Long-form summaries (typically 100-300 words)
+- **Source**: Hebrew news articles (Israel_Hayom, other Israeli media)
+
+**Quality Assurance**:
+- Professional human annotation ensures high factual accuracy
+- All samples are gold-standard entailment pairs
+- Serves as the foundation for contradiction generation via augmentation pipeline
+
+**Usage**:
+- Input to Hebrew error injection pipeline
+- Generates corrupted variants (contradictions) with 15-20 error types
+- Provides premise-hypothesis pairs for long-context NLI tasks
+
+---
+
+#### **2. MFACT Dataset (Short Summaries - Translated from English)**
+
+**Characteristics**:
+- **Size**: ~40,000 samples
+- **Format**: Article-summary pairs with short summaries
+- **Language**: Translated to Hebrew from English (original MFACT corpus)
+- **Annotation**: Automatic scoring by MFACT pipeline with 4 metrics:
+  1. **QGQA** (Question Generation & Question Answering)
+  2. **DAE** (Dependency Arc Entailment)
+  3. Two additional factual consistency metrics
+- **Label Distribution**: Balanced entailment + contradiction
+  - **Top-scored samples**: High-quality entailments
+  - **Bottom-scored samples**: Natural contradictions (factual errors)
+- **Summary Length**: Short summaries (typically 20-50 words)
+- **Source**: English news articles → Hebrew translation
+
+**Quality Assurance**:
+- Multi-metric scoring (4 metrics) ensures reliable entailment/contradiction separation
+- Translation quality controlled for Hebrew linguistic accuracy
+- Natural contradictions complement augmented errors
+
+**Scoring Metrics Details**:
+- Samples ranked by combined score across 4 metrics
+- High scores (top 20K) → entailment pairs
+- Low scores (bottom 20K) → contradiction pairs
+- Provides both naturally-occurring and augmented errors
+
+---
+
+### Dataset Preparation Pipeline
+
+#### **Stage 1: Source Collection**
+
+```
+MAFAT (5K Hebrew)              MFACT (40K English)
+    ↓                                ↓
+Human-annotated               Metric-scored
+Long summaries                [Translate to Hebrew]
+All entailment                    ↓
+                              Short summaries
+                              Balanced labels
+```
+
+#### **Stage 2: Augmentation & Combination**
+
+```
+MAFAT (5K entailment)         MFACT (40K translated)
+    ↓                                ↓
+[Error Injection Pipeline]    [Error Injection Pipeline]
+    ↓                                ↓
+Corrupted summaries           Augmented contradictions
+(10-20 variants per doc)      (Additional error types)
+    ↓                                ↓
+    └────────────┬───────────────────┘
+                 ↓
+         Combined Hebrew Dataset
+         (~50K-200K samples total)
+```
+
+**Augmentation Process**:
+1. **MAFAT**: 5K entailment → ~50K-100K augmented contradictions (10-20 variants each)
+2. **MFACT**: 40K samples → additional augmented variants for both entailment and contradiction
+3. **Result**: Large-scale Hebrew NLI corpus with:
+   - Long-form summaries (MAFAT-derived)
+   - Short-form summaries (MFACT-derived)
+   - Human-annotated entailments (MAFAT gold)
+   - Metric-scored natural errors (MFACT contradictions)
+   - Augmented linguistic errors (15-20 Hebrew-specific error types)
+
+---
+
+### Dataset Split Strategy
+
+#### **Split Methodology: Pre-Augmentation Document-Level Separation**
+
+**Critical Principle**: To prevent data leakage, splitting occurs **BEFORE** augmentation at the **document ID level**.
+
+**Step-by-Step Process**:
+
+#### **Phase 1: Pre-Augmentation Split (Document-Level)**
+
+**MAFAT Dataset** (5,000 documents):
+```
+Step 1: Split by document ID
+├── Train:      ~3,500 documents (70%)
+├── Validation: ~750 documents (15%)
+└── Test:       ~750 documents (15%)
+
+✅ Each split contains DIFFERENT source articles
+✅ No document appears in multiple splits
+```
+
+**MFACT Dataset** (40,000 samples):
+```
+Step 1: Split by document ID
+├── Train:      ~28,000 samples (70%)
+├── Validation: ~6,000 samples (15%)
+└── Test:       ~6,000 samples (15%)
+
+✅ Independent split from MAFAT
+✅ Document-level separation maintained
+```
+
+---
+
+#### **Phase 2: Augmentation (Per-Split)**
+
+Augmentation is performed **independently** on each split (train/val/test) to generate corrupted summaries:
+
+**MAFAT Augmentation**:
+```
+Train:      3,500 docs → Error injection pipeline
+Validation: 750 docs   → Error injection pipeline
+Test:       750 docs   → Error injection pipeline
+
+Augmentation Factor: ~7 corrupted variants per document
+```
+
+**Example (Current MAFAT Train Configuration)**:
+- **Input**: 500 source documents (subset of 3,500 train docs)
+- **Augmentation**: Each document → ~7 corrupted summaries
+- **Output**: 
+  - 500 entailment pairs (original gold summaries)
+  - ~3,500 contradiction pairs (7 variants × 500 docs)
+  - **Total**: ~4,000 MAFAT train samples
+
+**MFACT Augmentation**:
+- Similar augmentation applied to train/val/test splits separately
+- Generates additional corrupted variants for both existing entailments and contradictions
+
+---
+
+#### **Phase 3: Combined Dataset Assembly**
+
+After augmentation, each split combines MAFAT + MFACT samples:
+
+**Train Split** (Current Configuration Example):
+```
+MAFAT Train:
+  - 500 entailment pairs (gold summaries)
+  - ~3,500 contradiction pairs (augmented)
+  - Total: ~4,000 samples
+
+MFACT Train:
+  - ~28,000 samples (original + augmented)
+  
+Combined Train: ~32,000 samples
+```
+
+**Validation Split**:
+```
+MAFAT Val:  ~750 docs × 8 (1 gold + 7 corrupted) = ~6,000 samples
+MFACT Val:  ~6,000 samples (original + augmented)
+Combined Val: ~12,000 samples
+```
+
+**Test Split**:
+```
+MAFAT Test: ~750 docs × 8 = ~6,000 samples
+MFACT Test: ~6,000 samples
+Combined Test: ~12,000 samples
+```
+
+---
+
+#### **Stratification Criteria**
+
+Within each split, samples are stratified by:
+
+1. **Error Type Balance**: Ensure all 15-20 error families represented
+2. **Source Balance**: Maintain MAFAT/MFACT proportions
+3. **Length Balance**: Equal distribution of short (MFACT) and long (MAFAT) summaries
+4. **Label Balance**: Balanced entailment/contradiction ratios (for binary NLI)
+
+**Implementation**: Use the **Utils** tab in Streamlit UI for document-level stratified splitting BEFORE augmentation.
+
+---
+
+#### **Data Leakage Prevention**
+
+**Why Document-Level Split is Critical**:
+```
+❌ WRONG: Split after augmentation
+Doc_123 → [gold, corrupt_1, corrupt_2, ..., corrupt_7]
+         ├── Train: [gold, corrupt_1, corrupt_2]
+         ├── Val:   [corrupt_3, corrupt_4]
+         └── Test:  [corrupt_5, corrupt_6, corrupt_7]
+         
+Problem: Model sees different versions of same article
+         in train/val/test → inflates performance
+
+✅ CORRECT: Split before augmentation
+Train docs: [Doc_1, Doc_2, ..., Doc_500]
+  ↓ augment each
+  → [Doc_1_gold, Doc_1_c1, ..., Doc_500_c7]
+
+Val docs:   [Doc_501, Doc_502, ..., Doc_625]
+Test docs:  [Doc_626, Doc_627, ..., Doc_750]
+
+Result: Model never sees same source article across splits
+```
+
+**Current Status**:
+- ✅ MAFAT: Document-level split enforced (unique `doc_id` per split)
+- ✅ MFACT: Document-level split enforced
+- ✅ Augmentation: Performed separately on train/val/test
+- ✅ Held-out test: Contains completely unseen source articles
+
+---
+
+#### **Split Preservation Metadata**
+
+```python
+# Example split metadata (current MAFAT train)
+{
+  "mafat_train": {
+    "source_documents": 500,
+    "entailment_pairs": 500,
+    "contradiction_pairs": 3500,
+    "total_samples": 4000,
+    "augmentation_factor": 7.0,
+    "error_types_distribution": {
+      "entity_person_swap": 450,
+      "verb_gender_swap": 380,
+      "sentence_negation": 320,
+      ...
+    },
+    "doc_ids": ["doc_001", "doc_002", ..., "doc_500"]
+  },
+  "mfact_train": {
+    "total_samples": 28000,
+    "entailment": 14000,
+    "contradiction": 14000,
+    ...
+  }
+}
+```
+
+---
+
+### Final Combined Dataset Characteristics
+
+| Attribute | MAFAT-Derived | MFACT-Derived | Combined |
+|-----------|---------------|---------------|----------|
+| **Samples** | ~50K-100K | ~40K-80K | ~90K-180K |
+| **Summary Length** | Long (100-300 words) | Short (20-50 words) | Mixed |
+| **Source Language** | Native Hebrew | Translated Hebrew | Hebrew |
+| **Annotation** | Human gold | Metric-scored | Hybrid |
+| **Error Types** | Augmented (15-20) | Natural + Augmented | Comprehensive |
+| **Use Case** | Long-context NLI | Short-context NLI | General NLI |
+
+**Dataset Complementarity**:
+- **MAFAT**: High-quality Hebrew, tests long-context understanding
+- **MFACT**: Large-scale, tests generalization to shorter summaries
+- **Combined**: Robust to summary length, error type, and linguistic variation
+
+---
+
 ## Output Format: Augmentation JSON Structure
 
 The pipeline produces a JSON file containing the original source article and multiple corrupted summaries with detailed transformation metadata. Each record follows this schema:

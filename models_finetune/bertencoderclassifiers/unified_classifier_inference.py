@@ -42,7 +42,7 @@ CLASSIFICATION_TYPE = "multilabel"  # Options: "multilabel", "binary"
 INFERENCE_MODE = "single_sample"  # Options: "dataset", "single_sample"
 
 # Model path
-MODEL_PATH = "/home/avramit/classifier/binary/neodictabert-finetuned-4096-201125/"
+MODEL_PATH = "/home/avramit/classifier/01122025/classifier/binary/neodictabert-finetuned-binary-011225/"
 
 # For dataset evaluation mode
 TEST_FILE = "/home/avramit/classifier/datasets/dataset_nfacttrain_mafat/test.csv"
@@ -56,7 +56,7 @@ SAMPLE_PREMISE = """בשנת 1948 הוקמה מדינת ישראל לאחר מל
 SAMPLE_HYPOTHESIS = """מדינת ישראל נוסדה בשנת 1947 על ידי דוד בן גוריון."""
 
 # Attention visualization settings (only for single_sample mode)
-ENABLE_ATTENTION_ANALYSIS = True  # Set to False if model doesn't support attention output
+ENABLE_ATTENTION_ANALYSIS = True  # Set to True to enable attention visualization (requires attn_implementation="eager" for NeoBERT)
 TOP_K_TOKENS = 15  # Show top K tokens by attention weight
 
 # ============================================================================
@@ -108,9 +108,17 @@ def run_single_sample_inference(
     logger.info(f"Loading model from {model_path}...")
     config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    
+    # For NeoBERT, need to explicitly use eager attention to get attention weights
+    model_kwargs = {"trust_remote_code": True}
+    if enable_attention:
+        model_kwargs["attn_implementation"] = "eager"
+        model_kwargs["output_attentions"] = True
+        logger.info("Loading with eager attention implementation for attention visualization")
+    
     model = AutoModelForSequenceClassification.from_pretrained(
         model_path,
-        trust_remote_code=True,
+        **model_kwargs
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

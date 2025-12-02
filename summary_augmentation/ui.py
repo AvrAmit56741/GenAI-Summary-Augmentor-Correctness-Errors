@@ -204,8 +204,8 @@ def filter_json_by_error_types(json_data, selected_types):
     return filtered_data
 
 # Create tabs
-tab_json, tab_csv, tab_utils, tab_analysis, tab_report, tab_logs, tab_dataset, tab_modification = st.tabs([
-    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer", "API Logs", "Dataset Analysis", "Dataset Modification"
+tab_json, tab_csv, tab_utils, tab_analysis, tab_report, tab_logs, tab_dataset, tab_modification, tab_llm_parse = st.tabs([
+    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer", "API Logs", "Dataset Analysis", "Dataset Modification", "LLM Parse Data"
 ])
 
 ### JSON Analyzer ###
@@ -1304,21 +1304,55 @@ with tab_utils:
         try:
             # Custom sample size configuration
             file_sample_limits = {}
+            file_label_limits = {}
             if csv_combine_mode == "Custom Sample Size":
                 st.markdown("<div style='color: white;'><strong>🎛️ Configure Sample Sizes:</strong></div>", unsafe_allow_html=True)
+                
+                # Option to enable per-label sampling
+                per_label_sampling = st.checkbox("Enable per-label sampling", key="per_label_csv", help="Sample specific amounts per label (entailment/contradiction)")
+                
                 for i, f in enumerate(csvs):
                     df_temp = pd.read_csv(f)
                     max_samples = len(df_temp)
                     f.seek(0)  # Reset file pointer
                     
-                    sample_size = st.number_input(
-                        f"{f.name} (max: {max_samples})",
-                        min_value=1,
-                        max_value=max_samples,
-                        value=max_samples,
-                        key=f"csv_sample_{i}"
-                    )
-                    file_sample_limits[f.name] = sample_size
+                    if per_label_sampling and 'label' in df_temp.columns:
+                        # Per-label sampling
+                        st.markdown(f"<div style='color: #ffd700;'><strong>📁 {f.name}</strong></div>", unsafe_allow_html=True)
+                        
+                        label_counts = df_temp['label'].value_counts()
+                        max_entailment = label_counts.get('entailment', 0)
+                        max_contradiction = label_counts.get('contradiction', 0)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            ent_size = st.number_input(
+                                f"Entailment (max: {max_entailment})",
+                                min_value=0,
+                                max_value=max_entailment,
+                                value=max_entailment,
+                                key=f"csv_ent_{i}"
+                            )
+                        with col2:
+                            con_size = st.number_input(
+                                f"Contradiction (max: {max_contradiction})",
+                                min_value=0,
+                                max_value=max_contradiction,
+                                value=max_contradiction,
+                                key=f"csv_con_{i}"
+                            )
+                        
+                        file_label_limits[f.name] = {'entailment': ent_size, 'contradiction': con_size}
+                    else:
+                        # Total sampling
+                        sample_size = st.number_input(
+                            f"{f.name} (max: {max_samples})",
+                            min_value=1,
+                            max_value=max_samples,
+                            value=max_samples,
+                            key=f"csv_sample_{i}"
+                        )
+                        file_sample_limits[f.name] = sample_size
             
             # Combine CSV files
             combined_dfs = []
@@ -1329,15 +1363,51 @@ with tab_utils:
                 original_count = len(df_temp)
                 
                 if csv_combine_mode == "Custom Sample Size":
-                    limit = file_sample_limits.get(f.name, original_count)
-                    df_temp = df_temp.head(limit)
-                    file_info.append(f"{f.name}: {len(df_temp)}/{original_count} samples")
+                    # Check if per-label sampling is configured
+                    if f.name in file_label_limits:
+                        # Apply per-label sampling
+                        label_limits = file_label_limits[f.name]
+                        sampled_dfs = []
+                        
+                        for label, limit in label_limits.items():
+                            if limit > 0:
+                                label_df = df_temp[df_temp['label'] == label].head(limit)
+                                sampled_dfs.append(label_df)
+                        
+                        df_temp = pd.concat(sampled_dfs, ignore_index=True) if sampled_dfs else pd.DataFrame()
+                        file_info.append(f"{f.name}: {len(df_temp)}/{original_count} samples (per-label)")
+                    else:
+                        # Apply total sampling
+                        limit = file_sample_limits.get(f.name, original_count)
+                        df_temp = df_temp.head(limit)
+                        file_info.append(f"{f.name}: {len(df_temp)}/{original_count} samples")
                 else:
                     file_info.append(f"{f.name}: {original_count} samples")
                 
                 combined_dfs.append(df_temp)
             
             dfc = pd.concat(combined_dfs, ignore_index=True)
+            
+            # Debug information
+            st.markdown("<div style='color: white;'><strong>🔍 Debug Information:</strong></div>", unsafe_allow_html=True)
+            debug_cols = st.columns(len(combined_dfs))
+            for i, (df, col) in enumerate(zip(combined_dfs, debug_cols)):
+                with col:
+                    st.metric(f"File {i+1} Contributed", len(df))
+            
+            # Check for duplicates
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                duplicates = dfc.duplicated().sum()
+                st.metric("Duplicate Rows", duplicates)
+            with col2:
+                if 'doc_id' in dfc.columns:
+                    unique_docs = dfc['doc_id'].nunique()
+                    st.metric("Unique Doc IDs", unique_docs)
+                else:
+                    st.metric("Expected Total", sum(len(df) for df in combined_dfs))
+            with col3:
+                st.metric("Actual Total", len(dfc))
             
             # Data preview
             st.markdown("<div style='color: white;'><strong>📊 Combined Data Preview:</strong></div>", unsafe_allow_html=True)
@@ -1361,6 +1431,32 @@ with tab_utils:
                 st.markdown("<div style='color: white;'><strong>🏷️ Label Distribution:</strong></div>", unsafe_allow_html=True)
                 label_counts = dfc['label'].value_counts()
                 st.bar_chart(label_counts)
+                
+                # Label-specific length statistics
+                if 'premise' in dfc.columns and 'hypothesis' in dfc.columns:
+                    st.markdown("<div style='color: white;'><strong>📏 Label-Specific Length Statistics:</strong></div>", unsafe_allow_html=True)
+                    
+                    # Calculate lengths
+                    entailment_df = dfc[dfc['label'] == 'entailment']
+                    contradiction_df = dfc[dfc['label'] == 'contradiction']
+                    
+                    # Premise lengths
+                    premise_ent_len = entailment_df['premise'].str.split().str.len().mean() if len(entailment_df) > 0 else 0
+                    premise_con_len = contradiction_df['premise'].str.split().str.len().mean() if len(contradiction_df) > 0 else 0
+                    
+                    # Hypothesis lengths
+                    hyp_ent_len = entailment_df['hypothesis'].str.split().str.len().mean() if len(entailment_df) > 0 else 0
+                    hyp_con_len = contradiction_df['hypothesis'].str.split().str.len().mean() if len(contradiction_df) > 0 else 0
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Premise Avg (Entailment)", f"{premise_ent_len:.1f} words")
+                    with col2:
+                        st.metric("Premise Avg (Contradiction)", f"{premise_con_len:.1f} words")
+                    with col3:
+                        st.metric("Hypothesis Avg (Entailment)", f"{hyp_ent_len:.1f} words")
+                    with col4:
+                        st.metric("Hypothesis Avg (Contradiction)", f"{hyp_con_len:.1f} words")
             
             # Create summary file
             from datetime import datetime
@@ -1627,6 +1723,173 @@ Files Combined:
         
         **Use case:** Training multi-label error type classifiers on claim-level data
         """)
+    
+    # Convert between JSON and CSV formats
+    st.subheader("🔄 Convert Between JSON ↔ CSV Formats")
+    st.markdown("<div style='color: white;'>Convert between JSON augmentation format and CSV format (summary-level).</div>", unsafe_allow_html=True)
+    
+    conversion_direction = st.radio("Conversion Direction:", ["JSON → CSV", "CSV → JSON"], key="conversion_direction", horizontal=True)
+    
+    if conversion_direction == "JSON → CSV":
+        # JSON to CSV conversion
+        json_convert_file = st.file_uploader("Upload JSON file to convert", type=["json"], key="json_convert_file")
+        
+        if json_convert_file:
+            try:
+                json_data = json.load(json_convert_file)
+                
+                # Convert to list if single object
+                if isinstance(json_data, dict):
+                    json_data = [json_data]
+                
+                # Extract summary-level data
+                rows = []
+                for doc in json_data:
+                    source = doc.get('source_article', '')
+                    doc_id = doc.get('doc_id', '')
+                    gold_summary = doc.get('gold_summary', '')
+                    
+                    # Add entailment row (gold summary)
+                    rows.append({
+                        'premise': source,
+                        'hypothesis': gold_summary,
+                        'label': 'entailment',
+                        'error_types': '',
+                        'doc_id': doc_id
+                    })
+                    
+                    # Add contradiction rows (corrupted summaries)
+                    for corrupted_summary in doc.get('correctness_corrupted_summaries', []):
+                        error_types = ','.join(corrupted_summary.get('distinct_errors_type_names', []))
+                        
+                        rows.append({
+                            'premise': source,
+                            'hypothesis': corrupted_summary.get('corrupted_summary', ''),
+                            'label': 'contradiction',
+                            'error_types': error_types,
+                            'doc_id': doc_id
+                        })
+                
+                if rows:
+                    df_converted = pd.DataFrame(rows)
+                    
+                    # Show preview
+                    st.markdown("<div style='color: white;'><strong>📊 Conversion Preview:</strong></div>", unsafe_allow_html=True)
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Rows", len(df_converted))
+                    with col2:
+                        st.metric("Entailment", len(df_converted[df_converted['label'] == 'entailment']))
+                    with col3:
+                        st.metric("Contradiction", len(df_converted[df_converted['label'] == 'contradiction']))
+                    
+                    with st.expander("🔍 Sample Data (First 5 rows)"):
+                        st.dataframe(df_converted.head(), use_container_width=True)
+                    
+                    # Download button
+                    csv_data = df_converted.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "📥 Download CSV",
+                        csv_data,
+                        "converted_from_json.csv",
+                        "text/csv",
+                        key="download_json_to_csv"
+                    )
+                    
+                    st.success(f"✅ Successfully converted to CSV with {len(df_converted)} rows!")
+                else:
+                    st.warning("⚠️ No data found in the JSON file")
+            
+            except json.JSONDecodeError as e:
+                st.error(f"❌ Invalid JSON file: {str(e)}")
+            except Exception as e:
+                st.error(f"❌ Error converting JSON to CSV: {str(e)}")
+    
+    else:  # CSV → JSON
+        csv_convert_file = st.file_uploader("Upload CSV file to convert", type=["csv"], key="csv_convert_file")
+        
+        if csv_convert_file:
+            try:
+                df_csv = pd.read_csv(csv_convert_file)
+                
+                # Validate required columns
+                required_cols = ['premise', 'hypothesis', 'label', 'doc_id']
+                missing_cols = [col for col in required_cols if col not in df_csv.columns]
+                
+                if missing_cols:
+                    st.error(f"❌ Missing required columns: {', '.join(missing_cols)}")
+                else:
+                    # Group by doc_id
+                    json_data = []
+                    
+                    for doc_id, group in df_csv.groupby('doc_id'):
+                        # Find entailment row (gold summary)
+                        entailment_rows = group[group['label'] == 'entailment']
+                        
+                        if len(entailment_rows) > 0:
+                            gold_row = entailment_rows.iloc[0]
+                            source_article = gold_row['premise']
+                            gold_summary = gold_row['hypothesis']
+                        else:
+                            # No entailment, use first row's premise
+                            source_article = group.iloc[0]['premise']
+                            gold_summary = ""
+                        
+                        # Get contradiction rows (corrupted summaries)
+                        contradiction_rows = group[group['label'] == 'contradiction']
+                        corrupted_summaries = []
+                        
+                        for _, row in contradiction_rows.iterrows():
+                            error_types = []
+                            if 'error_types' in row and pd.notna(row['error_types']) and row['error_types']:
+                                error_types = [e.strip() for e in str(row['error_types']).split(',') if e.strip()]
+                            
+                            corrupted_summaries.append({
+                                'corrupted_summary': row['hypothesis'],
+                                'distinct_errors_type_names': error_types,
+                                'transformation_list': [],
+                                'transformations_performed': len(error_types),
+                                'transformation_score': 0.0
+                            })
+                        
+                        json_data.append({
+                            'doc_id': str(doc_id),
+                            'source_article': source_article,
+                            'gold_summary': gold_summary,
+                            'correctness_corrupted_summaries': corrupted_summaries
+                        })
+                    
+                    if json_data:
+                        # Show preview
+                        st.markdown("<div style='color: white;'><strong>📊 Conversion Preview:</strong></div>", unsafe_allow_html=True)
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total Documents", len(json_data))
+                        with col2:
+                            total_corrupted = sum(len(doc['correctness_corrupted_summaries']) for doc in json_data)
+                            st.metric("Corrupted Summaries", total_corrupted)
+                        with col3:
+                            st.metric("Original CSV Rows", len(df_csv))
+                        
+                        with st.expander("🔍 Sample Structure (First document)"):
+                            st.json(json_data[0] if len(json_data) > 0 else {})
+                        
+                        # Download button
+                        json_output = json.dumps(json_data, ensure_ascii=False, indent=2).encode('utf-8')
+                        st.download_button(
+                            "📥 Download JSON",
+                            json_output,
+                            "converted_from_csv.json",
+                            "application/json",
+                            key="download_csv_to_json"
+                        )
+                        
+                        st.success(f"✅ Successfully converted to JSON with {len(json_data)} documents!")
+                    else:
+                        st.warning("⚠️ No data to convert")
+            
+            except Exception as e:
+                st.error(f"❌ Error converting CSV to JSON: {str(e)}")
     
     # Split Data - Enhanced with independent data loading
     st.subheader("📊 Split Data")
@@ -2839,3 +3102,247 @@ with tab_modification:
          - **OR within columns**: Any selected value within a column matches
          - **Example**: `(len_group: b1 OR b2) AND (source: news OR wiki)`
          """)
+
+### LLM Parse Data Analysis ###
+with tab_llm_parse:
+    st.title("🤖 LLM Parse Data Analysis")
+    st.markdown('<style>div.stMarkdown p, div.stMarkdown span, div.stMarkdown h1, div.stMarkdown h2, div.stMarkdown h3 { color: white; }</style>', unsafe_allow_html=True)
+    
+    st.markdown("Upload and analyze LLM training datasets generated by the parsing script.")
+    
+    # File upload
+    st.subheader("📁 Upload Dataset")
+    uploaded_arrow = st.file_uploader("Upload .arrow dataset file", type=["arrow"], key="llm_parse_arrow")
+    
+    if uploaded_arrow:
+        try:
+            # Import datasets library
+            from datasets import Dataset
+            import tempfile
+            import os
+            
+            # Save uploaded file to temporary location
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.arrow') as tmp_file:
+                tmp_file.write(uploaded_arrow.read())
+                tmp_path = tmp_file.name
+            
+            # Load dataset
+            try:
+                dataset = Dataset.from_file(tmp_path)
+                st.success(f"✅ Loaded dataset with {len(dataset)} samples")
+                
+                # Basic Statistics
+                st.subheader("📊 Dataset Overview")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Samples", len(dataset))
+                with col2:
+                    st.metric("Columns", len(dataset.column_names))
+                with col3:
+                    st.metric("Features", ", ".join(dataset.column_names))
+                
+                # Prompt Type Distribution Analysis
+                st.subheader("📈 Prompt Type Distribution")
+                
+                # Detect prompt type from sample content
+                prompt_type_counts = {}
+                format_patterns = {
+                    'alpaca': '### Instruction:',
+                    'gemma': '<start_of_turn>',
+                    'chatml': '<|im_start|>'
+                }
+                
+                # Count full dataset by format
+                for i in range(len(dataset)):
+                    sample = dataset[i]
+                    
+                    # Check if text field exists and is not null
+                    if 'text' in sample and sample['text'] is not None:
+                        text_content = str(sample['text'])
+                        if text_content.strip():
+                            format_detected = False
+                            for fmt, pattern in format_patterns.items():
+                                if pattern in text_content:
+                                    prompt_type_counts[fmt] = prompt_type_counts.get(fmt, 0) + 1
+                                    format_detected = True
+                                    break
+                            # If text exists but no pattern matched, count as unknown
+                            if not format_detected:
+                                prompt_type_counts['unknown'] = prompt_type_counts.get('unknown', 0) + 1
+                        else:
+                            # Empty text
+                            prompt_type_counts['null_samples'] = prompt_type_counts.get('null_samples', 0) + 1
+                    else:
+                        # NULL text field - count as null
+                        prompt_type_counts['null_samples'] = prompt_type_counts.get('null_samples', 0) + 1
+                
+                if prompt_type_counts:
+                    # Display metrics
+                    num_cols = min(len(prompt_type_counts), 4)  # Max 4 columns
+                    cols = st.columns(num_cols)
+                    for idx, (fmt, count) in enumerate(prompt_type_counts.items()):
+                        with cols[idx % num_cols]:
+                            pct = (count / len(dataset)) * 100
+                            label = fmt.replace('_', ' ').title()
+                            st.metric(f"{label}", f"{count} ({pct:.1f}%)")
+                    
+                    # Bar chart
+                    prompt_df = pd.DataFrame(list(prompt_type_counts.items()), columns=['Prompt Type', 'Count'])
+                    prompt_df = prompt_df.sort_values('Count', ascending=False)
+                    st.bar_chart(prompt_df.set_index('Prompt Type')['Count'])
+                    
+                    # Show warning if null samples exist
+                    if 'null_samples' in prompt_type_counts:
+                        st.warning(f"⚠️ Found {prompt_type_counts['null_samples']} samples with NULL/empty text and no instruction field")
+                else:
+                    st.info("ℹ️ Unable to detect prompt format distribution")
+                
+                # Sample Browser
+                st.subheader("🔍 Sample Browser")
+                
+                sample_idx = st.number_input("Sample Index", 0, len(dataset)-1, 0, 1, key="llm_sample_idx")
+                
+                if sample_idx < len(dataset):
+                    sample = dataset[sample_idx]
+                    
+                    # Detect sample format
+                    sample_format = "Unknown"
+                    if 'text' in sample and sample['text'] is not None:
+                        text_str = str(sample['text'])
+                        if text_str.strip():
+                            # Check for format patterns
+                            if '### Instruction:' in text_str:
+                                sample_format = "Alpaca"
+                            elif '<start_of_turn>' in text_str:
+                                sample_format = "Gemma"
+                            elif '<|im_start|>' in text_str:
+                                sample_format = "ChatML"
+                            else:
+                                sample_format = "Unknown Format"
+                        else:
+                            sample_format = "Empty"
+                    elif 'text' in sample and sample['text'] is None:
+                        sample_format = "NULL"
+                    
+                    st.markdown(f"<div style='color: white;'><strong>Sample {sample_idx + 1}/{len(dataset)} - Format: {sample_format}</strong></div>", unsafe_allow_html=True)
+                    
+                    # Display based on format
+                    if sample_format == "NULL" or sample_format == "Empty":
+                        st.error(f"⚠️ This sample has NULL or empty text content!")
+                        st.markdown("<div style='color: #ff6b6b;'><strong>Issue:</strong> Sample is missing valid content. This may cause training errors.</div>", unsafe_allow_html=True)
+                    
+                    elif sample_format == "Alpaca" and 'instruction' in sample and sample['instruction']:
+                        # Alpaca format with separate fields - show both formatted text and fields
+                        st.markdown("<div style='color: white;'><strong>📝 Alpaca Format (Structured View):</strong></div>", unsafe_allow_html=True)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("<div style='color: #ffd700;'><strong>Instruction:</strong></div>", unsafe_allow_html=True)
+                            st.text_area("", sample.get('instruction', ''), height=100, key=f"inst_{sample_idx}")
+                        
+                        with col2:
+                            st.markdown("<div style='color: #ffd700;'><strong>Input:</strong></div>", unsafe_allow_html=True)
+                            st.text_area("", sample.get('input', ''), height=100, key=f"inp_{sample_idx}")
+                        
+                        st.markdown("<div style='color: #ffd700;'><strong>Output:</strong></div>", unsafe_allow_html=True)
+                        st.text_area("", sample.get('output', ''), height=150, key=f"out_{sample_idx}")
+                        
+                        # Also show formatted text
+                        with st.expander("📄 View as Formatted Text"):
+                            st.text_area("Formatted Text", str(sample['text']), height=400, key=f"formatted_alpaca_{sample_idx}")
+                    
+                    elif 'text' in sample and sample['text'] is not None:
+                        # Formatted sample (Gemma/ChatML/Alpaca without fields)
+                        st.markdown(f"<div style='color: white;'><strong>📝 {sample_format} Formatted Text:</strong></div>", unsafe_allow_html=True)
+                        st.text_area("Sample Text", str(sample['text']), height=400, key=f"formatted_{sample_idx}")
+                    
+                    # Raw JSON view
+                    with st.expander("🔧 Raw Sample Data"):
+                        st.json(sample)
+                
+                # Text Length Analysis
+                st.subheader("📏 Text Length Analysis")
+                
+                text_lengths = []
+                null_count = 0
+                
+                for i in range(len(dataset)):
+                    sample = dataset[i]
+                    if 'text' in sample and sample['text'] is not None:
+                        text_str = str(sample['text'])
+                        if text_str.strip():
+                            text_lengths.append(len(text_str.split()))
+                        else:
+                            null_count += 1
+                    elif 'instruction' in sample and sample['instruction']:
+                        # Combine all fields for length
+                        combined = f"{sample.get('instruction', '')} {sample.get('input', '')} {sample.get('output', '')}"
+                        text_lengths.append(len(combined.split()))
+                    else:
+                        null_count += 1
+                
+                if text_lengths:
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Avg Length", f"{sum(text_lengths)/len(text_lengths):.1f} tokens")
+                    with col2:
+                        st.metric("Min Length", f"{min(text_lengths)} tokens")
+                    with col3:
+                        st.metric("Max Length", f"{max(text_lengths)} tokens")
+                    with col4:
+                        st.metric("Valid Samples", f"{len(text_lengths)}/{len(dataset)}")
+                    
+                    if null_count > 0:
+                        st.warning(f"⚠️ Excluded {null_count} NULL/empty samples from length analysis")
+                    
+                    # Length distribution histogram
+                    st.markdown("<div style='color: white;'><strong>Length Distribution:</strong></div>", unsafe_allow_html=True)
+                    length_series = pd.Series(text_lengths)
+                    length_hist = length_series.value_counts().sort_index()
+                    st.bar_chart(length_hist)
+                else:
+                    st.error("❌ No valid samples found for length analysis")
+                
+                # Export sample preview
+                st.subheader("📥 Export")
+                
+                # Export first 10 samples as JSON
+                sample_preview = []
+                for i in range(min(10, len(dataset))):
+                    sample_preview.append(dataset[i])
+                
+                preview_json = json.dumps(sample_preview, ensure_ascii=False, indent=2).encode('utf-8')
+                st.download_button(
+                    "📥 Download Sample Preview (First 10)",
+                    preview_json,
+                    f"llm_dataset_preview.json",
+                    "application/json",
+                    help="Download first 10 samples as JSON"
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Error loading dataset: {str(e)}")
+                # Note: Temp file cleanup handled by OS on session end
+        
+        except Exception as e:
+            st.error(f"❌ Error processing file: {str(e)}")
+    
+    else:
+        st.info("📁 Upload a .arrow dataset file to start analysis")
+        st.markdown("""
+        **Expected Format:**
+        - `.arrow` files generated by the LLM parsing script
+        - Contains either:
+          - **Formatted samples**: `text` field with complete prompt
+          - **Alpaca format**: `instruction`, `input`, `output` fields
+        
+        **Analysis Features:**
+        - 📊 Dataset overview (total samples, columns)
+        - 📈 Prompt type distribution (Alpaca, Gemma, ChatML)
+        - 🔍 Interactive sample browser
+        - 📏 Text length statistics and distribution
+        - 📥 Export sample previews
+        
+        **Use Case:**
+        Verify parsed LLM training data before fine-tuning to ensure correct formatting and distribution.
+        """)
