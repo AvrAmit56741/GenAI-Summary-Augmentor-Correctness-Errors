@@ -1657,6 +1657,11 @@ Files Combined:
             if rows:
                 df_converted = pd.DataFrame(rows)
                 
+                # Clean data: remove null bytes and problematic characters
+                for col in df_converted.columns:
+                    if df_converted[col].dtype == 'object':
+                        df_converted[col] = df_converted[col].fillna('').astype(str).str.replace('\x00', '', regex=False)
+                
                 # Show preview
                 st.markdown("<div style='color: white;'><strong>📊 Conversion Preview:</strong></div>", unsafe_allow_html=True)
                 col1, col2, col3 = st.columns(3)
@@ -1686,7 +1691,7 @@ Files Combined:
                     st.dataframe(df_converted.head(), use_container_width=True)
                 
                 # Download button
-                csv_data = df_converted.to_csv(index=False).encode('utf-8')
+                csv_data = df_converted.to_csv(index=False, escapechar='\\', doublequote=False).encode('utf-8')
                 st.download_button(
                     "📥 Download Claim-Level CSV",
                     csv_data,

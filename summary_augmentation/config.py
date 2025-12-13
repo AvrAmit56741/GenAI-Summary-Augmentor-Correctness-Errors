@@ -33,7 +33,7 @@ MODEL_GEMINI = "gemini"
 MODEL_CLAUDE = "claude"
 
 MAXIMUM_ALLOWED_NEGATIVE_SUMMARIES_SIMILARITY_THRESHOLD = 0.85  # Control
-PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY = 90  # Control how much corrupted the negative summary will be (how much error transformations perform on in)
+PERCENTAGE_TRANSFORMATIONS_PERFORM_ON_NEGATIVE_SUMMARY = 50  # Control how much corrupted the negative summary will be (how much error transformations perform on in)
 CLAIM_DECOMPOSITION_METHOD = ClaimDecompositionMethod.SENTENCES
 
 
