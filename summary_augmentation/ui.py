@@ -1,9 +1,13 @@
-﻿import streamlit as st
+import streamlit as st
 import json
 import pandas as pd
 from difflib import SequenceMatcher
 import re
 from sklearn.model_selection import train_test_split, StratifiedKFold
+import zipfile
+import io
+from datetime import datetime
+import csv
 
 
 st.set_page_config(page_title="Hebrew NLI Analysis Hub", layout="wide", page_icon="🏠")
@@ -110,6 +114,275 @@ def get_claims_by_error_type(df, error_type):
     
     return all_claims
 
+# Helper to count claims in text using SENTENCES method
+def count_claims_sentences(text):
+    """Count claims by splitting on sentence terminators (SENTENCES decomposition method)"""
+    if not text or not isinstance(text, str):
+        return 0
+    # Split by common sentence terminators
+    sentences = [s.strip() for s in text.replace('!', '.').replace('?', '.').split('.') if s.strip()]
+    return len(sentences)
+
+# Helper to reduce corruption level in a summary
+def reduce_corruption_level(corrupted_summary, target_percentage, strategy='random'):
+    """
+    Reduce corruption level by replacing some corrupted claims with originals.
+    
+    Args:
+        corrupted_summary: Dict with corrupted_summary, transformation_list
+        target_percentage: Target corruption percentage (0-100)
+        strategy: 'random', 'max_transformation', or 'hebrew_focus'
+    
+    Returns:
+        Modified corrupted_summary dict
+    """
+    import random
+    import copy
+    
+    # Deep copy to avoid modifying original
+    modified_summary = copy.deepcopy(corrupted_summary)
+    transformation_list = modified_summary.get('transformation_list', [])
+    
+    if not transformation_list:
+        return modified_summary
+    
+    # Count total claims
+    corrupted_text = modified_summary.get('corrupted_summary', '')
+    total_claims = count_claims_sentences(corrupted_text)
+    
+    if total_claims == 0:
+        return modified_summary
+    
+    # Calculate target number of corrupted claims
+    current_corruptions = len(transformation_list)
+    target_corruptions = int(total_claims * target_percentage / 100)
+    
+    # Ensure at least 1 corruption if target_percentage > 0 and we have corruptions
+    if target_percentage > 0 and target_corruptions == 0 and current_corruptions > 0:
+        target_corruptions = 1
+    
+    # Can only reduce, not increase
+    if target_corruptions >= current_corruptions:
+        return modified_summary
+    
+    # Select which transformations to KEEP based on strategy
+    if strategy == 'max_transformation':
+        # Sort by number of error types (most errors first)
+        sorted_transforms = sorted(
+            enumerate(transformation_list),
+            key=lambda x: len(x[1].get('applied_transformations', [])),
+            reverse=True
+        )
+        indices_to_keep = [idx for idx, _ in sorted_transforms[:target_corruptions]]
+    
+    elif strategy == 'hebrew_focus':
+        # Define Hebrew-specific error types
+        hebrew_errors = {
+            'hebrew_root_patten_confusion',
+            'morphological_connective_confusion',
+            'idiom_collocation_corruption',
+            'noun_gender_swap',
+            'verb_gender_swap',
+            'verb_tense_swap',
+            'directional_preposition_swap',
+            'pronoun_reference_errors',
+            'specificity_shift_errors',
+            'construct_state_confusion',
+            'homographic_gender_errors',
+            'impersonal_to_personal_verb_errors',
+            'incremental_temporal_state_mutations',
+            'evidentiality_source_attribution_collapse',
+            'verb_template_agency_reversal',
+            'double_verb_dependency_errors',
+            'subject_verb_person_mismatch'
+        }
+        
+        # Calculate Hebrew error score for each transformation
+        def calculate_hebrew_score(transform):
+            applied_transformations = transform.get('applied_transformations', [])
+            hebrew_count = sum(
+                1 for t in applied_transformations 
+                if t.get('type', '').lower() in hebrew_errors
+            )
+            return hebrew_count
+        
+        # Sort by Hebrew error count (highest first), then by total error count
+        sorted_transforms = sorted(
+            enumerate(transformation_list),
+            key=lambda x: (
+                calculate_hebrew_score(x[1]),  # Primary: Hebrew error count
+                len(x[1].get('applied_transformations', []))  # Secondary: Total error count
+            ),
+            reverse=True
+        )
+        indices_to_keep = [idx for idx, _ in sorted_transforms[:target_corruptions]]
+    
+    else:  # random
+        indices_to_keep = random.sample(range(len(transformation_list)), target_corruptions)
+    
+    # Build new transformation list (only kept transformations)
+    new_transformation_list = [transformation_list[i] for i in sorted(indices_to_keep)]
+    
+    # Rebuild corrupted summary text
+    # Split current corrupted summary into sentences
+    sentences = [s.strip() for s in corrupted_text.replace('!', '.').replace('?', '.').split('.') if s.strip()]
+    
+    # Create mapping: for each transformation, find which sentence it corresponds to
+    # Simple approach: match by transformed_claim text
+    indices_to_revert = [i for i in range(len(transformation_list)) if i not in indices_to_keep]
+    
+    # Replace reverted claims with originals in the text
+    new_summary_text = corrupted_text
+    for idx in indices_to_revert:
+        transform = transformation_list[idx]
+        original = transform.get('original_claim', '')
+        transformed = transform.get('transformed_claim', '')
+        if transformed in new_summary_text:
+            new_summary_text = new_summary_text.replace(transformed, original, 1)
+    
+    # Update the summary
+    modified_summary['corrupted_summary'] = new_summary_text
+    modified_summary['transformation_list'] = new_transformation_list
+    modified_summary['transformations_performed'] = len(new_transformation_list)
+    
+    # Update distinct_errors_type_names to match new transformation_list
+    new_error_types = set()
+    for transform in new_transformation_list:
+        for applied_trans in transform.get('applied_transformations', []):
+            error_type = applied_trans.get('type', '')
+            if error_type:
+                new_error_types.add(error_type)
+    modified_summary['distinct_errors_type_names'] = sorted(list(new_error_types))
+    
+    return modified_summary
+
+
+def generate_metadata_text(modified_data, reduction_mode, config_params):
+    """
+    Generate metadata text file content with information about corruption reduction.
+    
+    Args:
+        modified_data: The modified dataset
+        reduction_mode: 'single' or 'plan'
+        config_params: Dictionary with configuration parameters
+            - For 'single': {'target_corruption', 'strategy', 'processed_count'}
+            - For 'plan': {'parts_config', 'total_summaries'}
+    
+    Returns:
+        String with formatted metadata
+    """
+    metadata_lines = []
+    metadata_lines.append("=" * 80)
+    metadata_lines.append("HEBREW SUMMARY CORRUPTION REDUCTION - METADATA")
+    metadata_lines.append("=" * 80)
+    metadata_lines.append("")
+    
+    # Generation timestamp
+    metadata_lines.append(f"Generation Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    metadata_lines.append(f"Reduction Mode: {reduction_mode.upper()}")
+    metadata_lines.append("")
+    
+    # Dataset name and basic info
+    dataset_name = config_params.get('dataset_name', 'modified_dataset')
+    metadata_lines.append(f"Dataset Name: {dataset_name}")
+    metadata_lines.append(f"Total Documents: {len(modified_data)}")
+    
+    total_summaries = sum(len(doc.get('correctness_corrupted_summaries', [])) for doc in modified_data)
+    metadata_lines.append(f"Total Summaries: {total_summaries}")
+    metadata_lines.append("")
+    
+    # Reduction configuration
+    metadata_lines.append("-" * 80)
+    metadata_lines.append("REDUCTION CONFIGURATION")
+    metadata_lines.append("-" * 80)
+    metadata_lines.append("")
+    
+    if reduction_mode == 'single':
+        metadata_lines.append("Mode: Single Reduction (uniform corruption level)")
+        metadata_lines.append(f"Target Corruption Percentage: {config_params.get('target_corruption', 'N/A')}%")
+        metadata_lines.append(f"Selection Strategy: {config_params.get('strategy', 'N/A')}")
+        metadata_lines.append(f"Summaries Processed: {config_params.get('processed_count', 'N/A')}")
+    else:  # plan
+        metadata_lines.append("Mode: Plan Reduction (multiple corruption levels)")
+        parts_config = config_params.get('parts_config', [])
+        metadata_lines.append(f"Number of Parts: {len(parts_config)}")
+        metadata_lines.append("")
+        
+        for i, part in enumerate(parts_config, 1):
+            metadata_lines.append(f"  Part {i}:")
+            metadata_lines.append(f"    - Samples: {part.get('samples', 0)}")
+            metadata_lines.append(f"    - Target Corruption: {part.get('corruption', 0)}%")
+            metadata_lines.append(f"    - Strategy: {part.get('strategy', 'N/A')}")
+            metadata_lines.append("")
+    
+    # Statistical analysis
+    metadata_lines.append("-" * 80)
+    metadata_lines.append("CORRUPTION STATISTICS")
+    metadata_lines.append("-" * 80)
+    metadata_lines.append("")
+    
+    corruption_levels = []
+    corruption_percentages = []
+    error_type_counts = {}
+    
+    for doc in modified_data:
+        for corrupted_summary in doc.get('correctness_corrupted_summaries', []):
+            transformation_list = corrupted_summary.get('transformation_list', [])
+            actual_count = len(transformation_list)
+            corrupted_text = corrupted_summary.get('corrupted_summary', '')
+            
+            # Count claims
+            total_claims = len([s.strip() for s in corrupted_text.replace('!', '.').replace('?', '.').split('.') if s.strip()])
+            corruption_percentage = (actual_count / total_claims * 100) if total_claims > 0 else 0.0
+            
+            corruption_levels.append(actual_count)
+            corruption_percentages.append(corruption_percentage)
+            
+            # Count error types
+            for transform in transformation_list:
+                for applied_trans in transform.get('applied_transformations', []):
+                    error_type = applied_trans.get('type', 'unknown')
+                    error_type_counts[error_type] = error_type_counts.get(error_type, 0) + 1
+    
+    if corruption_levels:
+        metadata_lines.append(f"Average Corruptions per Summary: {sum(corruption_levels) / len(corruption_levels):.2f}")
+        metadata_lines.append(f"Min Corruptions: {min(corruption_levels)}")
+        metadata_lines.append(f"Max Corruptions: {max(corruption_levels)}")
+        metadata_lines.append(f"Median Corruptions: {sorted(corruption_levels)[len(corruption_levels)//2]}")
+        metadata_lines.append("")
+        
+        metadata_lines.append(f"Average Corruption Percentage: {sum(corruption_percentages) / len(corruption_percentages):.2f}%")
+        metadata_lines.append(f"Min Corruption Percentage: {min(corruption_percentages):.2f}%")
+        metadata_lines.append(f"Max Corruption Percentage: {max(corruption_percentages):.2f}%")
+        metadata_lines.append("")
+    
+    # Error type distribution
+    metadata_lines.append("-" * 80)
+    metadata_lines.append("ERROR TYPE DISTRIBUTION")
+    metadata_lines.append("-" * 80)
+    metadata_lines.append("")
+    
+    if error_type_counts:
+        total_errors = sum(error_type_counts.values())
+        metadata_lines.append(f"Total Error Instances: {total_errors}")
+        metadata_lines.append(f"Unique Error Types: {len(error_type_counts)}")
+        metadata_lines.append("")
+        metadata_lines.append("Error Type Breakdown:")
+        
+        for error_type, count in sorted(error_type_counts.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / total_errors * 100) if total_errors > 0 else 0
+            metadata_lines.append(f"  - {error_type}: {count} ({percentage:.2f}%)")
+    else:
+        metadata_lines.append("No errors in dataset (all claims are original)")
+    
+    metadata_lines.append("")
+    metadata_lines.append("=" * 80)
+    metadata_lines.append("END OF METADATA")
+    metadata_lines.append("=" * 80)
+    
+    return "\n".join(metadata_lines)
+
+
 # Helper to get claims by error type from JSON dataset
 def get_claims_by_error_type_json(json_data, error_type):
     """Extract all claims with specific error type from JSON dataset"""
@@ -204,8 +477,8 @@ def filter_json_by_error_types(json_data, selected_types):
     return filtered_data
 
 # Create tabs
-tab_json, tab_csv, tab_utils, tab_analysis, tab_report, tab_logs, tab_dataset, tab_modification, tab_llm_parse = st.tabs([
-    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer", "API Logs", "Dataset Analysis", "Dataset Modification", "LLM Parse Data"
+tab_json, tab_csv, tab_utils, tab_analysis, tab_report, tab_logs, tab_dataset, tab_modification, tab_llm_parse, tab_corruption_level = st.tabs([
+    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer", "API Logs", "Dataset Analysis", "Dataset Modification", "LLM Parse Data", "Corrupted Level"
 ])
 
 ### JSON Analyzer ###
@@ -269,6 +542,154 @@ with tab_json:
             st.metric("Filtered Documents", filtered_docs)
         with col3:
             st.metric("Corrupted Summaries", f"{filtered_corrupted}/{total_corrupted}")
+        
+        # Corruption Level Statistics
+        st.subheader("📊 Corruption Level Statistics")
+        
+        # Calculate corruption statistics for all summaries
+        all_corruption_levels = []
+        all_corruption_percentages = []
+        corruption_details = []
+        inconsistencies_found = 0
+        
+        for doc_idx, doc in enumerate(data):
+            for summary_idx, corrupted_summary in enumerate(doc.get('correctness_corrupted_summaries', [])):
+                # Manual count from transformation_list (GROUND TRUTH)
+                transformation_list = corrupted_summary.get('transformation_list', [])
+                actual_count = len(transformation_list)
+                
+                # Stored value (may be inconsistent)
+                stored_count = corrupted_summary.get('transformations_performed', 0)
+                
+                # Count total claims in corrupted summary using SENTENCES method
+                corrupted_text = corrupted_summary.get('corrupted_summary', '')
+                total_claims = count_claims_sentences(corrupted_text)
+                
+                # Calculate corruption percentage
+                corruption_percentage = (actual_count / total_claims * 100) if total_claims > 0 else 0.0
+                
+                # Check for inconsistency
+                is_inconsistent = (actual_count != stored_count)
+                if is_inconsistent:
+                    inconsistencies_found += 1
+                
+                all_corruption_levels.append(actual_count)
+                all_corruption_percentages.append(corruption_percentage)
+                corruption_details.append({
+                    'doc_idx': doc_idx,
+                    'summary_idx': summary_idx,
+                    'actual_transformations': actual_count,
+                    'stored_transformations': stored_count,
+                    'total_claims': total_claims,
+                    'corruption_percentage': f"{corruption_percentage:.1f}%",
+                    'inconsistent': '⚠️' if is_inconsistent else '✓'
+                })
+        
+        if all_corruption_levels:
+            avg_corruption = sum(all_corruption_levels) / len(all_corruption_levels)
+            min_corruption = min(all_corruption_levels)
+            max_corruption = max(all_corruption_levels)
+            avg_corruption_pct = sum(all_corruption_percentages) / len(all_corruption_percentages)
+            
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
+            with col1:
+                st.metric("Average Corruptions", f"{avg_corruption:.2f}")
+            with col2:
+                st.metric("Min Corruptions", min_corruption)
+            with col3:
+                st.metric("Max Corruptions", max_corruption)
+            with col4:
+                st.metric("Total Summaries", len(all_corruption_levels))
+            with col5:
+                st.metric("Avg Corruption %", f"{avg_corruption_pct:.1f}%")
+            with col6:
+                inconsistency_label = "Inconsistencies ⚠️" if inconsistencies_found > 0 else "Data Quality ✓"
+                st.metric(inconsistency_label, inconsistencies_found)
+            
+            # Show distribution chart
+            st.markdown("<div style='color: white;'><strong>Corruption Level Distribution:</strong></div>", unsafe_allow_html=True)
+            corruption_df = pd.DataFrame({'Transformations Performed': all_corruption_levels})
+            st.bar_chart(corruption_df['Transformations Performed'].value_counts().sort_index())
+            
+            # Show detailed table in expander
+            with st.expander("📋 View Detailed Corruption Stats per Summary"):
+                details_df = pd.DataFrame(corruption_details)
+                details_df = details_df.sort_values('actual_transformations', ascending=False)
+                
+                # Show warning if inconsistencies found
+                if inconsistencies_found > 0:
+                    st.warning(f"⚠️ Found {inconsistencies_found} inconsistencies between stored and actual counts. Using ACTUAL counts from transformation_list.")
+                else:
+                    st.success("✅ All stored counts match actual transformation_list lengths.")
+                
+                st.dataframe(details_df, use_container_width=True)
+                
+                # Sample selector for reviewing article and summary
+                st.markdown("---")
+                st.markdown("<div style='color: white;'><strong>🔍 Review Sample Details:</strong></div>", unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    selected_doc_idx = st.selectbox(
+                        "Select Document Index:",
+                        options=sorted(details_df['doc_idx'].unique()),
+                        key="corruption_stats_doc_selector"
+                    )
+                with col2:
+                    # Filter summaries for selected document
+                    available_summaries = details_df[details_df['doc_idx'] == selected_doc_idx]['summary_idx'].tolist()
+                    selected_summary_idx = st.selectbox(
+                        "Select Summary Index:",
+                        options=available_summaries,
+                        key="corruption_stats_summary_selector"
+                    )
+                
+                # Display selected sample details
+                if selected_doc_idx is not None and selected_summary_idx is not None:
+                    selected_doc = data[selected_doc_idx]
+                    selected_summary = selected_doc.get('correctness_corrupted_summaries', [])[selected_summary_idx]
+                    
+                    # Manual count (GROUND TRUTH)
+                    actual_count = len(selected_summary.get('transformation_list', []))
+                    stored_count = selected_summary.get('transformations_performed', 0)
+                    
+                    # Count total claims using SENTENCES method
+                    corrupted_text = selected_summary.get('corrupted_summary', '')
+                    total_claims = count_claims_sentences(corrupted_text)
+                    corruption_pct = (actual_count / total_claims * 100) if total_claims > 0 else 0.0
+                    
+                    # Show metrics
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("Actual Claims Corrupted", f"{actual_count}")
+                    with col2:
+                        st.metric("Stored Value", f"{stored_count}")
+                    with col3:
+                        st.metric("Total Claims", f"{total_claims}")
+                    with col4:
+                        st.metric("Corruption %", f"{corruption_pct:.1f}%")
+                    with col5:
+                        match_status = "✅ Match" if actual_count == stored_count else "⚠️ Mismatch"
+                        st.metric("Status", match_status)
+                    
+                    # Show source article
+                    st.markdown("<div style='color: white;'><strong>📰 Source Article:</strong></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div dir='rtl' style='background-color: #2d2d2d; color: white; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto;'>{selected_doc.get('source_article', '')}</div>", unsafe_allow_html=True)
+                    
+                    # Show gold summary
+                    st.markdown("<div style='color: white;'><strong>🏆 Gold Summary:</strong></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div dir='rtl' style='background-color: #1a4d1a; color: white; padding: 15px; border-radius: 5px; border: 2px solid #4CAF50;'>{selected_doc.get('gold_summary', '')}</div>", unsafe_allow_html=True)
+                    
+                    # Show corrupted summary
+                    st.markdown("<div style='color: white;'><strong>🔴 Corrupted Summary:</strong></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div dir='rtl' style='background-color: #4d1a1a; color: white; padding: 15px; border-radius: 5px; border: 2px solid #f44336;'>{selected_summary.get('corrupted_summary', '')}</div>", unsafe_allow_html=True)
+                    
+                    # Show diff
+                    st.markdown("<div style='color: white;'><strong>⚡ Difference Visualization:</strong></div>", unsafe_allow_html=True)
+                    diff_html = highlight_diff(selected_doc.get('gold_summary', ''), selected_summary.get('corrupted_summary', ''))
+                    st.markdown(f"<div dir='rtl' style='background-color: #2d2d2d; color: white; padding: 15px; border-radius: 5px; border: 1px solid #666;'>{diff_html}</div>", unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ No corruption statistics available")
         
         # Interactive Error Types Analysis
         if all_error_types:
@@ -1622,6 +2043,44 @@ Files Combined:
     st.subheader("🔄 Convert JSON Augmentation to CSV (Claim-Level)")
     st.markdown("<div style='color: white;'>Convert augmented JSON files to CSV format with claim-level labels for model training.</div>", unsafe_allow_html=True)
     
+    # Mode selection
+    conversion_mode = st.radio(
+        "Conversion Mode:",
+        ["Balance", "Contradiction-only"],
+        key="claim_conversion_mode",
+        horizontal=True,
+        help="Balance: Creates paired samples (entailment + contradiction). Contradiction-only: Only corrupted claims with errors."
+    )
+    
+    # Sample limit
+    max_samples = st.number_input(
+        "Maximum contradiction samples to convert:",
+        min_value=1,
+        value=1000,
+        step=100,
+        key="claim_max_samples",
+        help="Number of contradiction (transformed) samples. In Balance mode, entailment samples will be added based on the ratio."
+    )
+    
+    # Ratio configuration for Balance mode
+    contradiction_per_entailment = 1
+    if conversion_mode == "Balance":
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            contradiction_per_entailment = st.number_input(
+                "For every N contradictions, add 1 entailment:",
+                min_value=1,
+                max_value=20,
+                value=1,
+                step=1,
+                key="contradiction_per_entailment",
+                help="Example: 5 = For every 5 contradictions, add 1 entailment. 1 = Add 1 entailment for each contradiction (50/50 balance)"
+            )
+        with col2:
+            entailment_count_estimate = max_samples // contradiction_per_entailment
+            st.metric("Est. Entailments", f"~{entailment_count_estimate}", 
+                     help=f"Estimated entailment samples to be added")
+    
     json_to_csv_file = st.file_uploader("Upload JSON augmentation file", type=["json"], key="json_to_csv")
     
     if json_to_csv_file:
@@ -1633,26 +2092,61 @@ Files Combined:
                 json_data = [json_data]
             
             # Extract claim-level data
-            rows = []
+            contradiction_rows = []
+            entailment_candidates = []
+            sample_count = 0
+            
+            # First, collect all contradiction samples (up to max_samples)
             for doc in json_data:
+                if sample_count >= max_samples:
+                    break
+                    
                 source = doc.get('source_article', '')
                 doc_id = doc.get('doc_id', '')
                 
                 for corrupted_summary in doc.get('correctness_corrupted_summaries', []):
+                    if sample_count >= max_samples:
+                        break
+                        
                     for transformation in corrupted_summary.get('transformation_list', []):
+                        if sample_count >= max_samples:
+                            break
+                            
                         # Extract error types for this specific claim
                         error_types = ','.join([
                             t['type'] for t in transformation.get('applied_transformations', [])
                         ])
                         
-                        rows.append({
+                        # Add contradiction sample (corrupted claim)
+                        contradiction_rows.append({
                             'premise': source,
                             'hypothesis': transformation.get('transformed_claim', ''),
                             'error_types': error_types,
-                            'label': 'contradiction',  # All transformed claims are contradictions
+                            'label': 'contradiction',
                             'doc_id': doc_id,
                             'original_claim': transformation.get('original_claim', '')
                         })
+                        
+                        # Store entailment candidate for later
+                        if conversion_mode == "Balance":
+                            entailment_candidates.append({
+                                'premise': source,
+                                'hypothesis': transformation.get('original_claim', ''),
+                                'error_types': '',
+                                'label': 'entailment',
+                                'doc_id': doc_id,
+                                'original_claim': transformation.get('original_claim', '')
+                            })
+                        
+                        sample_count += 1
+            
+            # Now add entailments based on ratio
+            rows = contradiction_rows.copy()
+            if conversion_mode == "Balance" and entailment_candidates:
+                num_entailments_to_add = len(contradiction_rows) // contradiction_per_entailment
+                # Add entailments (up to available candidates)
+                for i in range(min(num_entailments_to_add, len(entailment_candidates))):
+                    rows.append(entailment_candidates[i])
             
             if rows:
                 df_converted = pd.DataFrame(rows)
@@ -1664,12 +2158,14 @@ Files Combined:
                 
                 # Show preview
                 st.markdown("<div style='color: white;'><strong>📊 Conversion Preview:</strong></div>", unsafe_allow_html=True)
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total Claims", len(df_converted))
+                    st.metric("Total Rows", len(df_converted))
                 with col2:
-                    st.metric("Unique Error Types", df_converted['error_types'].nunique())
+                    st.metric("Contradictions", len(df_converted[df_converted['label'] == 'contradiction']))
                 with col3:
+                    st.metric("Entailments", len(df_converted[df_converted['label'] == 'entailment']))
+                with col4:
                     st.metric("Unique Documents", df_converted['doc_id'].nunique())
                 
                 # Show error type distribution
@@ -1691,17 +2187,25 @@ Files Combined:
                     st.dataframe(df_converted.head(), use_container_width=True)
                 
                 # Download button
-                csv_data = df_converted.to_csv(index=False, escapechar='\\', doublequote=False).encode('utf-8')
+                csv_buffer = io.StringIO()
+                df_converted.to_csv(csv_buffer, index=False, quoting=csv.QUOTE_NONNUMERIC)
+                csv_data = csv_buffer.getvalue().encode('utf-8')
+                
                 st.download_button(
-                    "📥 Download Claim-Level CSV",
-                    csv_data,
-                    "augmentation_claim_level.csv",
-                    "text/csv",
+                    label="📥 Download Claim-Level CSV",
+                    data=csv_data,
+                    file_name="augmentation_claim_level.csv",
+                    mime="text/csv",
                     key="download_json_to_csv",
                     help="Download CSV with claim-level labels ready for model training"
                 )
                 
-                st.success(f"✅ Successfully converted {len(df_converted)} claims from JSON augmentation!")
+                if conversion_mode == "Balance":
+                    num_contradictions = len(df_converted[df_converted['label'] == 'contradiction'])
+                    num_entailments = len(df_converted[df_converted['label'] == 'entailment'])
+                    st.success(f"✅ Successfully converted {sample_count} transformations into {len(df_converted)} balanced samples ({num_contradictions} contradictions + {num_entailments} entailments)!")
+                else:
+                    st.success(f"✅ Successfully converted {len(df_converted)} contradiction samples from JSON augmentation!")
             else:
                 st.warning("⚠️ No claim transformations found in the JSON file")
         
@@ -1718,11 +2222,30 @@ Files Combined:
         - Each summary contains `transformation_list` with claim transformations
         - Each transformation has `original_claim`, `transformed_claim`, and `applied_transformations`
         
+        **Conversion Modes:**
+        
+        **Balance Mode:**
+        - Includes ALL contradiction samples (transformed claims with errors)
+        - Adds entailment samples based on configurable ratio
+        - Ratio examples:
+          - N=1: For every 1 contradiction, add 1 entailment (50/50 balance)
+          - N=5: For every 5 contradictions, add 1 entailment (83% contradiction / 17% entailment)
+          - N=2: For every 2 contradictions, add 1 entailment (67% contradiction / 33% entailment)
+        - `label`: 'entailment' for original claims, 'contradiction' for corrupted claims
+        - `error_types`: Empty for entailment, populated for contradiction
+        
+        **Contradiction-only Mode:**
+        - Only outputs corrupted claims with errors
+        - Output: 100% contradiction samples
+        - CSV rows = number of transformations
+        - `label`: Always 'contradiction'
+        - `error_types`: Always populated with error types
+        
         **Output CSV columns:**
         - `premise`: Source article text
-        - `hypothesis`: Transformed claim text
-        - `error_types`: Comma-separated error types for this claim
-        - `label`: Always 'contradiction' (transformed claims)
+        - `hypothesis`: Claim text (original or transformed)
+        - `error_types`: Comma-separated error types (empty for entailment)
+        - `label`: 'entailment' or 'contradiction'
         - `doc_id`: Document identifier
         - `original_claim`: Original claim before transformation
         
@@ -1792,7 +2315,7 @@ Files Combined:
                         st.dataframe(df_converted.head(), use_container_width=True)
                     
                     # Download button
-                    csv_data = df_converted.to_csv(index=False).encode('utf-8')
+                    csv_data = df_converted.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC).encode('utf-8')
                     st.download_button(
                         "📥 Download CSV",
                         csv_data,
@@ -3350,4 +3873,578 @@ with tab_llm_parse:
         
         **Use Case:**
         Verify parsed LLM training data before fine-tuning to ensure correct formatting and distribution.
+        """)
+
+
+### Corrupted Level ###
+with tab_corruption_level:
+    st.title("📊 Corrupted Level Analysis & Control")
+    st.markdown('<style>div.stMarkdown p, div.stMarkdown span, div.stMarkdown h1, div.stMarkdown h2, div.stMarkdown h3 { color: white; }</style>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    **Analyze and control corruption levels:**
+    - View corruption statistics (absolute and relative)
+    - Reduce corruption level by replacing corrupted claims with originals
+    - Choose selection strategy (random or max transformations)
+    """)
+    
+    uploaded_file_corruption = st.file_uploader("Upload JSON file", type=["json"], key="corruption_uploader")
+    if uploaded_file_corruption:
+        data_corruption = json.load(uploaded_file_corruption)
+        
+        # Corruption Reduction Control Panel
+        st.subheader("🎚️ Corruption Level Reduction")
+        
+        with st.expander("⚙️ Reduce Corruption Level (Modify Dataset)", expanded=False):
+            st.markdown("<div style='color: white;'><strong>Select reduction mode:</strong></div>", unsafe_allow_html=True)
+            
+            # Choose reduction mode
+            reduction_mode = st.radio(
+                "Reduction Mode",
+                options=['single', 'plan'],
+                format_func=lambda x: "Single Reduction (one target % for all summaries)" if x == 'single' else "Plan Reduction (multiple parts with different %)",
+                key="reduction_mode"
+            )
+            
+            st.markdown("---")
+            
+            if reduction_mode == 'single':
+                # Original single reduction UI
+                st.markdown("<div style='color: white;'><strong>Configure single reduction:</strong></div>", unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    target_corruption = st.slider(
+                        "Target Corruption %",
+                        min_value=0,
+                        max_value=100,
+                        value=50,
+                        step=5,
+                        help="Target percentage of claims to corrupt in each summary"
+                    )
+                
+                with col2:
+                    strategy = st.selectbox(
+                        "Claim Selection Strategy",
+                        options=['random', 'max_transformation', 'hebrew_focus'],
+                        format_func=lambda x: {
+                            'random': 'Random',
+                            'max_transformation': 'Max Transformations (most error types per claim)',
+                            'hebrew_focus': 'Hebrew Focus (prioritize Hebrew linguistic errors)'
+                        }[x],
+                        help="Strategy for selecting which corrupted claims to keep after reduction"
+                    )
+                
+                total_summaries = sum(len(doc.get('correctness_corrupted_summaries', [])) for doc in data_corruption)
+                num_summaries_to_process = st.number_input(
+                    "Number of summaries to process",
+                    min_value=1,
+                    max_value=total_summaries,
+                    value=min(10, total_summaries),
+                    help=f"Process first N summaries (total available: {total_summaries})"
+                )
+                
+                # Apply button for single reduction
+                if st.button("🔧 Apply Single Reduction", type="primary", key="apply_single"):
+                    modified_data = []
+                    processed_count = 0
+                    
+                    with st.spinner(f"Processing {num_summaries_to_process} summaries..."):
+                        for doc in data_corruption:
+                            modified_doc = doc.copy()
+                            modified_summaries = []
+                            
+                            for corrupted_summary in doc.get('correctness_corrupted_summaries', []):
+                                if processed_count >= num_summaries_to_process:
+                                    modified_summaries.append(corrupted_summary)
+                                else:
+                                    modified_summary = reduce_corruption_level(
+                                        corrupted_summary,
+                                        target_corruption,
+                                        strategy
+                                    )
+                                    modified_summaries.append(modified_summary)
+                                    processed_count += 1
+                            
+                            modified_doc['correctness_corrupted_summaries'] = modified_summaries
+                            modified_data.append(modified_doc)
+                    
+                    st.success(f"✅ Successfully processed {processed_count} summaries!")
+                    
+                    # Store in session state for display
+                    st.session_state['modified_data'] = modified_data
+                    st.session_state['reduction_applied'] = True
+                    st.session_state['processed_count'] = processed_count
+                    st.session_state['applied_reduction_mode'] = 'single'
+                    st.session_state['config_params'] = {
+                        'target_corruption': target_corruption,
+                        'strategy': strategy,
+                        'processed_count': processed_count,
+                        'dataset_name': uploaded_file_corruption.name if uploaded_file_corruption else 'dataset'
+                    }
+            
+            else:  # plan reduction
+                st.markdown("<div style='color: white;'><strong>Configure plan reduction:</strong></div>", unsafe_allow_html=True)
+                
+                total_summaries = sum(len(doc.get('correctness_corrupted_summaries', [])) for doc in data_corruption)
+                st.info(f"📊 Total summaries available: {total_summaries}")
+                
+                # Number of parts
+                num_parts = st.number_input(
+                    "Number of parts",
+                    min_value=2,
+                    max_value=10,
+                    value=3,
+                    help="How many different corruption levels to create"
+                )
+                
+                # Configure each part
+                parts_config = []
+                total_configured = 0
+                
+                for i in range(num_parts):
+                    st.markdown(f"<div style='color: #ffd700;'><strong>Part {i+1}:</strong></div>", unsafe_allow_html=True)
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        part_samples = st.number_input(
+                            f"Samples (Part {i+1})",
+                            min_value=0,
+                            max_value=total_summaries,
+                            value=10 if i == 0 else (30 if i == 1 else max(0, total_summaries - total_configured)),
+                            key=f"part_samples_{i}"
+                        )
+                    
+                    with col2:
+                        part_corruption = st.slider(
+                            f"Target % (Part {i+1})",
+                            min_value=0,
+                            max_value=100,
+                            value=25 if i == 0 else (70 if i == 1 else 90),
+                            step=5,
+                            key=f"part_corruption_{i}"
+                        )
+                    
+                    with col3:
+                        part_strategy = st.selectbox(
+                            f"Strategy (Part {i+1})",
+                            options=['random', 'max_transformation', 'hebrew_focus'],
+                            format_func=lambda x: {
+                                'random': 'Random',
+                                'max_transformation': 'Max Transform',
+                                'hebrew_focus': 'Hebrew Focus'
+                            }[x],
+                            key=f"part_strategy_{i}"
+                        )
+                    
+                    parts_config.append({
+                        'samples': part_samples,
+                        'corruption': part_corruption,
+                        'strategy': part_strategy
+                    })
+                    total_configured += part_samples
+                
+                # Validation
+                st.markdown("---")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Configured", total_configured)
+                with col2:
+                    st.metric("Available Summaries", total_summaries)
+                
+                if total_configured != total_summaries:
+                    st.error(f"❌ Total configured samples ({total_configured}) must equal available summaries ({total_summaries})")
+                else:
+                    st.success(f"✅ Configuration valid!")
+                
+                # Apply button for plan reduction
+                if st.button("🔧 Apply Plan Reduction", type="primary", key="apply_plan", disabled=(total_configured != total_summaries)):
+                    import random
+                    
+                    with st.spinner(f"Applying plan reduction to {total_summaries} summaries..."):
+                        # Flatten all summaries with their doc/summary indices
+                        all_summaries = []
+                        for doc_idx, doc in enumerate(data_corruption):
+                            for summary_idx, corrupted_summary in enumerate(doc.get('correctness_corrupted_summaries', [])):
+                                all_summaries.append({
+                                    'doc_idx': doc_idx,
+                                    'summary_idx': summary_idx,
+                                    'summary': corrupted_summary
+                                })
+                        
+                        # Randomly shuffle summaries
+                        random.shuffle(all_summaries)
+                        
+                        # Assign summaries to parts
+                        part_assignments = []
+                        start_idx = 0
+                        for part in parts_config:
+                            end_idx = start_idx + part['samples']
+                            part_summaries = all_summaries[start_idx:end_idx]
+                            part_assignments.append({
+                                'summaries': part_summaries,
+                                'corruption': part['corruption'],
+                                'strategy': part['strategy']
+                            })
+                            start_idx = end_idx
+                        
+                        # Apply reduction for each part
+                        modified_data = [doc.copy() for doc in data_corruption]
+                        for doc in modified_data:
+                            doc['correctness_corrupted_summaries'] = doc.get('correctness_corrupted_summaries', [])[:]
+                        
+                        for part_idx, part in enumerate(part_assignments):
+                            for item in part['summaries']:
+                                doc_idx = item['doc_idx']
+                                summary_idx = item['summary_idx']
+                                original_summary = item['summary']
+                                
+                                # Apply reduction
+                                modified_summary = reduce_corruption_level(
+                                    original_summary,
+                                    part['corruption'],
+                                    part['strategy']
+                                )
+                                
+                                # Update in modified_data
+                                modified_data[doc_idx]['correctness_corrupted_summaries'][summary_idx] = modified_summary
+                    
+                    st.success(f"✅ Successfully applied plan reduction to {total_summaries} summaries!")
+                    
+                    # Store in session state for display
+                    st.session_state['modified_data'] = modified_data
+                    st.session_state['reduction_applied'] = True
+                    st.session_state['processed_count'] = total_summaries
+                    st.session_state['applied_reduction_mode'] = 'plan'
+                    st.session_state['config_params'] = {
+                        'parts_config': parts_config,
+                        'total_summaries': total_summaries,
+                        'dataset_name': uploaded_file_corruption.name if uploaded_file_corruption else 'dataset'
+                    }
+            
+            # Show results if reduction was applied
+            if st.session_state.get('reduction_applied', False) and 'modified_data' in st.session_state:
+                modified_data = st.session_state['modified_data']
+                processed_count = st.session_state.get('processed_count', 0)
+                reduction_mode_stored = st.session_state.get('applied_reduction_mode', 'single')
+                config_params = st.session_state.get('config_params', {})
+                
+                # Create ZIP file with dataset and metadata
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    # Add modified dataset JSON
+                    modified_json = json.dumps(modified_data, ensure_ascii=False, indent=2)
+                    if reduction_mode_stored == 'single':
+                        target_corruption = config_params.get('target_corruption', 'unknown')
+                        json_filename = f"reduced_corruption_{target_corruption}pct.json"
+                    else:
+                        json_filename = "plan_reduced_corruption.json"
+                    zip_file.writestr(json_filename, modified_json)
+                    
+                    # Generate and add metadata text file
+                    metadata_text = generate_metadata_text(modified_data, reduction_mode_stored, config_params)
+                    zip_file.writestr("metadata.txt", metadata_text)
+                
+                # Prepare ZIP for download
+                zip_buffer.seek(0)
+                zip_filename = f"corruption_dataset_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+                
+                # Show ZIP contents info
+                st.info(f"📦 ZIP Package Contents:\n- {json_filename} (Modified dataset)\n- metadata.txt (Corruption statistics and configuration)")
+                
+                st.download_button(
+                    "📥 Download Modified Dataset (ZIP)",
+                    zip_buffer.getvalue(),
+                    zip_filename,
+                    "application/zip",
+                    help="Download ZIP file containing modified dataset and metadata information"
+                )
+                
+                # Show detailed statistics for modified data
+                st.markdown("---")
+                st.markdown("<div style='color: white;'><strong>📊 Modified Dataset Statistics:</strong></div>", unsafe_allow_html=True)
+                
+                # Calculate detailed statistics for modified data
+                modified_corruption_details = []
+                modified_corruption_levels = []
+                modified_corruption_percentages = []
+                
+                for doc_idx, doc in enumerate(modified_data):
+                    for summary_idx, corrupted_summary in enumerate(doc.get('correctness_corrupted_summaries', [])):
+                        transformation_list = corrupted_summary.get('transformation_list', [])
+                        actual_count = len(transformation_list)
+                        stored_count = corrupted_summary.get('transformations_performed', 0)
+                        corrupted_text = corrupted_summary.get('corrupted_summary', '')
+                        total_claims = count_claims_sentences(corrupted_text)
+                        corruption_percentage = (actual_count / total_claims * 100) if total_claims > 0 else 0.0
+                        
+                        modified_corruption_levels.append(actual_count)
+                        modified_corruption_percentages.append(corruption_percentage)
+                        modified_corruption_details.append({
+                            'doc_idx': doc_idx,
+                            'summary_idx': summary_idx,
+                            'actual_transformations': actual_count,
+                            'stored_transformations': stored_count,
+                            'total_claims': total_claims,
+                            'corruption_percentage': f"{corruption_percentage:.1f}%",
+                            'inconsistent': '⚠️' if actual_count != stored_count else '✓'
+                        })
+                
+                # Show summary metrics
+                if modified_corruption_levels:
+                    avg_corruption_mod = sum(modified_corruption_levels) / len(modified_corruption_levels)
+                    min_corruption_mod = min(modified_corruption_levels)
+                    max_corruption_mod = max(modified_corruption_levels)
+                    avg_corruption_pct_mod = sum(modified_corruption_percentages) / len(modified_corruption_percentages)
+                    
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("Average Corruptions", f"{avg_corruption_mod:.2f}")
+                    with col2:
+                        st.metric("Min Corruptions", min_corruption_mod)
+                    with col3:
+                        st.metric("Max Corruptions", max_corruption_mod)
+                    with col4:
+                        st.metric("Total Summaries", len(modified_corruption_levels))
+                    with col5:
+                        st.metric("Avg Corruption %", f"{avg_corruption_pct_mod:.1f}%")
+                    
+                    # Show detailed table
+                    with st.expander("📋 View Detailed Corruption Stats per Summary (Modified Data)", expanded=True):
+                        modified_details_df = pd.DataFrame(modified_corruption_details)
+                        modified_details_df = modified_details_df.sort_values('actual_transformations', ascending=False)
+                        st.dataframe(modified_details_df, use_container_width=True)
+                        
+                        # Sample selector for reviewing modified samples
+                        st.markdown("---")
+                        st.markdown("<div style='color: white;'><strong>🔍 Review Sample Details:</strong></div>", unsafe_allow_html=True)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            selected_doc_idx_mod = st.selectbox(
+                                "Select Document Index:",
+                                options=sorted(modified_details_df['doc_idx'].unique()),
+                                key="modified_doc_selector"
+                            )
+                        with col2:
+                            # Filter summaries for selected document
+                            available_summaries_mod = modified_details_df[modified_details_df['doc_idx'] == selected_doc_idx_mod]['summary_idx'].tolist()
+                            selected_summary_idx_mod = st.selectbox(
+                                "Select Summary Index:",
+                                options=available_summaries_mod,
+                                key="modified_summary_selector"
+                            )
+                        
+                        # Display selected sample details
+                        if selected_doc_idx_mod is not None and selected_summary_idx_mod is not None:
+                            selected_doc_mod = modified_data[selected_doc_idx_mod]
+                            selected_summary_mod = selected_doc_mod.get('correctness_corrupted_summaries', [])[selected_summary_idx_mod]
+                            
+                            # Manual count (GROUND TRUTH)
+                            actual_count_mod = len(selected_summary_mod.get('transformation_list', []))
+                            stored_count_mod = selected_summary_mod.get('transformations_performed', 0)
+                            
+                            # Count total claims using SENTENCES method
+                            corrupted_text_mod = selected_summary_mod.get('corrupted_summary', '')
+                            total_claims_mod = count_claims_sentences(corrupted_text_mod)
+                            corruption_pct_mod = (actual_count_mod / total_claims_mod * 100) if total_claims_mod > 0 else 0.0
+                            
+                            # Show metrics
+                            col1, col2, col3, col4, col5 = st.columns(5)
+                            with col1:
+                                st.metric("Actual Claims Corrupted", f"{actual_count_mod}")
+                            with col2:
+                                st.metric("Stored Value", f"{stored_count_mod}")
+                            with col3:
+                                st.metric("Total Claims", f"{total_claims_mod}")
+                            with col4:
+                                st.metric("Corruption %", f"{corruption_pct_mod:.1f}%")
+                            with col5:
+                                match_status_mod = "✅ Match" if actual_count_mod == stored_count_mod else "⚠️ Mismatch"
+                                st.metric("Status", match_status_mod)
+                            
+                            # Show source article
+                            st.markdown("<div style='color: white;'><strong>📰 Source Article:</strong></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div dir='rtl' style='background-color: #2d2d2d; color: white; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto;'>{selected_doc_mod.get('source_article', '')}</div>", unsafe_allow_html=True)
+                            
+                            # Show gold summary
+                            st.markdown("<div style='color: white;'><strong>🏆 Gold Summary:</strong></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div dir='rtl' style='background-color: #1a4d1a; color: white; padding: 15px; border-radius: 5px; border: 2px solid #4CAF50;'>{selected_doc_mod.get('gold_summary', '')}</div>", unsafe_allow_html=True)
+                            
+                            # Show modified corrupted summary
+                            st.markdown("<div style='color: white;'><strong>🔴 Modified Corrupted Summary (After Reduction):</strong></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div dir='rtl' style='background-color: #4d1a1a; color: white; padding: 15px; border-radius: 5px; border: 2px solid #f44336;'>{selected_summary_mod.get('corrupted_summary', '')}</div>", unsafe_allow_html=True)
+                            
+                            # Show diff
+                            st.markdown("<div style='color: white;'><strong>⚡ Difference Visualization:</strong></div>", unsafe_allow_html=True)
+                            diff_html_mod = highlight_diff(selected_doc_mod.get('gold_summary', ''), selected_summary_mod.get('corrupted_summary', ''))
+                            st.markdown(f"<div dir='rtl' style='background-color: #2d2d2d; color: white; padding: 15px; border-radius: 5px; border: 1px solid #666;'>{diff_html_mod}</div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Corruption Level Statistics
+        st.subheader("📊 Corruption Level Statistics")
+        
+        # Calculate corruption statistics for all summaries
+        all_corruption_levels = []
+        all_corruption_percentages = []
+        corruption_details = []
+        inconsistencies_found = 0
+        
+        for doc_idx, doc in enumerate(data_corruption):
+            for summary_idx, corrupted_summary in enumerate(doc.get('correctness_corrupted_summaries', [])):
+                # Manual count from transformation_list (GROUND TRUTH)
+                transformation_list = corrupted_summary.get('transformation_list', [])
+                actual_count = len(transformation_list)
+                
+                # Stored value (may be inconsistent)
+                stored_count = corrupted_summary.get('transformations_performed', 0)
+                
+                # Count total claims in corrupted summary using SENTENCES method
+                corrupted_text = corrupted_summary.get('corrupted_summary', '')
+                total_claims = count_claims_sentences(corrupted_text)
+                
+                # Calculate corruption percentage
+                corruption_percentage = (actual_count / total_claims * 100) if total_claims > 0 else 0.0
+                
+                # Check for inconsistency
+                is_inconsistent = (actual_count != stored_count)
+                if is_inconsistent:
+                    inconsistencies_found += 1
+                
+                all_corruption_levels.append(actual_count)
+                all_corruption_percentages.append(corruption_percentage)
+                corruption_details.append({
+                    'doc_idx': doc_idx,
+                    'summary_idx': summary_idx,
+                    'actual_transformations': actual_count,
+                    'stored_transformations': stored_count,
+                    'total_claims': total_claims,
+                    'corruption_percentage': f"{corruption_percentage:.1f}%",
+                    'inconsistent': '⚠️' if is_inconsistent else '✓'
+                })
+        
+        if all_corruption_levels:
+            avg_corruption = sum(all_corruption_levels) / len(all_corruption_levels)
+            min_corruption = min(all_corruption_levels)
+            max_corruption = max(all_corruption_levels)
+            avg_corruption_pct = sum(all_corruption_percentages) / len(all_corruption_percentages)
+            
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
+            with col1:
+                st.metric("Average Corruptions", f"{avg_corruption:.2f}")
+            with col2:
+                st.metric("Min Corruptions", min_corruption)
+            with col3:
+                st.metric("Max Corruptions", max_corruption)
+            with col4:
+                st.metric("Total Summaries", len(all_corruption_levels))
+            with col5:
+                st.metric("Avg Corruption %", f"{avg_corruption_pct:.1f}%")
+            with col6:
+                inconsistency_label = "Inconsistencies ⚠️" if inconsistencies_found > 0 else "Data Quality ✓"
+                st.metric(inconsistency_label, inconsistencies_found)
+            
+            # Show distribution chart
+            st.markdown("<div style='color: white;'><strong>Corruption Level Distribution:</strong></div>", unsafe_allow_html=True)
+            corruption_df_chart = pd.DataFrame({'Transformations Performed': all_corruption_levels})
+            st.bar_chart(corruption_df_chart['Transformations Performed'].value_counts().sort_index())
+            
+            # Show percentage distribution chart
+            st.markdown("<div style='color: white;'><strong>Corruption Percentage Distribution:</strong></div>", unsafe_allow_html=True)
+            corruption_pct_chart = pd.DataFrame({'Corruption Percentage': all_corruption_percentages})
+            st.bar_chart(corruption_pct_chart['Corruption Percentage'].value_counts().sort_index())
+            
+            # Show detailed table in expander
+            with st.expander("📋 View Detailed Corruption Stats per Summary", expanded=True):
+                details_df = pd.DataFrame(corruption_details)
+                details_df = details_df.sort_values('actual_transformations', ascending=False)
+                
+                # Show warning if inconsistencies found
+                if inconsistencies_found > 0:
+                    st.warning(f"⚠️ Found {inconsistencies_found} inconsistencies between stored and actual counts. Using ACTUAL counts from transformation_list.")
+                else:
+                    st.success("✅ All stored counts match actual transformation_list lengths.")
+                
+                st.dataframe(details_df, use_container_width=True)
+                
+                # Sample selector for reviewing article and summary
+                st.markdown("---")
+                st.markdown("<div style='color: white;'><strong>🔍 Review Sample Details:</strong></div>", unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    selected_doc_idx = st.selectbox(
+                        "Select Document Index:",
+                        options=sorted(details_df['doc_idx'].unique()),
+                        key="corruption_level_doc_selector"
+                    )
+                with col2:
+                    # Filter summaries for selected document
+                    available_summaries = details_df[details_df['doc_idx'] == selected_doc_idx]['summary_idx'].tolist()
+                    selected_summary_idx = st.selectbox(
+                        "Select Summary Index:",
+                        options=available_summaries,
+                        key="corruption_level_summary_selector"
+                    )
+                
+                # Display selected sample details
+                if selected_doc_idx is not None and selected_summary_idx is not None:
+                    selected_doc = data_corruption[selected_doc_idx]
+                    selected_summary = selected_doc.get('correctness_corrupted_summaries', [])[selected_summary_idx]
+                    
+                    # Manual count (GROUND TRUTH)
+                    actual_count = len(selected_summary.get('transformation_list', []))
+                    stored_count = selected_summary.get('transformations_performed', 0)
+                    
+                    # Count total claims using SENTENCES method
+                    corrupted_text = selected_summary.get('corrupted_summary', '')
+                    total_claims = count_claims_sentences(corrupted_text)
+                    corruption_pct = (actual_count / total_claims * 100) if total_claims > 0 else 0.0
+                    
+                    # Show metrics
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("Actual Claims Corrupted", f"{actual_count}")
+                    with col2:
+                        st.metric("Stored Value", f"{stored_count}")
+                    with col3:
+                        st.metric("Total Claims", f"{total_claims}")
+                    with col4:
+                        st.metric("Corruption %", f"{corruption_pct:.1f}%")
+                    with col5:
+                        match_status = "✅ Match" if actual_count == stored_count else "⚠️ Mismatch"
+                        st.metric("Status", match_status)
+                    
+                    # Show source article
+                    st.markdown("<div style='color: white;'><strong>📰 Source Article:</strong></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div dir='rtl' style='background-color: #2d2d2d; color: white; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto;'>{selected_doc.get('source_article', '')}</div>", unsafe_allow_html=True)
+                    
+                    # Show gold summary
+                    st.markdown("<div style='color: white;'><strong>🏆 Gold Summary:</strong></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div dir='rtl' style='background-color: #1a4d1a; color: white; padding: 15px; border-radius: 5px; border: 2px solid #4CAF50;'>{selected_doc.get('gold_summary', '')}</div>", unsafe_allow_html=True)
+                    
+                    # Show corrupted summary
+                    st.markdown("<div style='color: white;'><strong>🔴 Corrupted Summary:</strong></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div dir='rtl' style='background-color: #4d1a1a; color: white; padding: 15px; border-radius: 5px; border: 2px solid #f44336;'>{selected_summary.get('corrupted_summary', '')}</div>", unsafe_allow_html=True)
+                    
+                    # Show diff
+                    st.markdown("<div style='color: white;'><strong>⚡ Difference Visualization:</strong></div>", unsafe_allow_html=True)
+                    diff_html = highlight_diff(selected_doc.get('gold_summary', ''), selected_summary.get('corrupted_summary', ''))
+                    st.markdown(f"<div dir='rtl' style='background-color: #2d2d2d; color: white; padding: 15px; border-radius: 5px; border: 1px solid #666;'>{diff_html}</div>", unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ No corruption statistics available")
+    else:
+        st.info("📁 Upload a JSON augmentation file to analyze corruption levels")
+        st.markdown("""
+        **Expected Format:**
+        - JSON augmentation output with `correctness_corrupted_summaries`
+        - Each summary should have `transformation_list` and optionally `transformations_performed`
+        
+        **Analysis Features:**
+        - 📊 Absolute corruption metrics (min, max, average)
+        - 📈 Relative corruption percentage (% of claims corrupted)
+        - ⚠️ Inconsistency detection between stored and actual counts
+        - 🔍 Sample-by-sample review with source, gold, and corrupted summaries
+        - 📉 Distribution charts for both absolute and percentage corruption
         """)

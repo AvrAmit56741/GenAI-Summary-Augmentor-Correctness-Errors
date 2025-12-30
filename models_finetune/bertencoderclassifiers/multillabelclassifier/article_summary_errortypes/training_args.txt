@@ -4,11 +4,11 @@ dicta-il/neodictabert
 --do_eval
 --do_predict
 --train_file
-/home/avramit/classifier/04122025/datasets/classifier/mergearticlesummarylevel/train.csv
+/home/avramit/classifier/17122025/datasets/classifier/articleclaimlevel/curroptedlevel/train.csv
 --validation_file
-/home/avramit/classifier/01122025/datasets/classifiers/validation.csv
+/home/avramit/classifier/17122025/datasets/classifier/articleclaimlevel/curroptedlevel/validation.csv
 --test_file
-/home/avramit/classifier/01122025/datasets/classifiers/test.csv
+/home/avramit/classifier/17122025/datasets/classifier/articleclaimlevel/curroptedlevel/test.csv
 --language
 he
 --train_language
@@ -49,6 +49,6 @@ f1
 --greater_is_better
 True
 --output_dir
-/home/avramit/classifier/04122025/classifier/multilabel/neodictabert-setup1_summarylevel-finetuned-multilabel_error_types_041225/
+/home/avramit/classifier/17122025/classifier/multilabel/neodictabert-setup1_summarylevel-finetuned-multilabel_error_types-171225/
 --overwrite_output_dir
 

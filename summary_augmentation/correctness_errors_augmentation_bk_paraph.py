@@ -120,19 +120,18 @@ from typing import List, Dict
 
 def main():
     # Configuration
-    start_row = 1201
-    end_row = 1400
-    filter_by_label = None  # Options: None, "entailment", "contradiction"
+    start_row = 351
+    end_row = 450
+    filter_by_label = None
     max_workers = 5
-    
-    # Quality verification settings
-    similarity_metric = "both"  # Options: "chrf", "bert", "both", None (no verification)
+
+    similarity_metric = "both"
     chrf_threshold = 0.64  # ChrF score threshold (0.0-1.0)
     bertscore_threshold = 0.85  # BERTScore F1 threshold (0.0-1.0)
     bertscore_model = None  # Use default multilingual BERT for Hebrew (or specify: "bert-base-multilingual-cased")
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    dataset_type = "train"
+    dataset_type = "validation"
     input_csv_path = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\{dataset_type}.csv"
     output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\bk_pr\{dataset_type}\mafat_bk_pr_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
     output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\bk_pr\{dataset_type}\mafat_bk_pr_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
@@ -141,30 +140,22 @@ def main():
     logger.info(f"Processing rows {start_row} to {end_row - 1}")
     if filter_by_label:
         logger.info(f"Filtering samples by label: {filter_by_label}")
-    
-    # Log verification settings
+
     logger.info(f"Quality verification: metric={similarity_metric}, chrf_threshold={chrf_threshold}, bertscore_threshold={bertscore_threshold}")
     logger.info(f"Libraries available - ChrF: {CHRF_AVAILABLE}, BERTScore: {BERTSCORE_AVAILABLE}")
-
-    # Read CSV and apply filter
     df = pd.read_csv(input_csv_path)
-    
-    # Apply label filter if specified
+
     if filter_by_label:
         original_count = len(df)
         df = df[df['label'] == filter_by_label].reset_index(drop=True)
         filtered_count = len(df)
         logger.info(f"Applied label filter '{filter_by_label}': {original_count} → {filtered_count} samples")
-    
-    # Slice the dataframe
     slice_df = df.iloc[start_row:end_row]
     logger.info(f"Processing {len(slice_df)} samples")
 
     records: List[Dict] = []
-    failed_samples = []  # Track failed samples for summary
+    failed_samples = []
     start_time = datetime.datetime.now()
-    
-    # Thread-safe locks for shared resources
     records_lock = threading.Lock()
     failed_lock = threading.Lock()
 
@@ -176,14 +167,10 @@ def main():
             hypothesis = row['hypothesis']
             
             logger.info(f"Processing row {idx}: doc_id={row.get('doc_id', 'unknown')}")
-
-            # Call transformer
             result = back_translation_and_paraphrasing(hypothesis)
             if not result:
                 logger.warning(f"Skipping row {idx}: transformation failed")
                 return None
-
-            # Validate outputs are not empty
             if not result.summary_paraphrasing or not result.summary_paraphrasing.strip():
                 logger.warning(f"Skipping row {idx}: paraphrasing returned empty text")
                 return None
@@ -191,8 +178,6 @@ def main():
             if not result.summary_back_translation or not result.summary_back_translation.strip():
                 logger.warning(f"Skipping row {idx}: back_translation returned empty text")
                 return None
-
-            # Verify similarity for paraphrasing
             paraphrase_passed, paraphrase_scores = verify_similarity(
                 hypothesis, result.summary_paraphrasing,
                 similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model
@@ -208,8 +193,6 @@ def main():
                         'scores': paraphrase_scores
                     })
                 return None
-            
-            # Verify similarity for back-translation
             backtrans_passed, backtrans_scores = verify_similarity(
                 hypothesis, result.summary_back_translation,
                 similarity_metric, chrf_threshold, bertscore_threshold, bertscore_model
@@ -227,8 +210,6 @@ def main():
                 return None
 
             logger.info(f"✓ Similarity checks passed - Paraphrase: {paraphrase_scores}, BackTrans: {backtrans_scores}")
-
-            # Create two records for this sample
             sample_records = [
                 {
                     'premise': premise,
@@ -260,8 +241,6 @@ def main():
         except Exception as e:
             logger.error(f"Error processing row {row.name}: {e}")
             return None
-
-    # Process samples using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_single_sample, row) for idx, row in slice_df.iterrows()]
         
@@ -270,8 +249,6 @@ def main():
             if result:
                 with records_lock:
                     records.extend(result)
-
-    # Write out to JSON
     with open(output_json, 'w', encoding='utf-8') as out_json:
         json.dump(records, out_json, ensure_ascii=False, indent=2)
 
@@ -282,12 +259,8 @@ def main():
             writer = csv.DictWriter(out_csv, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(records)
-
-    # Calculate processing time
     end_time = datetime.datetime.now()
     duration = (end_time - start_time).total_seconds()
-    
-    # Generate summary file
     output_summary = output_csv.replace('.csv', '_summary.txt')
     
     total_attempted = len(slice_df)
@@ -343,8 +316,6 @@ FAILED SAMPLES DETAILS:
         summary_content += "\n  No failed samples (all passed validation)"
     
     summary_content += "\n\n" + "="*80 + "\n"
-    
-    # Write summary file
     with open(output_summary, 'w', encoding='utf-8') as f:
         f.write(summary_content)
     

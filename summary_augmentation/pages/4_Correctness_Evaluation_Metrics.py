@@ -31,7 +31,7 @@ Evaluate summary quality using standard text-overlap metrics. Compare a generate
 """)
 
 # Create tabs for single vs batch evaluation
-tab_single, tab_batch, tab_classifier = st.tabs(["Single Evaluation", "Batch Evaluation", "Classifier Predictions"])
+tab_single, tab_batch, tab_classifier, tab_hallucination = st.tabs(["Single Evaluation", "Batch Evaluation", "Classifier Predictions", "Hallucination Metrics"])
 
 
 # ==================== METRIC COMPUTATION FUNCTIONS ====================
@@ -1046,6 +1046,436 @@ with tab_batch:
         - ⚡ Fast evaluation for surface-level metrics
         - 🐌 BERTScore available (slower, optional)
         """)
+
+# ===== HALLUCINATION METRICS TAB =====
+with tab_hallucination:
+    st.markdown("---")
+    st.subheader("🎯 ENFS% - Entity Non-Factual Source")
+    st.markdown("""
+    Measure entity-level hallucinations by comparing entities in the summary against the source document.
+    Based on Cao et al. (2022) - "Hallucinated but Factual!"
+    
+    **How ENFS% is Calculated:**
+    
+    1. **Extract entities** from the summary using NER (Named Entity Recognition)
+    2. **Check overlap**: For each entity in the summary, verify if it appears in the source article
+    3. **Calculate percentage**:
+    
+    $$
+    ENFS\\% = \\frac{\\text{Number of entities NOT in source}}{\\text{Total entities in summary}} \\times 100
+    $$
+    
+    **Example:**
+    - Source: "דני הלך למכולת ביום שלישי"
+    - Summary: "דני קנה לחם בסופרמרקט שפע"
+    - Entities in summary: דני (PER), שפע (ORG)
+    - Entities not in source: שפע
+    - ENFS% = 1/2 = **50%**
+    
+    Higher ENFS% = More hallucinated entities = Lower faithfulness
+    """)
+    
+    # Import NER utilities
+    try:
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from transformers import pipeline, AutoTokenizer
+        NER_AVAILABLE = True
+    except ImportError:
+        NER_AVAILABLE = False
+        st.error("⚠️ transformers library required. Install: `pip install transformers`")
+    
+    if NER_AVAILABLE:
+        # File upload
+        halluc_file = st.file_uploader(
+            "Upload CSV with premise and hypothesis columns",
+            type=["csv"],
+            key="halluc_csv",
+            help="CSV should contain: premise (source), hypothesis (summary)"
+        )
+        
+        # NER model selection
+        st.markdown("### ⚙️ Configuration")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            ner_model_choice = st.selectbox(
+                "NER Model:",
+                ["dicta-il/dictabert-ner", "avichr/heBERT_NER"],
+                key="ner_model_select",
+                help="Choose Hebrew NER model for entity extraction"
+            )
+        
+        with col2:
+            ner_threshold = st.slider(
+                "NER Confidence Threshold:",
+                min_value=0.3,
+                max_value=0.9,
+                value=0.7,
+                step=0.05,
+                key="ner_threshold",
+                help="Minimum confidence score for entity detection"
+            )
+        
+        if halluc_file is not None:
+            import pandas as pd
+            import numpy as np
+            
+            try:
+                df_halluc = pd.read_csv(halluc_file)
+                st.success(f"✅ Loaded {len(df_halluc)} records")
+                
+                # Validate columns
+                required_cols = ['premise', 'hypothesis']
+                missing_cols = [col for col in required_cols if col not in df_halluc.columns]
+                
+                if missing_cols:
+                    st.error(f"❌ Missing required columns: {missing_cols}")
+                else:
+                    # Filter by label if exists
+                    filter_label = None
+                    if 'label' in df_halluc.columns:
+                        unique_labels = df_halluc['label'].unique().tolist()
+                        filter_label = st.multiselect(
+                            "Filter by label (optional):",
+                            options=unique_labels,
+                            default=None,
+                            key="halluc_label_filter",
+                            help="Select labels to filter the dataset"
+                        )
+                        
+                        if filter_label:
+                            df_halluc = df_halluc[df_halluc['label'].isin(filter_label)]
+                            st.info(f"📊 Filtered to {len(df_halluc)} records")
+                    
+                    with st.expander("🔍 Dataset Preview", expanded=False):
+                        st.dataframe(df_halluc, use_container_width=True, height=300)
+                    
+                    # Sample size
+                    max_samples = len(df_halluc)
+                    sample_size = st.slider(
+                        "Number of samples to evaluate:",
+                        min_value=1,
+                        max_value=max_samples,
+                        value=min(50, max_samples),
+                        key="halluc_sample_size"
+                    )
+                    
+                    if st.button("🚀 Calculate ENFS%", type="primary", use_container_width=True):
+                        # Load NER model
+                        with st.spinner(f"Loading {ner_model_choice}..."):
+                            if ner_model_choice == "dicta-il/dictabert-ner":
+                                ner_pipeline = pipeline('ner', model='dicta-il/dictabert-ner', aggregation_strategy='simple')
+                                tokenizer = AutoTokenizer.from_pretrained('dicta-il/dictabert-ner')
+                                entity_labels = ['PER', 'LOC', 'GPE', 'ORG', 'TTL', 'EVE']
+                            else:  # avichr/heBERT_NER
+                                ner_pipeline = pipeline('ner', model='avichr/heBERT_NER', aggregation_strategy='simple')
+                                tokenizer = AutoTokenizer.from_pretrained('avichr/heBERT_NER')
+                                entity_labels = ['PERS', 'LOC', 'ORG', 'TIME', 'DATE', 'MONEY', 'PERCENT']
+                        
+                        def extract_entities(text, threshold):
+                            """Extract entities from text using NER with chunking for long texts"""
+                            if not text or not text.strip():
+                                return []
+                            
+                            try:
+                                # For short texts, process directly (limit to safe length)
+                                if len(text) < 2000:
+                                    safe_text = text[:2000]  # Limit character length
+                                    results = ner_pipeline(safe_text)
+                                    entities = []
+                                    seen_entities = set()
+                                    
+                                    for ent in results:
+                                        if ent.get('score', 0) >= threshold:
+                                            entity_text = ent['word'].replace('#', '').strip()
+                                            entity_label = ent['entity_group']
+                                            
+                                            if len(entity_text) < 2:
+                                                continue
+                                            
+                                            entity_key = (entity_text.lower(), entity_label)
+                                            if entity_key not in seen_entities:
+                                                seen_entities.add(entity_key)
+                                                entities.append({
+                                                    'text': entity_text,
+                                                    'label': entity_label,
+                                                    'score': ent['score']
+                                                })
+                                    return entities
+                                
+                                # Long text - use chunking with character-based splits
+                                chunk_size = 1800  # Safe character length
+                                overlap = 200
+                                
+                                all_entities = []
+                                seen_entities = set()
+                                
+                                for start_idx in range(0, len(text), chunk_size - overlap):
+                                    chunk_text = text[start_idx:start_idx + chunk_size]
+                                    
+                                    # Run NER on chunk
+                                    results = ner_pipeline(chunk_text)
+                                    
+                                    for ent in results:
+                                        if ent.get('score', 0) >= threshold:
+                                            entity_text = ent['word'].replace('#', '').strip()
+                                            entity_label = ent['entity_group']
+                                            
+                                            if len(entity_text) < 2:
+                                                continue
+                                            
+                                            entity_key = (entity_text.lower(), entity_label)
+                                            if entity_key not in seen_entities:
+                                                seen_entities.add(entity_key)
+                                                all_entities.append({
+                                                    'text': entity_text,
+                                                    'label': entity_label,
+                                                    'score': ent['score']
+                                                })
+                                    
+                                    if start_idx + chunk_size >= len(text):
+                                        break
+                                
+                                return all_entities
+                            
+                            except Exception as e:
+                                st.warning(f"Error processing text: {str(e)[:100]}")
+                                return []
+                        
+                        def calculate_enfs(premise_entities, hypothesis_entities):
+                            """Calculate ENFS% for a single sample"""
+                            if len(hypothesis_entities) == 0:
+                                return None, 0, 0, []
+                            
+                            premise_texts = {e['text'].lower() for e in premise_entities}
+                            hallucinated = []
+                            
+                            for ent in hypothesis_entities:
+                                ent_text = ent['text'].lower()
+                                if ent_text not in premise_texts:
+                                    hallucinated.append(ent)
+                            
+                            enfs_percent = (len(hallucinated) / len(hypothesis_entities)) * 100
+                            return enfs_percent, len(hypothesis_entities), len(hallucinated), hallucinated
+                        
+                        # Process samples
+                        df_eval = df_halluc.head(sample_size).copy()
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        results_list = []
+                        
+                        for idx, row in df_eval.iterrows():
+                            status_text.text(f"Processing sample {idx + 1}/{sample_size}...")
+                            progress_bar.progress((idx + 1) / sample_size)
+                            
+                            premise = str(row['premise'])
+                            hypothesis = str(row['hypothesis'])
+                            
+                            # Extract entities
+                            premise_entities = extract_entities(premise, ner_threshold)
+                            hypothesis_entities = extract_entities(hypothesis, ner_threshold)
+                            
+                            # Calculate ENFS%
+                            enfs, total_ents, halluc_count, halluc_ents = calculate_enfs(premise_entities, hypothesis_entities)
+                            
+                            results_list.append({
+                                'index': idx,
+                                'enfs_percent': enfs,
+                                'total_entities': total_ents,
+                                'hallucinated_entities': halluc_count,
+                                'premise_entities': premise_entities,
+                                'hypothesis_entities': hypothesis_entities,
+                                'hallucinated_list': halluc_ents
+                            })
+                        
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        # Save results to session state
+                        st.session_state['halluc_results_list'] = results_list
+                        st.session_state['halluc_df_eval'] = df_eval
+                        
+                    # Display results (from session state if exists)
+                    if 'halluc_results_list' in st.session_state and st.session_state['halluc_results_list']:
+                        results_list = st.session_state['halluc_results_list']
+                        df_eval = st.session_state['halluc_df_eval']
+                        
+                        # Display results
+                        st.success("✅ ENFS% calculation complete!")
+                        
+                        st.markdown("---")
+                        st.subheader("📊 Results Summary")
+                        
+                        # Calculate statistics
+                        valid_enfs = [r['enfs_percent'] for r in results_list if r['enfs_percent'] is not None]
+                        total_premise_entities = sum(len(r['premise_entities']) for r in results_list)
+                        total_hypothesis_entities = sum(r['total_entities'] for r in results_list)
+                        total_hallucinations = sum(r['hallucinated_entities'] for r in results_list)
+                        
+                        if valid_enfs:
+                            col1, col2, col3, col4, col5 = st.columns(5)
+                            
+                            with col1:
+                                st.metric("Mean ENFS%", f"{np.mean(valid_enfs):.2f}%")
+                            with col2:
+                                st.metric("Median ENFS%", f"{np.median(valid_enfs):.2f}%")
+                            with col3:
+                                st.metric("Total Entities (Premise)", total_premise_entities)
+                            with col4:
+                                st.metric("Total Entities (Summary)", total_hypothesis_entities)
+                            with col5:
+                                samples_with_halluc = sum(1 for e in valid_enfs if e > 0)
+                                st.metric("Samples with Hallucinations", f"{samples_with_halluc}/{len(valid_enfs)}")
+                            
+                            st.markdown(f"**🚨 Total Hallucinated Entities: {total_hallucinations}** ({total_hallucinations}/{total_hypothesis_entities} = {total_hallucinations/total_hypothesis_entities*100:.1f}% overall)")
+                            
+                            # Detailed results table
+                            st.markdown("---")
+                            st.subheader("📋 Detailed Results")
+                            
+                            # Merge results with original dataframe
+                            results_data = []
+                            for r in results_list:
+                                row_data = df_eval.iloc[r['index']].to_dict()
+                                row_data['enfs_percent'] = f"{r['enfs_percent']:.1f}%" if r['enfs_percent'] is not None else "N/A"
+                                row_data['total_entities_summary'] = r['total_entities']
+                                row_data['total_entities_premise'] = len(r['premise_entities'])
+                                row_data['hallucinated_count'] = r['hallucinated_entities']
+                                results_data.append(row_data)
+                            
+                            results_display_df = pd.DataFrame(results_data)
+                            
+                            # Reorder columns: original columns first, then metrics
+                            original_cols = [col for col in df_eval.columns if col in results_display_df.columns]
+                            metric_cols = ['enfs_percent', 'total_entities_summary', 'total_entities_premise', 'hallucinated_count']
+                            display_order = original_cols + metric_cols
+                            results_display_df = results_display_df[display_order]
+                            
+                            st.dataframe(results_display_df, use_container_width=True, height=400)
+                            
+                            # Entity details
+                            st.markdown("---")
+                            st.subheader("🔍 Entity Details")
+                            
+                            selected_row = st.selectbox(
+                                "Select row to inspect:",
+                                range(len(results_list)),
+                                format_func=lambda x: f"Row {results_list[x]['index']} (ENFS%: {results_list[x]['enfs_percent']:.1f}%)" if results_list[x]['enfs_percent'] is not None else f"Row {results_list[x]['index']} (No entities)",
+                                key="halluc_selected_row"
+                            )
+                            
+                            if selected_row is not None:
+                                selected_result = results_list[selected_row]
+                                
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.markdown("**📄 Entities in Source (Premise):**")
+                                    if selected_result['premise_entities']:
+                                        for ent in selected_result['premise_entities']:
+                                            st.markdown(f"- `{ent['text']}` ({ent['label']}) - {ent['score']:.2f}")
+                                    else:
+                                        st.info("No entities found")
+                                
+                                with col2:
+                                    st.markdown("**📝 Entities in Summary (Hypothesis):**")
+                                    if selected_result['hypothesis_entities']:
+                                        for ent in selected_result['hypothesis_entities']:
+                                            is_halluc = ent in selected_result['hallucinated_list']
+                                            marker = "🚨" if is_halluc else "✅"
+                                            st.markdown(f"{marker} `{ent['text']}` ({ent['label']}) - {ent['score']:.2f}")
+                                    else:
+                                        st.info("No entities found")
+                                
+                                if selected_result['hallucinated_list']:
+                                    st.warning(f"🚨 Hallucinated entities: {', '.join([e['text'] for e in selected_result['hallucinated_list']])}")
+                                else:
+                                    st.success("✅ No hallucinations detected")
+                                
+                                # Show texts
+                                with st.expander("📖 View Full Source and Summary", expanded=False):
+                                    st.markdown("**Full Source (Premise):**")
+                                    st.text_area("", value=df_eval.iloc[selected_row]['premise'], height=200, key=f"premise_full_{selected_row}", disabled=True)
+                                    st.markdown("**Full Summary (Hypothesis):**")
+                                    st.text_area("", value=df_eval.iloc[selected_row]['hypothesis'], height=150, key=f"hypothesis_full_{selected_row}", disabled=True)
+                            
+                            # Download results
+                            st.markdown("---")
+                            st.subheader("📥 Download Results")
+                            
+                            # Create CSV with all original columns + metrics
+                            download_data = []
+                            for r in results_list:
+                                row_data = df_eval.iloc[r['index']].to_dict()
+                                row_data['enfs_percent'] = r['enfs_percent']
+                                row_data['total_entities_summary'] = r['total_entities']
+                                row_data['total_entities_premise'] = len(r['premise_entities'])
+                                row_data['hallucinated_count'] = r['hallucinated_entities']
+                                row_data['hallucinated_entities'] = ', '.join([e['text'] for e in r['hallucinated_list']])
+                                row_data['premise_entities'] = ', '.join([f"{e['text']}({e['label']})" for e in r['premise_entities']])
+                                row_data['hypothesis_entities'] = ', '.join([f"{e['text']}({e['label']})" for e in r['hypothesis_entities']])
+                                download_data.append(row_data)
+                            
+                            download_df = pd.DataFrame(download_data)
+                            csv_output = download_df.to_csv(index=False).encode('utf-8')
+                            
+                            st.download_button(
+                                "📥 Download ENFS% Results (CSV)",
+                                csv_output,
+                                "enfs_results.csv",
+                                "text/csv",
+                                help="Download complete results with all original columns plus ENFS% metrics"
+                            )
+                        else:
+                            st.warning("⚠️ No valid ENFS% scores calculated (all summaries have 0 entities)")
+            
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+        
+        else:
+            st.info("📁 Upload a CSV file to calculate ENFS%")
+            st.markdown("""
+            **Expected CSV Format:**
+            ```
+            premise,hypothesis,label
+            "Source article text...","Generated summary...","entailment"
+            ```
+            
+            **What is ENFS%?**
+            - **Entity Non-Factual Source %** measures entity-level hallucinations
+            - Identifies entities in the summary that don't appear in the source
+            - Formula: `ENFS% = (Hallucinated Entities / Total Entities) × 100`
+            
+            **Example:**
+            ```
+            Source: "דני הלך למכולת ביום שלישי"
+            Summary: "דני קנה לחם בסופרמרקט שפע"
+            
+            Entities in summary: דני, שפע
+            Entities not in source: שפע
+            ENFS% = 1/2 = 50%
+            ```
+            
+            **Features:**
+            - ✅ **Chunking with overlap**: Long texts split into 512-token chunks with 100-token overlap
+            - ✅ **Duplicate removal**: Entities found in overlapping sections counted once
+            - ✅ **Filter by label**: Optional filtering if 'label' column exists
+            - ✅ **Full text display**: View complete source and summary (not truncated)
+            - ✅ **Detailed results**: All original CSV columns + ENFS% metrics
+            
+            **Supported NER Models:**
+            - **dicta-il/dictabert-ner**: PER, LOC, GPE, ORG, TTL, EVE
+            - **avichr/heBERT_NER**: PERS, LOC, ORG, TIME, DATE, MONEY, PERCENT
+            
+            **Note:** This implementation differs from the paper (Cao et al. 2022):
+            - No human annotation validation (fully automatic)
+            - Entity types depend on chosen NER model
+            - Match is case-insensitive exact match
+            - Long texts processed in chunks to handle 512 token limit
+            """)
 
 # Help section
 with st.expander("ℹ️ Metric Explanations"):

@@ -13,8 +13,11 @@ print("v17 - Added binary v2 and multilabel setup2 v2 model support")
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
+
+print("v1")
 # Binary Classifier v1 (using ORIGINAL working variable names)
-BINARY_V1_MODEL_PATH = "/home/avramit/classifier/01122025/classifier/binary/neodictabert-finetuned-binary-011225/"
+#BINARY_V1_MODEL_PATH = "/home/avramit/classifier/01122025/classifier/binary/neodictabert-finetuned-binary-011225/"
+BINARY_V1_MODEL_PATH = "/home/avramit/classifier/17122025/classifier/binary/neodictabert-finetuned-binary-171225/"
 BINARY_V1_MAX_SEQ_LENGTH = 3072
 BINARY_V1_ENABLE_ATTENTION = True  # Set to False for faster inference
 BINARY_V1_TOP_K_TOKENS = 15

@@ -822,134 +822,7 @@ def correctness_errors_transformation_workflow(summary: str, source_article: str
     else:
         logger.info(f"Total final augmented corrupted summaries {len(final_summaries)}")
         return final_summaries
-    # return candidate_corrupted_augmented_summaries
-    # sum = verify_transformed_summary_grammar(summary_after_augmentation['corrupted_summary'])
 
-    # claims_after_transformation_hallu=apply_hallucinations_transformation_on_claims(claim_decomposition,suitable_transformation_claims)
-    # logger.info(f"Performed transformation on suitable: {claims_after_transformation}")
-
-    # number_swap = number_swap_transformation(summary_decomposition_claims=claim_decomposition,number_swap_transformation_amount=1)
-    # claim_decomposition = summary_claim_decomposition(text=summary)
-    # logger.info(f"Perform claim decomposition: {claim_decomposition}")
-
-
-# def main():
-#     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-#     input_csv_path = r"C:\Users\amita\Downloads\mafat_800_article_150_summary.csv"
-#     output_json = rf"C:\Users\amita\Downloads\augmented_dataset_{timestamp}.json"
-#     output_csv = rf"C:\Users\amita\Downloads\augmented_dataset_{timestamp}.csv"
-#     num_rows = 13
-#     transform_types = [
-#         CorrectnessErrorTypes.ENTITY_PERSON_SWAP,
-#         CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP,
-#         CorrectnessErrorTypes.ENTITY_LOCATION_SWAP,
-#         CorrectnessErrorTypes.ENTITY_DATE_SWAP,
-#         CorrectnessErrorTypes.ENTITY_EVENT_SWAP,
-#         CorrectnessErrorTypes.ENTITY_TITLE_SWAP
-#     ]
-#
-#     df = pd.read_csv(input_csv_path)
-#     sample = df.sample(n=min(num_rows, len(df)))
-#
-#     # Prepare thread-safe storage
-#     all_records = []
-#     lock = threading.Lock()
-#
-#     # JSON file (we'll write a JSON array manually)
-#     json_file = open(output_json, 'w', encoding='utf-8')
-#     json_file.write('[\n')
-#
-#     def worker(idx, row):
-#         source = row['hypothesis']
-#         gold = row['premise']
-#         corrupted_list = correctness_errors_transformation_workflow(
-#             summary=gold,
-#             source_article=source,
-#             transformation_types=transform_types
-#         )
-#         logger.info(f"After full correctness_errors_transformation_workflow returned {len(corrupted_list)} summaries")
-#         record = {
-#             'source_article': source,
-#             'gold_summary': gold,
-#             'correctness_corrupted_summaries': corrupted_list
-#         }
-#
-#         text = json.dumps(record, ensure_ascii=False)
-#         with lock:
-#             # Add to our record list for CSV processing later
-#             all_records.append(record)
-#
-#             # JSON: comma-prefix after the first item
-#             if idx > 0:
-#                 json_file.write(',\n')
-#             json_file.write(text)
-#
-#     # Launch one thread per row
-#     with ThreadPoolExecutor() as exec:
-#         futures = []
-#         for idx, (_, row) in enumerate(sample.iterrows()):
-#             futures.append(exec.submit(worker, idx, row))
-#
-#         # Wait for all threads to complete
-#         for future in futures:
-#             future.result()
-#
-#     # Finish JSON array and close file
-#     json_file.write('\n]\n')
-#     json_file.close()
-#
-#     # Now process the CSV with our specialized function after all threads are done
-#     save_dataset_csv(all_records, output_csv)
-#
-#     print(f"Written {len(sample)} examples to:\n  JSON: {output_json}\n  CSV:  {output_csv}")
-
-#### good main !!
-# def main():
-#     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-#     input_csv_path  = r"C:\Users\amita\Downloads\mafat_800_article_150_summary.csv"
-#     output_json = rf"C:\Users\amita\Downloads\augmented_dataset_{timestamp}.json"
-#     output_csv = rf"C:\Users\amita\Downloads\augmented_dataset_{timestamp}.csv"
-#     num_rows = 13
-#     transform_types = [
-#         CorrectnessErrorTypes.ENTITY_PERSON_SWAP,
-#         CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP,
-#         CorrectnessErrorTypes.ENTITY_LOCATION_SWAP,
-#         CorrectnessErrorTypes.ENTITY_DATE_SWAP,
-#         CorrectnessErrorTypes.ENTITY_EVENT_SWAP,
-#         CorrectnessErrorTypes.ENTITY_TITLE_SWAP
-#     ]
-#
-#     df = pd.read_csv(input_csv_path)
-#     sample = df.sample(n=min(num_rows, len(df)))
-#
-#     all_records = []
-#     for _, row in sample.iterrows():
-#         # note: you had premise/hypothesis reversed
-#         source = row['hypothesis']
-#         gold   = row['premise']
-#
-#         corrupted_list = correctness_errors_transformation_workflow(
-#             summary=gold,
-#             source_article=source,
-#             transformation_types=transform_types
-#         )
-#
-#         logger.info(f"After full correctness_errors_transformation_workflow returned {len(corrupted_list)} summaries")
-#         all_records.append({
-#             'source_article': source,
-#             'gold_summary': gold,
-#             'correctness_corrupted_summaries': corrupted_list
-#         })
-#
-#     # save both files
-#     save_dataset_json(all_records, output_json)
-#     save_dataset_csv(all_records,  output_csv)
-#
-#     print(f"Written {len(all_records)} examples to:\n  JSON: {output_json}\n  CSV:  {output_csv}")
-#### good main !!
-#
-# if __name__ == "__main__":
-#     main()
 
 def process_row(row, transform_types):
     """Worker function to process a single row."""
@@ -988,28 +861,22 @@ def main():
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = f"augmentation_log_{timestamp}.log"
 
-    # Reconfigure logger with file output
     global logger
     logger = setup_logger(__name__, log_level="INFO", log_file=log_file)
-    # Hardcoded configuration
     max_workers = 3
-    start_row = 481
-    end_row = 510
-    
-    # Filter configuration (optional)
-    filter_by_label = None  # Options: None (no filter), "entailment", "contradiction"
-
+    start_row = 161
+    end_row = 180
+    filter_by_label = None
     logger.info(f"Starting processing with {max_workers} worker threads")
     logger.info(f"Processing rows {start_row} to {end_row - 1}")
     if filter_by_label:
         logger.info(f"Filtering samples by label: {filter_by_label}")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    dataset_type = "train"
+    dataset_type = "validation"
     input_csv_path = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\{dataset_type}.csv"
     output_json = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\mafat_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.json"
     output_csv = rf"C:\Users\amita\Downloads\correctness metric data\All dataset split\mafat\{dataset_type}\mafat_{dataset_type}_{timestamp}_start_row_{start_row}_end_row_{end_row}.csv"
 
-    # Get enabled error types from configuration
     hebrew_llm_transformations, general_llm_transformations, ner_based_transformation = get_enabled_transformations_as_lists()
     transform_types = hebrew_llm_transformations + general_llm_transformations + ner_based_transformation
 
@@ -1020,8 +887,6 @@ def main():
     )
 
     logger.info(f"Starting processing with {max_workers} worker threads")
-
-    # Track start time for summary
     import time
     start_time = time.time()
     
@@ -1070,12 +935,9 @@ def main():
         
         slice_df = df.iloc[start_row:end_row]
         total_rows = len(slice_df)
-
-        # Thread-safe file writing locks
         json_lock = threading.Lock()
         csv_lock = threading.Lock()
 
-        # Progress tracking
         completed = 0
         failed = 0
         progress_lock = threading.Lock()
@@ -1091,15 +953,9 @@ def main():
                 sys.stdout.flush()
 
         print(f"Processing rows {start_row} to {end_row - 1} ({total_rows} total) with {max_workers} worker threads")
-
-        # Initialize JSON file with opening bracket
         with open(output_json, 'w', encoding='utf-8') as json_file:
             json_file.write('[\n')
-
-        # Initialize CSV file with headers
         csv_initialized = False
-
-        # Use ThreadPoolExecutor to manage threads
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(process_row, row, transform_types)
@@ -1212,46 +1068,3 @@ if __name__ == "__main__":
         print("\nProcessing interrupted by user")
     except Exception as e:
         print(f"Unhandled exception: {str(e)}")
-# def main():
-#     # input_csv_path = r"/sise/home/avramit/dataset_augmentation/output_mafat_less_500_test_new.csv"
-#     #input_csv_path = r"/sise/home/avramit/mfact-summ/mfact/datasets/heb/mafat_800_article_150_summary.csv"
-#     input_csv_path = r"C:\Users\amita\Downloads\mafat_800_article_150_summary.csv"
-#     output_csv_path = r"/sise/home/avramit/dataset_augmentation/output_mafat_less_500_test_negative.csv"
-#     num_rows_to_transform = 20
-#     transformation_types_1 = [CorrectnessErrorTypes.ENTITY_PERSON_SWAP, CorrectnessErrorTypes.ENTITY_ORGANIZATION_SWAP,
-#                               CorrectnessErrorTypes.ENTITY_LOCATION_SWAP,CorrectnessErrorTypes.ENTITY_DATE_SWAP, CorrectnessErrorTypes.ENTITY_EVENT_SWAP,
-#                               CorrectnessErrorTypes.ENTITY_TITLE_SWAP]
-#
-#     # Load the CSV data
-#     df = pd.read_csv(input_csv_path)
-#     # Take the first n rows to transform
-#     if num_rows_to_transform < len(df):
-#         rows_to_transform = df.sample(n=num_rows_to_transform)
-#     else:
-#         rows_to_transform = df  # Use all rows if requested more than available
-#     # Create a list to store new rows
-#     new_rows = []
-#
-#     # Process each selected row
-#     for _, row in rows_to_transform.iterrows():
-#         # summary = row['hypothesis']
-#         # premise = row['premise']
-#         premise = row['hypothesis']
-#         summary = row['premise']
-#         new_sum=correctness_errors_transformation_workflow(summary=summary, source_article=premise, transformation_types=transformation_types_1)
-#
-#     # Create DataFrame with new rows
-#     new_df = pd.DataFrame(new_rows)
-#
-#     # Append new rows to original DataFrame and save
-#     result_df = pd.concat([df, new_df], ignore_index=True)
-#     result_df.to_csv(output_csv_path, index=False)
-#
-#     print(f"Successfully processed {len(new_rows)} rows and saved to {output_csv_path}")
-#     return result_df
-
-
-# Example of how to call the main function:
-# if __name__ == "__main__":
-#     print("hello")
-#     main()
