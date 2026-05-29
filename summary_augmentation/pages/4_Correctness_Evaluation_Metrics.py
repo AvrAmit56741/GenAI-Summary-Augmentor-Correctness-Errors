@@ -1,7 +1,11 @@
 import sys
 import os
 import json
+import math
+from datetime import datetime
 import streamlit as st
+import pandas as pd
+import numpy as np
 from typing import Dict, List, Any, Optional
 from collections import Counter
 import re
@@ -33,9 +37,154 @@ Evaluate summary quality using standard text-overlap metrics. Compare a generate
 """)
 
 # Create tabs for single vs batch evaluation
-tab_single, tab_batch, tab_classifier, tab_hallucination, tab_compare, tab_qafacteval = st.tabs(["Single Evaluation", "Batch Evaluation", "Classifier Predictions", "Hallucination Metrics", "Compare Metrics", "QAFactEval"])
+tab_single, tab_ngram, tab_semantic, tab_classifier, tab_hallucination, tab_compare, tab_qafacteval, tab_summac, tab_geval, tab_vanilla = st.tabs(["Single Evaluation", "N-gram", "Semantic", "Classifier Predictions", "Hallucination Metrics", "Compare Metrics", "QAFactEval", "SummaC", "G-EVAL", "LLM-as-Judge"])
 
 
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+def label_to_binary(label_series) -> list:
+    """Convert entailment/contradiction labels to 1/0. Returns None for unknown values."""
+    result = []
+    for label_value in label_series:
+        if isinstance(label_value, str):
+            if label_value.lower() in ['entailment', '1', 'true', 'correct']:
+                result.append(1)
+            elif label_value.lower() in ['contradiction', '0', 'false', 'incorrect']:
+                result.append(0)
+            else:
+                result.append(None)
+        elif isinstance(label_value, float) and math.isnan(label_value):
+            result.append(None)
+        else:
+            result.append(int(label_value))
+    return result
+
+
+def download_csv_json(
+    csv_bytes: bytes,
+    json_bytes: bytes,
+    base_filename: str,
+    csv_key: str = None,
+    json_key: str = None,
+):
+    """Render side-by-side CSV and JSON download buttons."""
+    col_csv, col_json = st.columns(2)
+    with col_csv:
+        st.download_button("📥 Download CSV", csv_bytes, f"{base_filename}.csv", "text/csv", key=csv_key)
+    with col_json:
+        st.download_button("📥 Download JSON", json_bytes, f"{base_filename}.json", "application/json", key=json_key)
+
+
+def _build_run_config_md(metric_name: str, dataset_info: dict, config_rows: list) -> str:
+    """Build a markdown run-configuration summary for download."""
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        f"# {metric_name} — Run Configuration",
+        "",
+        f"**Timestamp:** {ts}  ",
+        f"**Dataset:** {dataset_info.get('name', 'unknown')}  ",
+        f"**Dataset size:** {dataset_info.get('total_size', '?')} rows  ",
+        f"**Samples evaluated:** {dataset_info.get('evaluated', '?')}  ",
+        "",
+        "---",
+        "",
+        "## Configuration",
+        "",
+    ]
+    for label, value in config_rows:
+        lines.append(f"- **{label}:** {value}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _batch_upload_and_range(key_prefix: str):
+    """Shared: file upload + validation + row-range widgets. Returns (df, start, end) or (None, 0, 0)."""
+    f = st.file_uploader("Upload CSV (premise, hypothesis, label columns required)", type=["csv"], key=f"{key_prefix}_csv")
+    if f is None:
+        st.info("📁 Upload a CSV file to start evaluation")
+        return None, 0, 0
+    try:
+        df = pd.read_csv(f)
+    except Exception as e:
+        st.error(f"❌ Error loading file: {e}")
+        return None, 0, 0
+    missing = [c for c in ['premise', 'hypothesis', 'label'] if c not in df.columns]
+    if missing:
+        st.error(f"❌ Missing required columns: {missing}")
+        return None, 0, 0
+    st.success(f"✅ Loaded {len(df)} records")
+    with st.expander("🔍 Dataset Preview (first 5 rows)"):
+        st.dataframe(df.head(), use_container_width=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        start = int(st.number_input("Start index:", 0, len(df) - 1, 0, 1, key=f"{key_prefix}_start"))
+    with col2:
+        end = int(st.number_input("End index:", start + 1, len(df), min(start + 100, len(df)), 1, key=f"{key_prefix}_end"))
+    st.info(f"📊 Will evaluate rows {start}–{end - 1} ({end - start} samples)")
+    return df, start, end
+
+
+def _render_batch_results(results_df: pd.DataFrame, df_eval: pd.DataFrame, base_filename: str):
+    """Shared: averages, Kendall Tau, detailed table, downloads."""
+    metric_cols = [c for c in results_df.columns if c != 'index']
+    avg_scores = {c: results_df[c].mean() for c in metric_cols}
+
+    st.success(f"✅ Evaluation complete! Processed {len(df_eval)} samples.")
+    st.markdown("---")
+    st.subheader("📈 Results Summary")
+    st.markdown("**Average Scores Across All Samples:**")
+    cols = st.columns(min(4, len(avg_scores)))
+    for idx, (name, val) in enumerate(avg_scores.items()):
+        with cols[idx % 4]:
+            st.metric(name.upper(), f"{val:.4f}")
+
+    st.markdown("---")
+    st.subheader("📊 Kendall Tau Correlation (Metric vs Label)")
+    label_binary = label_to_binary(df_eval['label'].values)
+    valid_indices = [i for i, lbl in enumerate(label_binary) if lbl is not None]
+    if len(valid_indices) > 1:
+        clean_labels = [label_binary[i] for i in valid_indices]
+        candidate_cols = {
+            'BLEU': 'bleu', 'ROUGE-1 F1': 'rouge1_f1', 'ROUGE-2 F1': 'rouge2_f1',
+            'ROUGE-L F1': 'rougel_f1', 'ChrF': 'chrf', 'BERTScore F1': 'bertscore_f1',
+        }
+        kendall_results = [
+            KendallTauCalculator([results_df.iloc[i][col] for i in valid_indices], clean_labels, name).compute()
+            for name, col in candidate_cols.items() if col in results_df.columns
+        ]
+        if kendall_results:
+            cols = st.columns(min(3, len(kendall_results)))
+            for idx, r in enumerate(kendall_results):
+                dc = "normal" if r.statistic > 0.3 else ("inverse" if r.statistic < -0.1 else "off")
+                with cols[idx % 3]:
+                    st.metric(r.metric_name, f"τ = {r.statistic:.4f}", f"p = {r.p_value:.4f}", delta_color=dc, help=r.interpretation)
+            with st.expander("📖 Understanding Kendall Tau Results"):
+                st.markdown(KENDALL_TAU_EXPLANATION)
+    else:
+        st.warning("⚠️ Need at least 2 valid samples with binary labels for correlation analysis")
+
+    df_out = df_eval.copy()
+    for col in metric_cols:
+        df_out[col] = results_df[col].values
+    st.markdown("---")
+    st.subheader("📋 Detailed Results")
+    display_cols = [c for c in ['premise', 'hypothesis', 'label'] + metric_cols if c in df_out.columns]
+    with st.expander("🔍 View All Results", expanded=True):
+        st.dataframe(df_out[display_cols], use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("📥 Download Results")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button("📥 Download Full Results (CSV)", df_out.to_csv(index=False).encode(), f"{base_filename}.csv", "text/csv")
+    with col2:
+        summary_df = pd.DataFrame({
+            'metric': list(avg_scores), 'average': list(avg_scores.values()),
+            'min': [results_df[c].min() for c in avg_scores],
+            'max': [results_df[c].max() for c in avg_scores],
+            'std': [results_df[c].std() for c in avg_scores],
+        })
+        st.download_button("📊 Download Summary Statistics (CSV)", summary_df.to_csv(index=False).encode(), f"{base_filename}_summary.csv", "text/csv")
 
 
 # ==================== UI LAYOUT ====================
@@ -398,351 +547,82 @@ with tab_single:
                     help="Download simple text report"
                 )
 
-# ===== BATCH EVALUATION TAB =====
-with tab_batch:
+# ===== N-GRAM TAB =====
+with tab_ngram:
     st.markdown("---")
-    st.subheader("📊 Batch Evaluation from CSV")
-    st.markdown("Upload a CSV file with multiple samples to evaluate metrics in batch.")
-    
-    # File upload
-    batch_file = st.file_uploader(
-        "Upload CSV file with premise, hypothesis, and label columns",
-        type=["csv"],
-        key="batch_csv",
-        help="CSV should contain: premise, hypothesis, label (and optionally other columns)"
-    )
-    
-    if batch_file is not None:
-        import pandas as pd
-        
-        try:
-            df_batch = pd.read_csv(batch_file)
-            st.success(f"✅ Loaded {len(df_batch)} records")
-            
-            # Validate required columns
-            required_cols = ['premise', 'hypothesis', 'label']
-            missing_cols = [col for col in required_cols if col not in df_batch.columns]
-            
-            if missing_cols:
-                st.error(f"❌ Missing required columns: {missing_cols}")
-            else:
-                # Show preview
-                with st.expander("🔍 Dataset Preview (first 5 rows)"):
-                    st.dataframe(df_batch.head(), use_container_width=True)
-                
-                # Configuration
-                st.markdown("---")
-                st.subheader("⚙️ Evaluation Configuration")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    max_samples = len(df_batch)
-                    start_index = int(st.number_input(
-                        "Start index:",
-                        min_value=0,
-                        max_value=max_samples - 1,
-                        value=0,
-                        step=1,
-                        key="batch_start_index",
-                        help="First row to evaluate (0-based)"
-                    ))
-                    end_index = int(st.number_input(
-                        "End index:",
-                        min_value=start_index + 1,
-                        max_value=max_samples,
-                        value=min(start_index + 100, max_samples),
-                        step=1,
-                        key="batch_end_index",
-                        help="Last row (exclusive) — like Python slicing"
-                    ))
-                    sample_size = end_index - start_index
-                    st.info(f"📊 Will evaluate rows {start_index}–{end_index - 1} ({sample_size} samples)")
-                
-                with col2:
-                    # Metric selection
-                    st.markdown("**Select Metrics:**")
-                    
-                    batch_rouge = st.checkbox("ROUGE-1", value=True, key="batch_rouge1")
-                    batch_rouge2 = st.checkbox("ROUGE-2", value=True, key="batch_rouge2")
-                    batch_rougel = st.checkbox("ROUGE-L", value=True, key="batch_rougel")
-                    batch_bleu = st.checkbox("BLEU", value=True, key="batch_bleu")
-                    batch_chrf = st.checkbox("ChrF", value=True, key="batch_chrf")
-                    
-                    # BERTScore option (expensive)
-                    if BERTSCORE_AVAILABLE:
-                        batch_bertscore = st.checkbox(
-                            "BERTScore (⚠️ slow for large batches)", 
-                            value=False, 
-                            key="batch_bertscore",
-                            help="BERTScore requires loading BERT model and is computationally expensive"
-                        )
-                        
-                        if batch_bertscore:
-                            batch_bert_model = st.selectbox(
-                                "Hebrew BERT Model:",
-                                ["avichr/heBERT", "onlplab/alephbert-base", "dicta-il/neodictabert"],
-                                index=0,
-                                key="batch_bert_model"
-                            )
-                    else:
-                        batch_bertscore = False
-                
-                # Compute button
-                if st.button("🚀 Evaluate Batch", type="primary", use_container_width=True):
-                    df_eval = df_batch.iloc[start_index:end_index].copy()
+    st.subheader("📊 N-gram Evaluation")
+    df_ng, ng_start, ng_end = _batch_upload_and_range("ngram")
+    if df_ng is not None:
+        st.markdown("---")
+        st.subheader("⚙️ Select Metrics")
+        col1, col2 = st.columns(2)
+        with col1:
+            b_r1  = st.checkbox("ROUGE-1", True, key="ng_r1")
+            b_r2  = st.checkbox("ROUGE-2", True, key="ng_r2")
+            b_rl  = st.checkbox("ROUGE-L", True, key="ng_rl")
+        with col2:
+            b_bleu = st.checkbox("BLEU",  True, key="ng_bleu")
+            b_chrf = st.checkbox("ChrF",  True, key="ng_chrf")
 
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
+        if st.button("🚀 Evaluate", type="primary", use_container_width=True, key="run_ngram"):
+            df_eval = df_ng.iloc[ng_start:ng_end].copy()
+            results_list = []
+            progress = st.progress(0)
+            for n, (idx, row) in enumerate(df_eval.iterrows()):
+                progress.progress((n + 1) / len(df_eval))
+                p, h = str(row['premise']), str(row['hypothesis'])
+                res = {'index': idx,
+                       'source_length': len(p.split()),
+                       'summary_length': len(h.split()),
+                       'compression_ratio': round(len(h.split()) / max(len(p.split()), 1), 4)}
+                rc = RougeCalculator(p, h)
+                if b_r1:
+                    r = rc.compute_rouge_n(1); res.update({'rouge1_precision': r['precision'], 'rouge1_recall': r['recall'], 'rouge1_f1': r['f1']})
+                if b_r2:
+                    r = rc.compute_rouge_n(2); res.update({'rouge2_precision': r['precision'], 'rouge2_recall': r['recall'], 'rouge2_f1': r['f1']})
+                if b_rl:
+                    r = rc.compute_rouge_l(); res.update({'rougel_precision': r['precision'], 'rougel_recall': r['recall'], 'rougel_f1': r['f1']})
+                if b_bleu:
+                    r = BleuCalculator(p, h).compute_bleu(4)
+                    res['bleu'] = r['bleu']; res['bleu_bp'] = r['brevity_penalty']
+                    for k, v in r['scores'].items(): res[k] = v
+                if b_chrf:
+                    res['chrf'] = ChrfCalculator(p, h).compute_chrf(6)['chrf']
+                results_list.append(res)
+            progress.empty()
+            _render_batch_results(pd.DataFrame(results_list), df_eval, "ngram_results")
 
-                    results_list = []
-
-                    for row_number, (idx, row) in enumerate(df_eval.iterrows()):
-                        status_text.text(f"Evaluating sample {row_number + 1}/{sample_size}...")
-                        progress_bar.progress((row_number + 1) / sample_size)
-                        
-                        premise = str(row['premise'])
-                        hypothesis = str(row['hypothesis'])
-
-                        premise_words = set(premise.strip().split())
-                        hypothesis_words = hypothesis.strip().split()
-                        source_length = len(premise.strip().split())
-                        summary_length = len(hypothesis_words)
-                        overlap_count = sum(1 for word in hypothesis_words if word in premise_words)
-                        compression_ratio = round(summary_length / source_length, 4) if source_length > 0 else 0.0
-
-                        result = {
-                            'index': idx,
-                            'source_length': source_length,
-                            'summary_length': summary_length,
-                            'overlap': overlap_count,
-                            'compression_ratio': compression_ratio,
-                        }
-
-                        rougeCalculator = RougeCalculator(premise, hypothesis)
-
-                        # Compute ROUGE-1
-                        if batch_rouge:
-                            rouge1 = rougeCalculator.compute_rouge_n(1)
-                            result['rouge1_precision'] = rouge1['precision']
-                            result['rouge1_recall'] = rouge1['recall']
-                            result['rouge1_f1'] = rouge1['f1']
-
-                        # Compute ROUGE-2
-                        if batch_rouge2:
-                            rouge2 = rougeCalculator.compute_rouge_n(2)
-                            result['rouge2_precision'] = rouge2['precision']
-                            result['rouge2_recall'] = rouge2['recall']
-                            result['rouge2_f1'] = rouge2['f1']
-
-                        # Compute ROUGE-L
-                        if batch_rougel:
-                            rougel = rougeCalculator.compute_rouge_l()
-                            result['rougel_precision'] = rougel['precision']
-                            result['rougel_recall'] = rougel['recall']
-                            result['rougel_f1'] = rougel['f1']
-
-                        # Compute BLEU
-                        if batch_bleu:
-                            bleuResult = BleuCalculator(premise, hypothesis).compute_bleu(4)
-                            result['bleu'] = bleuResult['bleu']
-                            result['bleu_bp'] = bleuResult['brevity_penalty']
-                            for ngram_name, ngram_score in bleuResult['scores'].items():
-                                result[ngram_name] = ngram_score
-
-                        # Compute ChrF
-                        if batch_chrf:
-                            chrfResult = ChrfCalculator(premise, hypothesis).compute_chrf(6)
-                            result['chrf'] = chrfResult['chrf']
-
-                        # Compute BERTScore (expensive)
-                        if batch_bertscore:
-                            bert_result = BertScoreCalculator(premise, hypothesis, batch_bert_model).compute_bert_score()
-                            if 'error' not in bert_result:
-                                result['bertscore_precision'] = bert_result['precision']
-                                result['bertscore_recall'] = bert_result['recall']
-                                result['bertscore_f1'] = bert_result['f1']
-                        
-                        results_list.append(result)
-                    
-                    progress_bar.empty()
-                    status_text.empty()
-                    
-                    # Convert results to DataFrame
-                    results_df = pd.DataFrame(results_list)
-                    
-                    # Merge with original data
-                    df_with_metrics = df_eval.copy()
-                    
-                    # Add metric columns
-                    for col in results_df.columns:
-                        if col != 'index':
-                            df_with_metrics[col] = results_df[col].values
-                    
-                    st.success(f"✅ Evaluation complete! Processed {sample_size} samples.")
-                    
-                    # Display results
-                    st.markdown("---")
-                    st.subheader("📈 Results Summary")
-                    
-                    # Calculate average scores
-                    metric_cols = [col for col in results_df.columns if col != 'index']
-                    
-                    if metric_cols:
-                        avg_scores = {}
-                        for col in metric_cols:
-                            avg_scores[col] = results_df[col].mean()
-                        
-                        # Display averages
-                        st.markdown("**Average Scores Across All Samples:**")
-                        
-                        cols = st.columns(min(4, len(avg_scores)))
-                        for idx, (metric_name, avg_value) in enumerate(avg_scores.items()):
-                            with cols[idx % 4]:
-                                st.metric(metric_name.upper(), f"{avg_value:.4f}")
-                        
-                        # Kendall Tau Correlation Analysis
-                        st.markdown("---")
-                        st.subheader("📊 Kendall Tau Correlation (Metric vs Label)")
-                        st.markdown("""
-                        **Kendall τ measures correlation between metric scores and correctness labels:**
-                        - **τ ≈ 1.0**: Metric strongly predicts correctness (higher score → label=1)
-                        - **τ ≈ 0.0**: No correlation (metric doesn't reflect correctness)
-                        - **τ < 0.0**: Negative correlation (metric misleading)
-                        """)
-                        
-                        # Convert labels to binary (0/1) if they are strings
-                        labels = df_eval['label'].values
-                        label_binary = []
-                        
-                        for label in labels:
-                            if isinstance(label, str):
-                                # Convert string labels to binary
-                                if label.lower() in ['entailment', '1', 'true', 'correct']:
-                                    label_binary.append(1)
-                                elif label.lower() in ['contradiction', '0', 'false', 'incorrect']:
-                                    label_binary.append(0)
-                                else:
-                                    label_binary.append(None)  # Unknown label
-                            else:
-                                label_binary.append(int(label))
-                        
-                        # Filter out None values
-                        valid_indices = [i for i, lbl in enumerate(label_binary) if lbl is not None]
-                        
-                        if len(valid_indices) > 1:
-                            label_binary_clean = [label_binary[i] for i in valid_indices]
-
-                            candidate_metrics = {
-                                'BLEU':          'bleu',
-                                'ROUGE-1 F1':    'rouge1_f1',
-                                'ROUGE-2 F1':    'rouge2_f1',
-                                'ROUGE-L F1':    'rougel_f1',
-                                'ChrF':          'chrf',
-                                'BERTScore F1':  'bertscore_f1',
-                            }
-
-                            kendall_results = []
-                            for display_name, column_name in candidate_metrics.items():
-                                if column_name not in results_df.columns:
-                                    continue
-                                scores = [results_df.iloc[i][column_name] for i in valid_indices]
-                                result = KendallTauCalculator(scores, label_binary_clean, display_name).compute()
-                                kendall_results.append(result)
-
-                            if kendall_results:
-                                cols = st.columns(min(3, len(kendall_results)))
-                                for idx, result in enumerate(kendall_results):
-                                    delta_color = "normal" if result.statistic > 0.3 else ("inverse" if result.statistic < -0.1 else "off")
-                                    with cols[idx % 3]:
-                                        st.metric(
-                                            result.metric_name,
-                                            f"τ = {result.statistic:.4f}",
-                                            f"p = {result.p_value:.4f}",
-                                            delta_color=delta_color,
-                                            help=result.interpretation
-                                        )
-
-                                with st.expander("📖 Understanding Kendall Tau Results"):
-                                    st.markdown(KENDALL_TAU_EXPLANATION)
-                            else:
-                                st.info("ℹ️ No metrics available for correlation analysis")
-                        else:
-                            st.warning("⚠️ Need at least 2 valid samples with binary labels (0/1 or entailment/contradiction) for correlation analysis")
-                        
-                        # Show detailed results
-                        st.markdown("---")
-                        st.subheader("📋 Detailed Results")
-                        
-                        # Show results table
-                        display_cols = ['premise', 'hypothesis', 'label'] + metric_cols
-                        available_cols = [col for col in display_cols if col in df_with_metrics.columns]
-                        
-                        with st.expander("🔍 View All Results", expanded=True):
-                            st.dataframe(df_with_metrics[available_cols], use_container_width=True)
-                        
-                        # Download options
-                        st.markdown("---")
-                        st.subheader("📥 Download Results")
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            # Download full CSV with metrics
-                            csv_output = df_with_metrics.to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                "📥 Download Full Results (CSV)",
-                                csv_output,
-                                "batch_evaluation_results.csv",
-                                "text/csv",
-                                help="Download CSV with all original columns plus computed metrics"
-                            )
-                        
-                        with col2:
-                            # Download summary statistics
-                            summary_data = {
-                                'metric': list(avg_scores.keys()),
-                                'average': list(avg_scores.values()),
-                                'min': [results_df[col].min() for col in avg_scores.keys()],
-                                'max': [results_df[col].max() for col in avg_scores.keys()],
-                                'std': [results_df[col].std() for col in avg_scores.keys()]
-                            }
-                            summary_df = pd.DataFrame(summary_data)
-                            summary_csv = summary_df.to_csv(index=False).encode('utf-8')
-                            
-                            st.download_button(
-                                "📊 Download Summary Statistics (CSV)",
-                                summary_csv,
-                                "batch_evaluation_summary.csv",
-                                "text/csv",
-                                help="Download summary statistics for each metric"
-                            )
-                
-        except Exception as e:
-            st.error(f"❌ Error processing file: {str(e)}")
-    
-    else:
-        st.info("📁 Upload a CSV file to start batch evaluation")
-        st.markdown("""
-        **Expected CSV Format:**
-        - **Required columns**: premise, hypothesis, label
-        - **Optional columns**: Any additional columns will be preserved in the output
-        
-        **Example:**
-        ```
-        premise,hypothesis,label
-        "Source text 1","Summary 1","entailment"
-        "Source text 2","Summary 2","contradiction"
-        ```
-        
-        **Features:**
-        - 📊 Select how many samples to evaluate (1 to all)
-        - ☑️ Choose which metrics to compute
-        - 📥 Download results with metrics as new columns
-        - 📈 View summary statistics (average, min, max, std)
-        - ⚡ Fast evaluation for surface-level metrics
-        - 🐌 BERTScore available (slower, optional)
-        """)
+# ===== SEMANTIC TAB =====
+with tab_semantic:
+    st.markdown("---")
+    st.subheader("📊 Semantic Evaluation")
+    df_sem, sem_start, sem_end = _batch_upload_and_range("semantic")
+    if df_sem is not None:
+        if not BERTSCORE_AVAILABLE:
+            st.error("⚠️ BERTScore not available. Install: `pip install bert-score`")
+        else:
+            st.markdown("---")
+            st.subheader("⚙️ BERTScore Configuration")
+            bert_model_batch = st.selectbox(
+                "Hebrew BERT Model:",
+                ["avichr/heBERT", "onlplab/alephbert-base", "dicta-il/neodictabert"],
+                key="sem_bert_model",
+            )
+            st.warning("⚠️ BERTScore loads a BERT model (~500MB) and is slow for large batches.")
+            if st.button("🚀 Evaluate", type="primary", use_container_width=True, key="run_semantic"):
+                df_eval = df_sem.iloc[sem_start:sem_end].copy()
+                results_list = []
+                progress = st.progress(0)
+                for n, (idx, row) in enumerate(df_eval.iterrows()):
+                    progress.progress((n + 1) / len(df_eval))
+                    p, h = str(row['premise']), str(row['hypothesis'])
+                    r = BertScoreCalculator(p, h, bert_model_batch).compute_bert_score()
+                    res = {'index': idx}
+                    if 'error' not in r:
+                        res.update({'bertscore_precision': r['precision'], 'bertscore_recall': r['recall'], 'bertscore_f1': r['f1']})
+                    results_list.append(res)
+                progress.empty()
+                _render_batch_results(pd.DataFrame(results_list), df_eval, "semantic_results")
 
 # ===== HALLUCINATION METRICS TAB =====
 with tab_hallucination:
@@ -786,9 +666,6 @@ with tab_hallucination:
             )
 
         if halluc_file is not None:
-            import pandas as pd
-            import numpy as np
-
             try:
                 df_halluc = pd.read_csv(halluc_file)
                 st.success(f"✅ Loaded {len(df_halluc)} records")
@@ -966,9 +843,6 @@ with tab_classifier:
     )
     
     if classifier_file is not None:
-        import pandas as pd
-        import numpy as np
-        
         try:
             df_classifier = pd.read_csv(classifier_file)
             st.success(f"✅ Loaded {len(df_classifier)} predictions")
@@ -1037,21 +911,7 @@ with tab_classifier:
                 # Calculate Kendall Tau: Confidence vs Correctness
                 tau_confidence, p_confidence = kendalltau(confidence_scores, is_correct)
                 
-                # Calculate Kendall Tau for each probability column vs binary labels
-                # Convert string labels to binary if needed
-                label_binary = []
-                for label in labels_true:
-                    if isinstance(label, str):
-                        if label.lower() in ['entailment', '1', 'true']:
-                            label_binary.append(1)
-                        elif label.lower() in ['contradiction', '0', 'false']:
-                            label_binary.append(0)
-                        else:
-                            label_binary.append(None)
-                    else:
-                        label_binary.append(int(label))
-                
-                # Filter valid labels
+                label_binary = label_to_binary(labels_true)
                 valid_indices = [i for i, lbl in enumerate(label_binary) if lbl is not None]
                 
                 if len(valid_indices) > 1:
@@ -1321,9 +1181,6 @@ with tab_compare:
     )
 
     if compare_file is not None:
-        import pandas as pd
-        import math as _math
-
         try:
             df_compare = pd.read_csv(compare_file)
             st.success(f"✅ Loaded {len(df_compare)} records")
@@ -1362,18 +1219,7 @@ with tab_compare:
                         )
 
                     if st.button("📐 Run Comparison", type="primary", use_container_width=True):
-                        # Convert labels to binary
-                        label_binary = []
-                        for label in df_compare['label']:
-                            if isinstance(label, str) and label.lower() in ['entailment', 'true', '1']:
-                                label_binary.append(1)
-                            elif isinstance(label, str) and label.lower() in ['contradiction', 'false', '0']:
-                                label_binary.append(0)
-                            elif isinstance(label, (int, float)) and not _math.isnan(label):
-                                label_binary.append(int(label))
-                            else:
-                                label_binary.append(None)
-
+                        label_binary = label_to_binary(df_compare['label'])
                         valid_indices = [i for i, lbl in enumerate(label_binary) if lbl is not None]
 
                         if len(valid_indices) < 2:
@@ -1391,7 +1237,7 @@ with tab_compare:
                                 comparison_results.append(result)
 
                             # Sort by absolute statistic descending
-                            comparison_results.sort(key=lambda r: abs(r.statistic) if not _math.isnan(r.statistic) else -1, reverse=True)
+                            comparison_results.sort(key=lambda r: abs(r.statistic) if not math.isnan(r.statistic) else -1, reverse=True)
 
                             st.markdown("---")
                             stat_label = "τ" if comparison_method == "Kendall τ" else "r"
@@ -1462,7 +1308,6 @@ with tab_qafacteval:
     )
 
     if qa_file is not None:
-        import pandas as pd
 
         try:
             df_qa = pd.read_csv(qa_file)
@@ -1616,6 +1461,20 @@ with tab_qafacteval:
 
                     st.success("✅ Done!")
                     st.session_state['qafacteval_log'] = all_qa_results
+                    st.session_state['qafacteval_config_md'] = _build_run_config_md(
+                        "QAFactEval",
+                        {"name": qa_file.name, "total_size": len(df_qa), "evaluated": len(pairs)},
+                        [
+                            ("Row Range", f"{qa_start}–{qa_end - 1} ({len(pairs)} samples)"),
+                            ("Step 1 — Answer Selection", answer_backend),
+                            ("Step 2 — Question Generation", f"{qg_backend}" + (f" ({qg_model})" if qg_backend == "HuggingFace" else "")),
+                            ("Step 3 — Question Answering", qa_backend),
+                            ("Step 4 — Answer Comparison", cmp_method),
+                            ("IsAnsweredSumm F1 Threshold", isanswered_threshold),
+                            ("OpenAI Model", openai_model if needs_openai else "N/A"),
+                            ("Parallel Workers", max_workers),
+                        ],
+                    )
 
                     summary_rows = [{k: v for k, v in r.items() if k not in ('qa_answers', 'hypothesis', 'premise', 'label')} for r in all_qa_results]
                     result_df = pd.DataFrame(summary_rows)
@@ -1629,21 +1488,25 @@ with tab_qafacteval:
                     st.metric(score_label, f"{mean_f1:.4f}")
                     st.dataframe(result_df, use_container_width=True)
 
-                    col_csv, col_json = st.columns(2)
-                    with col_csv:
-                        st.download_button("📥 Download Summary (CSV)", result_df.to_csv(index=False).encode('utf-8'), "qafacteval_results.csv", "text/csv")
-                    with col_json:
-                        st.download_button("📥 Download Full Log (JSON)", json.dumps(all_qa_results, ensure_ascii=False, indent=2).encode('utf-8'), "qafacteval_log.json", "application/json")
+                    download_csv_json(
+                        csv_bytes=result_df.to_csv(index=False).encode('utf-8'),
+                        json_bytes=json.dumps(all_qa_results, ensure_ascii=False, indent=2).encode('utf-8'),
+                        base_filename="qafacteval_results",
+                    )
 
                 if st.session_state.get('qafacteval_log'):
                     log = st.session_state['qafacteval_log']
                     st.markdown("---")
                     summary_rows_dl = [{k: v for k, v in r.items() if k not in ('qa_answers', 'hypothesis', 'premise', 'label')} for r in log]
-                    col_csv_dl, col_json_dl = st.columns(2)
-                    with col_csv_dl:
-                        st.download_button("📥 Download Summary (CSV)", pd.DataFrame(summary_rows_dl).to_csv(index=False).encode('utf-8'), "qafacteval_results.csv", "text/csv", key="dl_csv_persistent")
-                    with col_json_dl:
-                        st.download_button("📥 Download Full Log (JSON)", json.dumps(log, ensure_ascii=False, indent=2).encode('utf-8'), "qafacteval_log.json", "application/json", key="dl_json_persistent")
+                    download_csv_json(
+                        csv_bytes=pd.DataFrame(summary_rows_dl).to_csv(index=False).encode('utf-8'),
+                        json_bytes=json.dumps(log, ensure_ascii=False, indent=2).encode('utf-8'),
+                        base_filename="qafacteval_results",
+                        csv_key="dl_csv_persistent",
+                        json_key="dl_json_persistent",
+                    )
+                    if st.session_state.get('qafacteval_config_md'):
+                        st.download_button("📋 Download Config (MD)", st.session_state['qafacteval_config_md'].encode(), "qafacteval_config.md", "text/markdown", key="dl_md_qafacteval")
                     st.subheader("🔎 Trace Viewer")
                     selected_sample = st.selectbox(
                         "Select sample to inspect:",
@@ -1697,4 +1560,600 @@ with tab_qafacteval:
         - `premise` — the source article
         - `hypothesis` — the generated summary
         - `label` — optional, for reference only
+        """)
+
+# ===== SUMMAC TAB =====
+with tab_summac:
+    st.markdown("---")
+    st.subheader("🧠 SummaC — NLI-Based Factual Consistency")
+    st.markdown("Scores factual consistency by running an NLI model on every (doc sentence, summary sentence) pair and aggregating the entailment scores.")
+
+    summac_file = st.file_uploader(
+        "Upload CSV (premise, hypothesis columns required; label optional)",
+        type=["csv"], key="summac_csv",
+    )
+
+    if summac_file is not None:
+        try:
+            df_sc = pd.read_csv(summac_file)
+            st.success(f"✅ Loaded {len(df_sc)} records")
+
+            if not {'premise', 'hypothesis'}.issubset(df_sc.columns):
+                st.error("❌ CSV must contain 'premise' and 'hypothesis' columns")
+            else:
+                if 'label' in df_sc.columns:
+                    available_labels = df_sc['label'].dropna().unique().tolist()
+                    selected_labels = st.multiselect(
+                        "Filter by label (optional):",
+                        options=available_labels,
+                        default=[],
+                        key="sc_label_filter",
+                    )
+                    if selected_labels:
+                        df_sc = df_sc[df_sc['label'].isin(selected_labels)].reset_index(drop=True)
+                        st.info(f"📊 Filtered to {len(df_sc)} records")
+
+                col_s, col_e = st.columns(2)
+                with col_s:
+                    sc_start = int(st.number_input("Start index:", min_value=0, max_value=len(df_sc) - 1, value=0, step=1, key="sc_start"))
+                with col_e:
+                    sc_end = int(st.number_input("End index:", min_value=sc_start + 1, max_value=len(df_sc), value=min(sc_start + 5, len(df_sc)), step=1, key="sc_end"))
+
+                st.markdown("---")
+                st.subheader("⚙️ Configuration")
+
+                from metrics.summac import HfNliScorer
+                sc_model = st.selectbox("NLI Model:", HfNliScorer.SUPPORTED_MODELS, key="sc_model")
+                sc_threshold = st.slider("Decision threshold:", 0.0, 1.0, 0.5, 0.05, key="sc_threshold",
+                                         help="Score ≥ threshold → consistent. Tune on your validation set.")
+                sc_workers = int(st.number_input("Parallel workers:", 1, 4, 1, key="sc_workers"))
+
+                if st.button("▶️ Run SummaC", type="primary", use_container_width=True):
+                    from metrics.summac import SummacFactory, serialize_result
+
+                    pipeline_sc = SummacFactory.zero_shot(sc_model, sc_threshold)
+                    df_slice = df_sc.iloc[sc_start:sc_end].copy()
+                    pairs = [(str(r['hypothesis']), str(r['premise'])) for _, r in df_slice.iterrows()]
+
+                    with st.spinner(f"Running SummaC on {len(pairs)} samples..."):
+                        batch = pipeline_sc.score_batch(pairs, max_workers=sc_workers)
+
+                    log = []
+                    for i, item in enumerate(batch):
+                        row = df_slice.iloc[i]
+                        if item.get("error"):
+                            log.append({"index": sc_start + i, "error": item["error"], "summary_score": 0.0})
+                        else:
+                            log.append(serialize_result(
+                                sc_start + i, str(row['premise']), str(row['hypothesis']),
+                                str(row.get('label', '')), item["result"],
+                            ))
+
+                    st.session_state['summac_log'] = log
+                    st.session_state['summac_config_md'] = _build_run_config_md(
+                        "SummaC",
+                        {"name": summac_file.name, "total_size": len(df_sc), "evaluated": len(pairs)},
+                        [
+                            ("Variant", "Zero-Shot (col-max → mean)"),
+                            ("NLI Model", sc_model),
+                            ("Decision Threshold", sc_threshold),
+                            ("Parallel Workers", sc_workers),
+                            ("Row Range", f"{sc_start}–{sc_end - 1} ({len(pairs)} samples)"),
+                        ],
+                    )
+                    st.success("✅ Done!")
+
+                    summary_df = pd.DataFrame([
+                        {"index": r["index"], "label": r.get("label", ""), "score": r["summary_score"],
+                         "consistent": r.get("is_consistent", ""), "error": r.get("error", "")}
+                        for r in log
+                    ])
+                    mean_score = summary_df["score"].mean()
+                    st.metric("Mean SummaC Score", f"{mean_score:.4f}")
+                    st.dataframe(summary_df, use_container_width=True)
+
+                    download_csv_json(
+                        csv_bytes=summary_df.to_csv(index=False).encode(),
+                        json_bytes=json.dumps(log, ensure_ascii=False, indent=2).encode(),
+                        base_filename="summac_results",
+                    )
+
+                # ── Trace Viewer ──────────────────────────────────────────────
+                if st.session_state.get('summac_log'):
+                    log = st.session_state['summac_log']
+                    st.markdown("---")
+                    if st.session_state.get('summac_config_md'):
+                        st.download_button("📋 Download Config (MD)", st.session_state['summac_config_md'].encode(), "summac_config.md", "text/markdown", key="dl_md_summac")
+                    st.subheader("🔎 Trace Viewer")
+                    selected = st.selectbox(
+                        "Select sample:",
+                        range(len(log)),
+                        format_func=lambda x: f"Sample {log[x]['index']} — score: {log[x]['summary_score']:.4f}  {'✅' if log[x].get('is_consistent') else '❌'}",
+                        key="sc_trace_select",
+                    )
+                    entry = log[selected]
+
+                    if entry.get("error"):
+                        st.error(f"Pipeline error:\n{entry['error']}")
+                    else:
+                        with st.expander("📄 Texts", expanded=False):
+                            if entry.get("label"):
+                                st.markdown(f"**Label:** `{entry['label']}`")
+                            st.markdown("**Hypothesis (summary):**")
+                            st.write(entry["hypothesis"])
+                            st.markdown("**Premise (source):**")
+                            st.write(entry["premise"])
+
+                        st.markdown(f"**Score:** `{entry['summary_score']:.4f}` | **Consistent:** {'✅' if entry['is_consistent'] else '❌'} | **Threshold:** `{entry['threshold']}`")
+
+                        st.markdown("**NLI Pair Matrix** *(rows = doc sentences, cols = summary sentences)*")
+                        matrix_df = pd.DataFrame(
+                            entry["nli_matrix"],
+                            index=[f"D{i+1}: {s[:40]}..." for i, s in enumerate(entry["doc_sentences"])],
+                            columns=[f"S{j+1}" for j in range(len(entry["summary_sentences"]))],
+                        )
+                        st.dataframe(matrix_df.style.background_gradient(cmap="RdYlGn", vmin=0, vmax=1), use_container_width=True)
+
+                        st.markdown("**Per summary sentence scores:**")
+                        for j, sent_sc in enumerate(entry["sentence_scores"]):
+                            color = "🟢" if sent_sc["final_score"] >= 0.5 else "🔴"
+                            with st.expander(f"S{j+1}: {sent_sc['text'][:80]}  {color} score={sent_sc['final_score']:.4f}", expanded=False):
+                                st.markdown(f"**Summary sentence:** {sent_sc['text']}")
+                                st.markdown(f"**Final score (max over doc sentences):** `{sent_sc['final_score']:.4f}`")
+                                doc_scores_df = pd.DataFrame({
+                                    "Doc sentence": [f"D{i+1}: {s[:60]}..." for i, s in enumerate(entry["doc_sentences"])],
+                                    "Entailment score": sent_sc["raw_scores"],
+                                })
+                                st.dataframe(doc_scores_df.style.background_gradient(subset=["Entailment score"], cmap="RdYlGn", vmin=0, vmax=1), use_container_width=True)
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+    else:
+        st.info("📁 Upload a CSV file to start SummaC evaluation")
+
+# ===== G-EVAL TAB =====
+with tab_geval:
+    st.markdown("---")
+    st.subheader("🤖 G-EVAL — LLM-as-Judge Factual Consistency")
+    st.markdown(
+        "Scores each (source, summary) pair on a **0–1 scale** using GPT-4 "
+        "probability-weighted chain-of-thought. Works natively with Hebrew — no translation required."
+    )
+
+    with st.expander("ℹ️ How G-EVAL works", expanded=False):
+        st.markdown("""
+**Paper:** Liu et al. 2023 — *G-Eval: NLG Evaluation using GPT-4* (arXiv 2303.16634)
+
+**Implementation:** Uses [deepeval](https://docs.confident-ai.com/docs/metrics-llm-evals)'s `GEval` metric,
+which implements true probability-weighted scoring via logprobs:
+
+`score = Σ p(token_i) × i  for i ∈ {1..5}` → normalised to **0.0–1.0**
+
+This is more accurate than parsing a text integer — the score reflects the model's full probability
+distribution over all 5 score tokens, not just the argmax.
+
+**Score scale:** 0.0 (fully inconsistent) → 1.0 (fully faithful)
+- **≥ 0.7** — consistent, claims well supported
+- **0.3–0.7** — partial consistency
+- **≤ 0.3** — major hallucinations or contradictions
+        """)
+
+    geval_csv_file = st.file_uploader(
+        "Upload CSV (premise, hypothesis columns required; label optional)",
+        type=["csv"],
+        key="geval_csv",
+    )
+
+    if geval_csv_file is not None:
+        try:
+            geval_dataframe = pd.read_csv(geval_csv_file)
+            st.success(f"✅ Loaded {len(geval_dataframe)} records")
+
+            if not {'premise', 'hypothesis'}.issubset(geval_dataframe.columns):
+                st.error("❌ CSV must contain 'premise' and 'hypothesis' columns")
+            else:
+                if 'label' in geval_dataframe.columns:
+                    available_labels = geval_dataframe['label'].dropna().unique().tolist()
+                    selected_labels = st.multiselect(
+                        "Filter by label (optional):",
+                        options=available_labels,
+                        default=[],
+                        key="ge_label_filter",
+                    )
+                    if selected_labels:
+                        geval_dataframe = geval_dataframe[geval_dataframe['label'].isin(selected_labels)].reset_index(drop=True)
+                        st.info(f"📊 Filtered to {len(geval_dataframe)} records")
+
+                col_start, col_end = st.columns(2)
+                with col_start:
+                    start_index = int(st.number_input("Start index:", min_value=0, max_value=len(geval_dataframe) - 1, value=0, step=1, key="ge_start"))
+                with col_end:
+                    end_index = int(st.number_input("End index:", min_value=start_index + 1, max_value=len(geval_dataframe), value=min(start_index + 5, len(geval_dataframe)), step=1, key="ge_end"))
+
+                st.markdown("---")
+                st.subheader("⚙️ Configuration")
+
+                selected_model = st.selectbox(
+                    "OpenAI model:",
+                    ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4"],
+                    key="ge_model",
+                    help="gpt-4o-mini is fastest and cheapest; gpt-4o gives highest accuracy.",
+                )
+                num_parallel_workers = int(st.number_input("Parallel workers:", min_value=1, max_value=4, value=2, step=1, key="ge_workers"))
+
+                if st.button("▶️ Run G-EVAL", type="primary", use_container_width=True):
+                    from dataclasses import asdict as dataclass_asdict
+                    from metrics.llm_as_a_judge.g_eval import GEvalScorer, serialize_result as geval_serialize_result
+
+                    if not os.getenv("OPENAI_API_KEY", ""):
+                        st.error("❌ OPENAI_API_KEY not found in .env file.")
+                        st.stop()
+
+                    geval_scorer = GEvalScorer(model_name=selected_model)
+
+                    sliced_dataframe = geval_dataframe.iloc[start_index:end_index].copy()
+                    total_samples = len(sliced_dataframe)
+
+                    progress_bar = st.progress(0, text="Starting G-EVAL...")
+                    status_text = st.empty()
+                    result_log = [None] * total_samples
+                    completed_count = 0
+
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                    def _score_row(row_offset, csv_row):
+                        return row_offset, geval_scorer.score_one(
+                            source_document=str(csv_row['premise']),
+                            generated_summary=str(csv_row['hypothesis']),
+                        )
+
+                    with ThreadPoolExecutor(max_workers=num_parallel_workers) as pool:
+                        futures = {
+                            pool.submit(_score_row, i, row): i
+                            for i, (_, row) in enumerate(sliced_dataframe.iterrows())
+                        }
+                        for future in as_completed(futures):
+                            completed_count += 1
+                            progress_bar.progress(completed_count / total_samples, text=f"Completed {completed_count} / {total_samples}")
+                            row_offset = futures[future]
+                            csv_row = sliced_dataframe.iloc[row_offset]
+                            try:
+                                _, eval_result = future.result()
+                                result_log[row_offset] = dataclass_asdict(geval_serialize_result(
+                                    sample_index=start_index + row_offset,
+                                    source_document=str(csv_row['premise']),
+                                    generated_summary=str(csv_row['hypothesis']),
+                                    ground_truth_label=str(csv_row.get('label', '')),
+                                    eval_result=eval_result,
+                                ))
+                            except Exception as sample_error:
+                                result_log[row_offset] = {
+                                    "index": start_index + row_offset,
+                                    "premise": str(csv_row['premise']),
+                                    "hypothesis": str(csv_row['hypothesis']),
+                                    "label": str(csv_row.get('label', '')),
+                                    "score": None,
+                                    "error": str(sample_error),
+                                }
+
+                    progress_bar.empty()
+                    status_text.empty()
+
+                    st.session_state['geval_log'] = result_log
+                    st.session_state['geval_config_md'] = _build_run_config_md(
+                        "G-EVAL",
+                        {"name": geval_csv_file.name, "total_size": len(geval_dataframe), "evaluated": total_samples},
+                        [
+                            ("OpenAI Model", selected_model),
+                            ("Parallel Workers", num_parallel_workers),
+                            ("Row Range", f"{start_index}–{end_index - 1} ({total_samples} samples)"),
+                            ("Temperature", "0.0 (deterministic)"),
+                            ("Score Scale", "1–5"),
+                        ],
+                    )
+                    st.success("✅ Done!")
+
+                    summary_dataframe = pd.DataFrame([
+                        {"index": r["index"], "label": r.get("label", ""), "score": r.get("score"), "error": r.get("error", "")}
+                        for r in result_log
+                    ])
+                    valid_scores = summary_dataframe[summary_dataframe["score"].notna()]["score"]
+                    if len(valid_scores):
+                        st.metric("Mean G-EVAL Score (0–1)", f"{valid_scores.mean():.4f}")
+                    st.dataframe(summary_dataframe, use_container_width=True)
+
+                    if 'label' in sliced_dataframe.columns:
+                        labeled_rows = summary_dataframe[
+                            summary_dataframe["score"].notna() &
+                            summary_dataframe["label"].isin(["entailment", "contradiction"])
+                        ]
+                        if len(labeled_rows) >= 4:
+                            binary_labels = (labeled_rows["label"] == "entailment").astype(int)
+                            tau_score, p_value = kendalltau(labeled_rows["score"], binary_labels)
+                            st.markdown(f"**Kendall τ vs label:** `{tau_score:.4f}` (p={p_value:.4f})")
+
+                    download_csv_json(
+                        csv_bytes=summary_dataframe.to_csv(index=False).encode('utf-8'),
+                        json_bytes=json.dumps(result_log, ensure_ascii=False, indent=2).encode('utf-8'),
+                        base_filename="geval_results",
+                    )
+
+                # ── Trace Viewer ──────────────────────────────────────────────
+                if st.session_state.get('geval_log'):
+                    trace_log = st.session_state['geval_log']
+                    st.markdown("---")
+                    if st.session_state.get('geval_config_md'):
+                        st.download_button("📋 Download Config (MD)", st.session_state['geval_config_md'].encode(), "geval_config.md", "text/markdown", key="dl_md_geval")
+                    st.subheader("🔎 Trace Viewer")
+                    selected_sample = st.selectbox(
+                        "Select sample:",
+                        range(len(trace_log)),
+                        format_func=lambda x: f"Sample {trace_log[x]['index']} — score: {trace_log[x].get('score', 'ERR')}",
+                        key="ge_trace_select",
+                    )
+                    trace_entry = trace_log[selected_sample]
+
+                    if trace_entry.get("error"):
+                        st.error(f"Pipeline error: {trace_entry['error']}")
+                    else:
+                        with st.expander("📄 Texts", expanded=False):
+                            if trace_entry.get("label"):
+                                st.markdown(f"**Label:** `{trace_entry['label']}`")
+                            st.markdown("**Hypothesis (summary):**")
+                            st.write(trace_entry["hypothesis"])
+                            st.markdown("**Premise (source):**")
+                            st.write(trace_entry["premise"])
+
+                        score_value = trace_entry.get("score")
+                        score_icon = "🟢" if score_value and score_value >= 0.7 else ("🔴" if score_value is not None and score_value <= 0.3 else "🟡")
+                        st.markdown(f"**Score:** {score_icon} `{score_value:.4f} / 1.0`" if score_value is not None else "**Score:** —")
+                        st.markdown("**Chain-of-thought reasoning:**")
+                        st.info(trace_entry.get("evaluation", "—"))
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+    else:
+        st.info("📁 Upload a CSV file to start G-EVAL evaluation")
+        st.markdown("""
+        **Expected CSV format:**
+        ```
+        premise, hypothesis, label
+        source article text..., generated summary..., entailment
+        ```
+        - `premise` — source document
+        - `hypothesis` — generated summary
+        - `label` — optional; used for Kendall τ (`entailment` / `contradiction`)
+        """)
+
+with tab_vanilla:
+    st.markdown("---")
+    st.subheader("🗣️ LLM-as-Judge (Vanilla) — Zero-Shot Factual Consistency")
+    st.markdown(
+        "Scores each (source, summary) pair on a **1–5 scale** by asking GPT directly. "
+        "The model's text reply is parsed for a digit. Simpler than G-EVAL — no logprobs."
+    )
+
+    with st.expander("ℹ️ How Vanilla LLM-as-Judge works", expanded=False):
+        st.markdown("""
+**Approach:** Zero-shot prompt to GPT with a 1–5 scoring rubric.
+
+**Score scale:**
+- **1** — Major hallucinations or direct contradictions
+- **2** — Several unsupported claims; partially inconsistent
+- **3** — Mostly consistent; minor unsupported details
+- **4** — Consistent with at most one minor gap
+- **5** — Fully faithful; every claim grounded in the source
+
+**Difference vs G-EVAL:** G-EVAL reads the probability distribution over score tokens (logprobs)
+and computes a weighted average → continuous 0–1 float. This metric parses the digit the
+model wrote as text → integer 1–5. Simpler but less precise.
+        """)
+
+    vanilla_csv_file = st.file_uploader(
+        "Upload CSV (premise, hypothesis columns required; label optional)",
+        type=["csv"],
+        key="vanilla_csv",
+    )
+
+    if vanilla_csv_file is not None:
+        try:
+            vanilla_dataframe = pd.read_csv(vanilla_csv_file)
+            st.success(f"✅ Loaded {len(vanilla_dataframe)} records")
+
+            if not {'premise', 'hypothesis'}.issubset(vanilla_dataframe.columns):
+                st.error("❌ CSV must contain 'premise' and 'hypothesis' columns")
+            else:
+                if 'label' in vanilla_dataframe.columns:
+                    available_labels = vanilla_dataframe['label'].dropna().unique().tolist()
+                    selected_labels = st.multiselect(
+                        "Filter by label (optional):",
+                        options=available_labels,
+                        default=[],
+                        key="vn_label_filter",
+                    )
+                    if selected_labels:
+                        vanilla_dataframe = vanilla_dataframe[vanilla_dataframe['label'].isin(selected_labels)].reset_index(drop=True)
+                        st.info(f"📊 Filtered to {len(vanilla_dataframe)} records")
+
+                col_start, col_end = st.columns(2)
+                with col_start:
+                    start_index = int(st.number_input("Start index:", min_value=0, max_value=len(vanilla_dataframe) - 1, value=0, step=1, key="vn_start"))
+                with col_end:
+                    end_index = int(st.number_input("End index:", min_value=start_index + 1, max_value=len(vanilla_dataframe), value=min(start_index + 5, len(vanilla_dataframe)), step=1, key="vn_end"))
+
+                st.markdown("---")
+                st.subheader("⚙️ Configuration")
+
+                selected_model = st.selectbox(
+                    "OpenAI model:",
+                    ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4"],
+                    key="vn_model",
+                    help="gpt-4o-mini is fastest and cheapest; gpt-4o gives highest accuracy.",
+                )
+                num_parallel_workers = int(st.number_input("Parallel workers:", min_value=1, max_value=4, value=2, step=1, key="vn_workers"))
+
+                if st.button("▶️ Run Vanilla LLM-as-Judge", type="primary", use_container_width=True):
+                    from dataclasses import asdict as dataclass_asdict
+                    from metrics.llm_as_a_judge.vanila_zero_shot import VanillaScorer, serialize_result as vanilla_serialize_result
+                    from openai import OpenAI as _OpenAI
+
+                    openai_api_key = os.getenv("OPENAI_API_KEY", "")
+                    if not openai_api_key:
+                        st.error("❌ OPENAI_API_KEY not found in .env file.")
+                        st.stop()
+
+                    vanilla_scorer = VanillaScorer(
+                        openai_client=_OpenAI(api_key=openai_api_key),
+                        model_name=selected_model,
+                    )
+
+                    sliced_dataframe = vanilla_dataframe.iloc[start_index:end_index].copy()
+                    total_samples = len(sliced_dataframe)
+
+                    progress_bar = st.progress(0, text="Starting Vanilla LLM-as-Judge...")
+                    status_text = st.empty()
+                    result_log = [None] * total_samples
+                    completed_count = 0
+
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                    def _score_vanilla_row(row_offset, csv_row):
+                        return row_offset, vanilla_scorer.score_one(
+                            source_document=str(csv_row['premise']),
+                            generated_summary=str(csv_row['hypothesis']),
+                        )
+
+                    with ThreadPoolExecutor(max_workers=num_parallel_workers) as pool:
+                        futures = {
+                            pool.submit(_score_vanilla_row, i, row): i
+                            for i, (_, row) in enumerate(sliced_dataframe.iterrows())
+                        }
+                        for future in as_completed(futures):
+                            completed_count += 1
+                            progress_bar.progress(completed_count / total_samples, text=f"Completed {completed_count} / {total_samples}")
+                            row_offset = futures[future]
+                            csv_row = sliced_dataframe.iloc[row_offset]
+                            try:
+                                _, eval_result = future.result()
+                                result_log[row_offset] = dataclass_asdict(vanilla_serialize_result(
+                                    sample_index=start_index + row_offset,
+                                    source_document=str(csv_row['premise']),
+                                    generated_summary=str(csv_row['hypothesis']),
+                                    ground_truth_label=str(csv_row.get('label', '')),
+                                    eval_result=eval_result,
+                                ))
+                            except Exception as sample_error:
+                                result_log[row_offset] = {
+                                    "index": start_index + row_offset,
+                                    "premise": str(csv_row['premise']),
+                                    "hypothesis": str(csv_row['hypothesis']),
+                                    "label": str(csv_row.get('label', '')),
+                                    "score": None,
+                                    "score_normalized": None,
+                                    "error": str(sample_error),
+                                }
+
+                    progress_bar.empty()
+                    status_text.empty()
+
+                    st.session_state['vanilla_log'] = result_log
+                    st.session_state['vanilla_config_md'] = _build_run_config_md(
+                        "Vanilla LLM-as-Judge",
+                        {"name": vanilla_csv_file.name, "total_size": len(vanilla_dataframe), "evaluated": total_samples},
+                        [
+                            ("OpenAI Model", selected_model),
+                            ("Parallel Workers", num_parallel_workers),
+                            ("Row Range", f"{start_index}–{end_index - 1} ({total_samples} samples)"),
+                            ("Temperature", "0.0 (deterministic)"),
+                            ("Score Scale", "1–5 integer (text-parsed)"),
+                        ],
+                    )
+                    st.success("✅ Done!")
+
+                    summary_dataframe = pd.DataFrame([
+                        {
+                            "index": r["index"],
+                            "label": r.get("label", ""),
+                            "score (1–5)": r.get("score"),
+                            "score_normalized (0–1)": r.get("score_normalized"),
+                            "error": r.get("error", ""),
+                        }
+                        for r in result_log
+                    ])
+                    valid_normalized = summary_dataframe[summary_dataframe["score_normalized (0–1)"].notna()]["score_normalized (0–1)"]
+                    if len(valid_normalized):
+                        col_raw, col_norm = st.columns(2)
+                        with col_raw:
+                            raw_mean = summary_dataframe[summary_dataframe["score (1–5)"].notna()]["score (1–5)"].mean()
+                            st.metric("Mean Score (1–5)", f"{raw_mean:.3f}")
+                        with col_norm:
+                            st.metric("Mean Score (0–1)", f"{valid_normalized.mean():.4f}")
+                    st.dataframe(summary_dataframe, use_container_width=True)
+
+                    if 'label' in sliced_dataframe.columns:
+                        labeled_rows = summary_dataframe[
+                            summary_dataframe["score_normalized (0–1)"].notna() &
+                            summary_dataframe["label"].isin(["entailment", "contradiction"])
+                        ]
+                        if len(labeled_rows) >= 4:
+                            binary_labels = (labeled_rows["label"] == "entailment").astype(int)
+                            tau_score, p_value = kendalltau(labeled_rows["score_normalized (0–1)"], binary_labels)
+                            st.markdown(f"**Kendall τ vs label:** `{tau_score:.4f}` (p={p_value:.4f})")
+
+                    download_csv_json(
+                        csv_bytes=summary_dataframe.to_csv(index=False).encode('utf-8'),
+                        json_bytes=json.dumps(result_log, ensure_ascii=False, indent=2).encode('utf-8'),
+                        base_filename="vanilla_results",
+                    )
+
+                # ── Trace Viewer ──────────────────────────────────────────────
+                if st.session_state.get('vanilla_log'):
+                    trace_log = st.session_state['vanilla_log']
+                    st.markdown("---")
+                    if st.session_state.get('vanilla_config_md'):
+                        st.download_button("📋 Download Config (MD)", st.session_state['vanilla_config_md'].encode(), "vanilla_config.md", "text/markdown", key="dl_md_vanilla")
+                    st.subheader("🔎 Trace Viewer")
+                    selected_sample = st.selectbox(
+                        "Select sample:",
+                        range(len(trace_log)),
+                        format_func=lambda x: f"Sample {trace_log[x]['index']} — score: {trace_log[x].get('score', 'ERR')}",
+                        key="vn_trace_select",
+                    )
+                    trace_entry = trace_log[selected_sample]
+
+                    if trace_entry.get("error"):
+                        st.error(f"Pipeline error: {trace_entry['error']}")
+                    else:
+                        with st.expander("📄 Texts", expanded=False):
+                            if trace_entry.get("label"):
+                                st.markdown(f"**Label:** `{trace_entry['label']}`")
+                            st.markdown("**Hypothesis (summary):**")
+                            st.write(trace_entry["hypothesis"])
+                            st.markdown("**Premise (source):**")
+                            st.write(trace_entry["premise"])
+
+                        raw_score = trace_entry.get("score")
+                        score_icon = "🟢" if raw_score and raw_score >= 4 else ("🔴" if raw_score and raw_score <= 2 else "🟡")
+                        col_raw, col_norm = st.columns(2)
+                        with col_raw:
+                            st.markdown(f"**Score:** {score_icon} `{raw_score} / 5`" if raw_score is not None else "**Score:** —")
+                        with col_norm:
+                            norm = trace_entry.get("score_normalized")
+                            st.markdown(f"**Normalized:** `{norm:.4f} / 1.0`" if norm is not None else "**Normalized:** —")
+                        st.markdown("**Reasoning:**")
+                        st.info(trace_entry.get("reasoning", "—"))
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+    else:
+        st.info("📁 Upload a CSV file to start Vanilla LLM-as-Judge evaluation")
+        st.markdown("""
+        **Expected CSV format:**
+        ```
+        premise, hypothesis, label
+        source article text..., generated summary..., entailment
+        ```
+        - `premise` — source document
+        - `hypothesis` — generated summary
+        - `label` — optional; used for Kendall τ (`entailment` / `contradiction`)
         """)
