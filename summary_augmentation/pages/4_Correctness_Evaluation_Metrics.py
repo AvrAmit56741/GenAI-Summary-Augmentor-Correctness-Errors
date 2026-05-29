@@ -19,7 +19,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dir
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from metrics import (
-    RougeCalculator, BleuCalculator, ChrfCalculator,
+    RougeCalculator, BleuCalculator, ChrfCalculator, TokenF1Calculator,
     BertScoreCalculator, BERTSCORE_AVAILABLE,
     KendallTauCalculator, PointBiserialCalculator, ComparisonResult,
     ALL_METRICS_EXPLANATION, KENDALL_TAU_EXPLANATION,
@@ -37,7 +37,7 @@ Evaluate summary quality using standard text-overlap metrics. Compare a generate
 """)
 
 # Create tabs for single vs batch evaluation
-tab_single, tab_ngram, tab_semantic, tab_classifier, tab_hallucination, tab_compare, tab_qafacteval, tab_summac, tab_geval, tab_vanilla = st.tabs(["Single Evaluation", "N-gram", "Semantic", "Classifier Predictions", "Hallucination Metrics", "Compare Metrics", "QAFactEval", "SummaC", "G-EVAL", "LLM-as-Judge"])
+tab_single, tab_ngram, tab_semantic, tab_classifier, tab_hallucination, tab_compare, tab_qafacteval, tab_summac, tab_geval, tab_vanilla, tab_bartscore = st.tabs(["Single Evaluation", "N-gram", "Semantic", "Classifier Predictions", "Hallucination Metrics", "Compare Metrics", "QAFactEval", "SummaC", "G-EVAL", "LLM-as-Judge", "BARTScore"])
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -147,6 +147,7 @@ def _render_batch_results(results_df: pd.DataFrame, df_eval: pd.DataFrame, base_
         candidate_cols = {
             'BLEU': 'bleu', 'ROUGE-1 F1': 'rouge1_f1', 'ROUGE-2 F1': 'rouge2_f1',
             'ROUGE-L F1': 'rougel_f1', 'ChrF': 'chrf', 'BERTScore F1': 'bertscore_f1',
+            'Token F1': 'tokenf1_f1',
         }
         kendall_results = [
             KendallTauCalculator([results_df.iloc[i][col] for i in valid_indices], clean_labels, name).compute()
@@ -563,6 +564,10 @@ with tab_ngram:
         with col2:
             b_bleu = st.checkbox("BLEU",  True, key="ng_bleu")
             b_chrf = st.checkbox("ChrF",  True, key="ng_chrf")
+            b_f1   = st.checkbox("Token F1", True, key="ng_f1",
+                                 help="Set-intersection F1: each unique word counted once. "
+                                      "Matches the TRUE paper baseline. Differs from ROUGE-1 "
+                                      "which clips by word frequency.")
 
         if st.button("🚀 Evaluate", type="primary", use_container_width=True, key="run_ngram"):
             df_eval = df_ng.iloc[ng_start:ng_end].copy()
@@ -588,6 +593,9 @@ with tab_ngram:
                     for k, v in r['scores'].items(): res[k] = v
                 if b_chrf:
                     res['chrf'] = ChrfCalculator(p, h).compute_chrf(6)['chrf']
+                if b_f1:
+                    r = TokenF1Calculator(p, h).compute()
+                    res.update({'tokenf1_precision': r['precision'], 'tokenf1_recall': r['recall'], 'tokenf1_f1': r['f1']})
                 results_list.append(res)
             progress.empty()
             _render_batch_results(pd.DataFrame(results_list), df_eval, "ngram_results")
@@ -2147,6 +2155,255 @@ model wrote as text → integer 1–5. Simpler but less precise.
             st.error(f"❌ Error: {e}")
     else:
         st.info("📁 Upload a CSV file to start Vanilla LLM-as-Judge evaluation")
+        st.markdown("""
+        **Expected CSV format:**
+        ```
+        premise, hypothesis, label
+        source article text..., generated summary..., entailment
+        ```
+        - `premise` — source document
+        - `hypothesis` — generated summary
+        - `label` — optional; used for Kendall τ (`entailment` / `contradiction`)
+        """)
+
+with tab_bartscore:
+    st.markdown("---")
+    st.subheader("📊 BARTScore — Generation Log-Probability Factual Consistency")
+    st.markdown(
+        "Scores each (source, summary) pair by force-decoding the summary through BART "
+        "and averaging the log-probability of each token. No API key required — runs locally."
+    )
+
+    with st.expander("ℹ️ How BARTScore works", expanded=False):
+        st.markdown("""
+**Paper:** Yuan et al. 2021 — *BARTScore: Evaluating Generated Text as Text Generation* (NeurIPS 2021)
+
+**Mechanism:** BART is given the source document as input and asked to generate the summary token by token.
+The score is the average log-probability assigned to each summary token:
+
+`raw_score = (1/N) × Σ log P(token_i | source, token_1 … token_{i-1})`
+
+If a token in the summary is **not supported** by the source, BART assigns it near-zero probability,
+which pulls the average down. Faithful summaries score closer to 0; hallucinated ones score much lower (e.g. −4).
+
+**normalized_score = exp(raw_score)** maps this to 0–1 for display.
+
+**TRUE benchmark result:** avg ROC-AUC 72.2 across 11 factuality datasets.
+        """)
+
+    bartscore_csv_file = st.file_uploader(
+        "Upload CSV (premise, hypothesis columns required; label optional)",
+        type=["csv"],
+        key="bartscore_csv",
+    )
+
+    if bartscore_csv_file is not None:
+        try:
+            bartscore_dataframe = pd.read_csv(bartscore_csv_file)
+            st.success(f"✅ Loaded {len(bartscore_dataframe)} records")
+
+            if not {'premise', 'hypothesis'}.issubset(bartscore_dataframe.columns):
+                st.error("❌ CSV must contain 'premise' and 'hypothesis' columns")
+            else:
+                if 'label' in bartscore_dataframe.columns:
+                    available_labels = bartscore_dataframe['label'].dropna().unique().tolist()
+                    selected_labels = st.multiselect(
+                        "Filter by label (optional):",
+                        options=available_labels,
+                        default=[],
+                        key="bs_label_filter",
+                    )
+                    if selected_labels:
+                        bartscore_dataframe = bartscore_dataframe[bartscore_dataframe['label'].isin(selected_labels)].reset_index(drop=True)
+                        st.info(f"📊 Filtered to {len(bartscore_dataframe)} records")
+
+                col_start, col_end = st.columns(2)
+                with col_start:
+                    start_index = int(st.number_input("Start index:", min_value=0, max_value=len(bartscore_dataframe) - 1, value=0, step=1, key="bs_start"))
+                with col_end:
+                    end_index = int(st.number_input("End index:", min_value=start_index + 1, max_value=len(bartscore_dataframe), value=min(start_index + 20, len(bartscore_dataframe)), step=1, key="bs_end"))
+
+                st.markdown("---")
+                st.subheader("⚙️ Configuration")
+
+                selected_model = st.selectbox(
+                    "BART model:",
+                    ["facebook/bart-large-cnn", "facebook/bart-large", "facebook/bart-large-mnli"],
+                    key="bs_model",
+                    help="bart-large-cnn is fine-tuned on CNN/DM summarization — recommended for news.",
+                )
+                col_batch, col_device = st.columns(2)
+                with col_batch:
+                    selected_batch_size = int(st.number_input(
+                        "Batch size:", min_value=1, max_value=16, value=4, step=1, key="bs_batch",
+                        help="Pairs per GPU forward pass. Reduce to 1–2 if you get out-of-memory errors.",
+                    ))
+                with col_device:
+                    import torch as _torch
+                    detected_device = "cuda" if _torch.cuda.is_available() else "cpu"
+                    st.info(f"🖥️ Device: `{detected_device}` (auto-detected)")
+
+                passing_threshold = st.slider(
+                    "Passing threshold (normalized score):",
+                    min_value=0.0, max_value=0.5, value=0.1, step=0.01,
+                    key="bs_threshold",
+                    help="exp(raw_score). Typical faithful summaries score 0.05–0.20.",
+                )
+
+                if st.button("▶️ Run BARTScore", type="primary", use_container_width=True):
+                    from dataclasses import asdict as dataclass_asdict
+                    from metrics.bartscore import BartScorer, serialize_result as bart_serialize_result
+
+                    sliced_dataframe = bartscore_dataframe.iloc[start_index:end_index].copy()
+                    total_samples = len(sliced_dataframe)
+                    document_summary_pairs = list(zip(
+                        sliced_dataframe['premise'].astype(str),
+                        sliced_dataframe['hypothesis'].astype(str),
+                    ))
+
+                    model_load_status = st.empty()
+                    model_load_status.info(f"⏳ Loading `{selected_model}`… first run downloads weights (~1.5 GB)")
+
+                    @st.cache_resource
+                    def _load_bart_scorer(
+                        cached_model_name: str,
+                        cached_batch_size: int,
+                        cached_threshold: float,
+                    ) -> BartScorer:
+                        return BartScorer.from_pretrained(
+                            model_name=cached_model_name,
+                            batch_size=cached_batch_size,
+                            passing_threshold=cached_threshold,
+                        )
+
+                    bart_scorer = _load_bart_scorer(selected_model, selected_batch_size, passing_threshold)
+                    model_load_status.empty()
+
+                    progress_bar = st.progress(0, text="Starting BARTScore…")
+                    result_log = []
+                    scored_count = 0
+
+                    for chunk_start in range(0, total_samples, selected_batch_size):
+                        chunk_end = min(chunk_start + selected_batch_size, total_samples)
+                        chunk_pairs = document_summary_pairs[chunk_start:chunk_end]
+                        chunk_results = bart_scorer.score_batch(chunk_pairs)
+
+                        for batch_item in chunk_results:
+                            csv_row = sliced_dataframe.iloc[batch_item.sample_index]
+                            if batch_item.error_message:
+                                result_log.append({
+                                    "index": start_index + batch_item.sample_index,
+                                    "premise": str(csv_row['premise']),
+                                    "hypothesis": str(csv_row['hypothesis']),
+                                    "label": str(csv_row.get('label', '')),
+                                    "raw_score": None,
+                                    "normalized_score": None,
+                                    "error": batch_item.error_message,
+                                })
+                            else:
+                                result_log.append(dataclass_asdict(bart_serialize_result(
+                                    sample_index=start_index + batch_item.sample_index,
+                                    source_document=str(csv_row['premise']),
+                                    generated_summary=str(csv_row['hypothesis']),
+                                    ground_truth_label=str(csv_row.get('label', '')),
+                                    eval_result=batch_item.eval_result,
+                                )))
+
+                        scored_count = chunk_end
+                        progress_bar.progress(scored_count / total_samples, text=f"Scored {scored_count} / {total_samples}")
+
+                    progress_bar.empty()
+                    st.session_state['bartscore_log'] = result_log
+                    st.session_state['bartscore_config_md'] = _build_run_config_md(
+                        "BARTScore",
+                        {"name": bartscore_csv_file.name, "total_size": len(bartscore_dataframe), "evaluated": total_samples},
+                        [
+                            ("BART Model", selected_model),
+                            ("Batch Size", selected_batch_size),
+                            ("Device", detected_device),
+                            ("Passing Threshold", passing_threshold),
+                            ("Row Range", f"{start_index}–{end_index - 1} ({total_samples} samples)"),
+                        ],
+                    )
+                    st.success("✅ Done!")
+
+                    summary_dataframe = pd.DataFrame([
+                        {
+                            "index": r["index"],
+                            "label": r.get("label", ""),
+                            "raw_score": r.get("raw_score"),
+                            "normalized_score": r.get("normalized_score"),
+                            "error": r.get("error", ""),
+                        }
+                        for r in result_log
+                    ])
+                    valid_normalized = summary_dataframe[summary_dataframe["normalized_score"].notna()]["normalized_score"]
+                    valid_raw = summary_dataframe[summary_dataframe["raw_score"].notna()]["raw_score"]
+                    if len(valid_normalized):
+                        col_raw, col_norm = st.columns(2)
+                        with col_raw:
+                            st.metric("Mean Raw Score (log-prob)", f"{valid_raw.mean():.4f}")
+                        with col_norm:
+                            st.metric("Mean Normalized Score (0–1)", f"{valid_normalized.mean():.4f}")
+                    st.dataframe(summary_dataframe, use_container_width=True)
+
+                    if 'label' in sliced_dataframe.columns:
+                        labeled_rows = summary_dataframe[
+                            summary_dataframe["normalized_score"].notna() &
+                            summary_dataframe["label"].isin(["entailment", "contradiction"])
+                        ]
+                        if len(labeled_rows) >= 4:
+                            binary_labels = (labeled_rows["label"] == "entailment").astype(int)
+                            tau_score, p_value = kendalltau(labeled_rows["normalized_score"], binary_labels)
+                            st.markdown(f"**Kendall τ vs label:** `{tau_score:.4f}` (p={p_value:.4f})")
+
+                    download_csv_json(
+                        csv_bytes=summary_dataframe.to_csv(index=False).encode('utf-8'),
+                        json_bytes=json.dumps(result_log, ensure_ascii=False, indent=2).encode('utf-8'),
+                        base_filename="bartscore_results",
+                    )
+
+                # ── Trace Viewer ──────────────────────────────────────────────
+                if st.session_state.get('bartscore_log'):
+                    trace_log = st.session_state['bartscore_log']
+                    st.markdown("---")
+                    if st.session_state.get('bartscore_config_md'):
+                        st.download_button("📋 Download Config (MD)", st.session_state['bartscore_config_md'].encode(), "bartscore_config.md", "text/markdown", key="dl_md_bartscore")
+                    st.subheader("🔎 Trace Viewer")
+                    selected_sample = st.selectbox(
+                        "Select sample:",
+                        range(len(trace_log)),
+                        format_func=lambda x: f"Sample {trace_log[x]['index']} — norm: {trace_log[x].get('normalized_score', 'ERR')}",
+                        key="bs_trace_select",
+                    )
+                    trace_entry = trace_log[selected_sample]
+
+                    if trace_entry.get("error"):
+                        st.error(f"Pipeline error: {trace_entry['error']}")
+                    else:
+                        with st.expander("📄 Texts", expanded=False):
+                            if trace_entry.get("label"):
+                                st.markdown(f"**Label:** `{trace_entry['label']}`")
+                            st.markdown("**Hypothesis (summary):**")
+                            st.write(trace_entry["hypothesis"])
+                            st.markdown("**Premise (source):**")
+                            st.write(trace_entry["premise"])
+
+                        norm_value = trace_entry.get("normalized_score")
+                        raw_value = trace_entry.get("raw_score")
+                        score_icon = "🟢" if norm_value and norm_value >= 0.15 else ("🔴" if norm_value is not None and norm_value <= 0.05 else "🟡")
+                        col_raw, col_norm = st.columns(2)
+                        with col_raw:
+                            st.markdown(f"**Raw score:** `{raw_value:.4f}`" if raw_value is not None else "**Raw score:** —")
+                            st.caption("avg log-prob per token (−∞ to 0)")
+                        with col_norm:
+                            st.markdown(f"**Normalized:** {score_icon} `{norm_value:.4f} / 1.0`" if norm_value is not None else "**Normalized:** —")
+                            st.caption("exp(raw) — higher = more faithful")
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+    else:
+        st.info("📁 Upload a CSV file to start BARTScore evaluation")
         st.markdown("""
         **Expected CSV format:**
         ```

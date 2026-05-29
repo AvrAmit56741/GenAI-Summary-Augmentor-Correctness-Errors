@@ -161,6 +161,32 @@ class BleuCalculator:
         return math.exp(log_sum / len(precisions))
 
 
+# ─── Token F1 ────────────────────────────────────────────────────────────────
+
+class TokenF1Calculator:
+    """
+    Token-level F1 using set intersection (each unique word counted once).
+
+    Unlike ROUGE-1 which uses Counter intersection (clipped by frequency),
+    this treats each word type as either present or absent — matching the
+    SQuAD / TRUE paper baseline definition.
+
+    Usage:
+        result = TokenF1Calculator(reference, hypothesis).compute()
+        # {'precision': ..., 'recall': ..., 'f1': ...}
+    """
+
+    def __init__(self, reference: str, hypothesis: str):
+        self.reference_tokens = set(_tokenize_to_words(reference))
+        self.hypothesis_tokens = set(_tokenize_to_words(hypothesis))
+
+    def compute(self) -> Dict[str, float]:
+        if not self.reference_tokens or not self.hypothesis_tokens:
+            return {'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
+        overlap = len(self.reference_tokens & self.hypothesis_tokens)
+        return _compute_precision_recall_f1(overlap, len(self.reference_tokens), len(self.hypothesis_tokens))
+
+
 # ─── ChrF ─────────────────────────────────────────────────────────────────────
 
 class ChrfCalculator:
