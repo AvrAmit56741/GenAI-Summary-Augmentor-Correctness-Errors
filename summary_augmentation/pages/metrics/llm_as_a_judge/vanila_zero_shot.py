@@ -22,13 +22,17 @@ import logging
 import os
 import re
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import OpenAI, OpenAIError
+from openai import OpenAI, OpenAIError, RateLimitError
+
+_MAX_SCORE_RETRIES = 3
+_RETRY_BASE_DELAY_SECONDS = 2.0
 
 logger = logging.getLogger(__name__)
 
@@ -139,12 +143,12 @@ class VanillaScorer:
         reasoning_match = re.search(r"Reasoning:\s*(.+?)(?=\nScore:)", response_text, re.DOTALL)
         return reasoning_match.group(1).strip() if reasoning_match else response_text.strip()
 
-    def score_one(
+    def _score_once(
         self,
         source_document: str,
         generated_summary: str,
     ) -> VanillaResult:
-        """Score a single pair. Raises on API or parse error."""
+        """Single API call + parse attempt. Raises OpenAIError or ValueError on failure."""
         user_message = self._build_user_message(
             source_document=source_document.strip(),
             generated_summary=generated_summary.strip(),
@@ -167,6 +171,46 @@ class VanillaScorer:
             model_name=self._model_name,
             passed=score_normalized >= self._passing_threshold,
         )
+
+    def score_one(
+        self,
+        source_document: str,
+        generated_summary: str,
+    ) -> VanillaResult:
+        """Score a single pair with automatic retry.
+
+        Retries up to _MAX_SCORE_RETRIES times:
+          - RateLimitError / OpenAIError → exponential backoff before retry
+          - ValueError (parse failure)   → immediate retry, no sleep
+        Raises the last exception if all attempts fail.
+        """
+        last_error: Exception | None = None
+        for attempt_number in range(_MAX_SCORE_RETRIES):
+            try:
+                return self._score_once(source_document, generated_summary)
+            except RateLimitError as rate_error:
+                last_error = rate_error
+                delay = _RETRY_BASE_DELAY_SECONDS * (2 ** attempt_number)
+                logger.warning(
+                    "Rate limit on attempt %d/%d — retrying in %.1fs: %s",
+                    attempt_number + 1, _MAX_SCORE_RETRIES, delay, rate_error,
+                )
+                time.sleep(delay)
+            except OpenAIError as api_error:
+                last_error = api_error
+                delay = _RETRY_BASE_DELAY_SECONDS * (2 ** attempt_number)
+                logger.warning(
+                    "API error on attempt %d/%d — retrying in %.1fs: %s",
+                    attempt_number + 1, _MAX_SCORE_RETRIES, delay, api_error,
+                )
+                time.sleep(delay)
+            except ValueError as parse_error:
+                last_error = parse_error
+                logger.warning(
+                    "Parse failure on attempt %d/%d — retrying immediately: %s",
+                    attempt_number + 1, _MAX_SCORE_RETRIES, parse_error,
+                )
+        raise last_error
 
     def _score_safely(
         self,

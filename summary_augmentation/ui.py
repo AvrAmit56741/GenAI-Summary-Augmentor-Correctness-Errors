@@ -1,13 +1,23 @@
-import streamlit as st
-import json
-import pandas as pd
-from difflib import SequenceMatcher
-import re
-from sklearn.model_selection import train_test_split, StratifiedKFold
-import zipfile
-import io
-from datetime import datetime
 import csv
+import io
+import json
+import os
+import re
+import sys
+import zipfile
+from datetime import datetime
+from difflib import SequenceMatcher
+
+import pandas as pd
+import streamlit as st
+from sklearn.model_selection import train_test_split, StratifiedKFold
+
+_backend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pages")
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
+from backend.benchmark_sampler import BenchmarkSampler
+from backend.utils import enrich_df, error_type_coverage, estimated_minimum_n, generate_subset_markdown_report
 
 
 st.set_page_config(page_title="Hebrew NLI Analysis Hub", layout="wide", page_icon="🏠")
@@ -477,8 +487,8 @@ def filter_json_by_error_types(json_data, selected_types):
     return filtered_data
 
 # Create tabs
-tab_json, tab_csv, tab_utils, tab_analysis, tab_report, tab_logs, tab_dataset, tab_modification, tab_llm_parse, tab_corruption_level = st.tabs([
-    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer", "API Logs", "Dataset Analysis", "Dataset Modification", "LLM Parse Data", "Corrupted Level"
+tab_json, tab_csv, tab_utils, tab_analysis, tab_report, tab_logs, tab_dataset, tab_modification, tab_llm_parse, tab_corruption_level, tab_benchmark = st.tabs([
+    "JSON Analyzer", "CSV Reviewer", "Utils", "Analysis", "Error Analyzer", "API Logs", "Dataset Analysis", "Dataset Modification", "LLM Parse Data", "Corrupted Level", "Benchmark Sampler"
 ])
 
 ### JSON Analyzer ###
@@ -4448,3 +4458,144 @@ with tab_corruption_level:
         - 🔍 Sample-by-sample review with source, gold, and corrupted summaries
         - 📉 Distribution charts for both absolute and percentage corruption
         """)
+
+### Benchmark Sampler ###
+with tab_benchmark:
+    st.title("🎯 Benchmark Subset Sampler")
+    st.markdown("Upload the benchmark CSV and extract a **diverse, representative** subset.")
+
+    benchmark_csv_file = st.file_uploader("Upload benchmark CSV", type=["csv"], key="bm_uploader")
+
+    if benchmark_csv_file:
+        try:
+            benchmark_df_raw = pd.read_csv(benchmark_csv_file)
+        except (pd.errors.ParserError, ValueError, UnicodeDecodeError) as parse_error:
+            st.error(f"Could not parse CSV: {parse_error}")
+            st.stop()
+
+        benchmark_df_enriched = enrich_df(benchmark_df_raw)
+        st.success(f"Loaded **{len(benchmark_df_enriched):,} rows** × {len(benchmark_df_raw.columns)} columns")
+
+        total_row_count = len(benchmark_df_enriched)
+        minimum_viable_size = estimated_minimum_n(benchmark_df_enriched)
+
+        target_size_col, seed_col = st.columns(2)
+        with target_size_col:
+            target_size = st.number_input(
+                "Target subset size",
+                min_value=50,
+                max_value=total_row_count,
+                value=min(500, total_row_count),
+                step=50,
+                key="bm_n",
+            )
+            if target_size < minimum_viable_size:
+                st.warning(
+                    f"Minimum recommended size for full coverage: **{minimum_viable_size}**. "
+                    "Some strata may be missing."
+                )
+        with seed_col:
+            random_seed = st.number_input("Random seed", min_value=0, value=42, step=1, key="bm_seed")
+
+        if st.button("▶ Generate subset", type="primary", key="bm_run"):
+            with st.spinner("Sampling…"):
+                sampler = BenchmarkSampler(
+                    benchmark_df=benchmark_df_raw,
+                    target_size=int(target_size),
+                    seed=int(random_seed),
+                )
+                subset_df, sampling_stats = sampler.sample()
+
+            subset_df_enriched = enrich_df(subset_df)
+
+            st.success(
+                f"Subset: **{len(subset_df):,} rows** — "
+                f"Phase 1 mandatory coverage: {sampling_stats.mandatory_coverage_count} rows · "
+                f"Phase 2 proportional fill: {sampling_stats.proportional_fill_count} rows"
+                + (" ⚠️ Truncated to target size" if sampling_stats.truncated else "")
+            )
+
+            # ── Comparison stats ──────────────────────────────────────────────
+            st.subheader("Distribution comparison: original vs subset")
+
+            left_col, right_col = st.columns(2)
+
+            with left_col:
+                st.markdown("**Label distribution (%)**")
+                original_label_dist = benchmark_df_enriched["label"].value_counts(normalize=True).rename("original")
+                subset_label_dist = subset_df_enriched["label"].value_counts(normalize=True).rename("subset")
+                st.dataframe((pd.concat([original_label_dist, subset_label_dist], axis=1) * 100).round(1))
+
+                st.markdown("**Source distribution (%)**")
+                original_source_dist = benchmark_df_enriched["_source_key"].value_counts(normalize=True).rename("original")
+                subset_source_dist = subset_df_enriched["_source_key"].value_counts(normalize=True).rename("subset")
+                st.dataframe((pd.concat([original_source_dist, subset_source_dist], axis=1) * 100).round(1))
+
+            with right_col:
+                st.markdown("**Len-group distribution (%)**")
+                original_len_bin_dist = benchmark_df_enriched["_len_bin"].value_counts(normalize=True).rename("original")
+                subset_len_bin_dist = subset_df_enriched["_len_bin"].value_counts(normalize=True).rename("subset")
+                st.dataframe((pd.concat([original_len_bin_dist, subset_len_bin_dist], axis=1) * 100).round(1))
+
+                st.markdown("**Error type coverage**")
+                original_error_coverage = error_type_coverage(benchmark_df_enriched)
+                subset_error_coverage = error_type_coverage(subset_df_enriched)
+                all_error_type_names = sorted(original_error_coverage.keys())
+                error_coverage_df = pd.DataFrame(
+                    {
+                        "original": [original_error_coverage.get(error_type_name, 0) for error_type_name in all_error_type_names],
+                        "subset": [subset_error_coverage.get(error_type_name, 0) for error_type_name in all_error_type_names],
+                        "covered": ["✅" if subset_error_coverage.get(error_type_name, 0) > 0 else "❌" for error_type_name in all_error_type_names],
+                    },
+                    index=all_error_type_names,
+                )
+                st.dataframe(error_coverage_df, height=380)
+
+            covered_types_count = sum(
+                1 for error_type_name in original_error_coverage
+                if subset_error_coverage.get(error_type_name, 0) > 0
+            )
+            st.info(
+                f"Error type coverage: **{covered_types_count}/{len(original_error_coverage)}** "
+                "types represented in the subset"
+            )
+
+            # ── Downloads ─────────────────────────────────────────────────────
+            base_filename = f"benchmark_subset_n{len(subset_df)}_seed{random_seed}"
+            subset_csv_bytes = subset_df.to_csv(index=False).encode("utf-8")
+
+            markdown_report = generate_subset_markdown_report(
+                benchmark_df_enriched=benchmark_df_enriched,
+                subset_df_enriched=subset_df_enriched,
+                sampling_stats=sampling_stats,
+                target_size=target_size,
+                random_seed=random_seed,
+            )
+
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_archive:
+                zip_archive.writestr(f"{base_filename}.csv", subset_csv_bytes)
+                zip_archive.writestr(f"{base_filename}_report.md", markdown_report.encode("utf-8"))
+
+            csv_col, zip_col = st.columns(2)
+            with csv_col:
+                st.download_button(
+                    label=f"⬇️ Download CSV ({len(subset_df):,} rows)",
+                    data=subset_csv_bytes,
+                    file_name=f"{base_filename}.csv",
+                    mime="text/csv",
+                    key="bm_download_csv",
+                )
+            with zip_col:
+                st.download_button(
+                    label="⬇️ Download ZIP (CSV + Markdown report)",
+                    data=zip_buffer.getvalue(),
+                    file_name=f"{base_filename}.zip",
+                    mime="application/zip",
+                    key="bm_download_zip",
+                )
+
+            with st.expander("Preview first 20 rows"):
+                st.dataframe(subset_df.head(20), use_container_width=True)
+    else:
+        st.info("Upload a benchmark CSV file (e.g. `combined.csv`) to get started.")

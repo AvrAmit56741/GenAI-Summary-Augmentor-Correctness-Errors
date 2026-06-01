@@ -2,9 +2,11 @@
 N-gram based evaluation metrics for Hebrew NLI summarization evaluation.
 
 Provides:
-    RougeCalculator : ROUGE-N and ROUGE-L recall-oriented scores
-    BleuCalculator  : BLEU precision-oriented score with brevity penalty
-    ChrfCalculator  : ChrF character n-gram F-score (suited for Hebrew morphology)
+    RougeCalculator      : ROUGE-N and ROUGE-L recall-oriented scores
+    BleuCalculator       : BLEU precision-oriented score with brevity penalty
+    ChrfCalculator       : ChrF character n-gram F-score (suited for Hebrew morphology)
+    NovelNgramCalculator : Fraction of summary n-grams absent from the source document
+                          (abstractiveness / hallucination-risk proxy, per Aharoni et al. 2023)
 """
 from typing import List, Dict, Tuple
 from collections import Counter
@@ -239,3 +241,62 @@ class ChrfCalculator:
         numerator = (1 + beta_squared) * average_precision * average_recall
         denominator = (beta_squared * average_precision) + average_recall
         return numerator / denominator
+
+
+# ─── Novel N-gram ─────────────────────────────────────────────────────────────
+
+class NovelNgramCalculator:
+    """Fraction of summary n-grams that do not appear in the source document.
+
+    Measures abstractiveness: a higher value means the summary introduces
+    more content not grounded in the source, which correlates with hallucination
+    risk (Aharoni et al., 2023 — Detecting and Mitigating Hallucinations in
+    Multilingual Summarisation).
+
+    Computed as:
+        novel_n% = Σ count(ngram) for novel ngrams / Σ count(ngram) for all summary ngrams
+
+    where "novel" means the n-gram tuple does not appear anywhere in the source.
+    Counts are frequency-weighted (Counter-based), so a repeated novel bigram
+    contributes proportionally more than a single occurrence.
+
+    Usage:
+        calc = NovelNgramCalculator(source_document, summary_text)
+        result = calc.compute()
+        # {'novel_unigram_pct': 0.12, 'novel_bigram_pct': 0.34, 'novel_trigram_pct': 0.51}
+    """
+
+    def __init__(
+        self,
+        source_document: str,
+        summary_text: str,
+    ) -> None:
+        self._source_tokens = _tokenize_to_words(source_document)
+        self._summary_tokens = _tokenize_to_words(summary_text)
+
+    def compute_novel_ngram_pct(
+        self,
+        ngram_size: int,
+    ) -> float:
+        """Return the fraction (0.0–1.0) of summary n-grams absent from the source."""
+        if len(self._summary_tokens) < ngram_size:
+            return 0.0
+        source_ngram_types = set(_extract_word_ngrams(self._source_tokens, ngram_size).keys())
+        summary_ngram_counts = _extract_word_ngrams(self._summary_tokens, ngram_size)
+        total_summary_ngram_count = sum(summary_ngram_counts.values())
+        if total_summary_ngram_count == 0:
+            return 0.0
+        novel_ngram_count = sum(
+            ngram_count
+            for ngram_tuple, ngram_count in summary_ngram_counts.items()
+            if ngram_tuple not in source_ngram_types
+        )
+        return round(novel_ngram_count / total_summary_ngram_count, 4)
+
+    def compute(self) -> Dict[str, float]:
+        """Return novel n-gram percentages for unigrams, bigrams, and trigrams."""
+        return {
+            'novel_unigram_pct': self.compute_novel_ngram_pct(1),
+            'novel_bigram_pct':  self.compute_novel_ngram_pct(2),
+            'novel_trigram_pct': self.compute_novel_ngram_pct(3),
+        }

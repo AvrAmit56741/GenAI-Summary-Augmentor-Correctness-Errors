@@ -178,6 +178,51 @@ class DictaBertAnswerSelector(AnswerSelector):
         return " ".join(words)
 
 
+class DictaBertShallowNPSelector(AnswerSelector):
+    """
+    Extract shallow NP chunks using dicta-il/dictabert-syntax.
+
+    Returns only the head token for each nominal dependency role, without
+    expanding modifiers. This is a shallower extraction than DictaBertAnswerSelector
+    (which expands flat/compound/amod dependents into multi-word spans).
+
+    The QAFactEval paper (Table 2) shows NP Chunks (shallow constituency parse)
+    as the best-performing answer selection strategy (77.5), outperforming Max NP
+    (dependency subtrees, 75.7) by 1.8 points. DictaBertAnswerSelector approximates
+    Max NP; this class approximates shallow NP chunks by returning atomic head words.
+    """
+    _MODEL_NAME = "dicta-il/dictabert-syntax"
+    _NOMINAL_DEPS = {"nsubj", "obj", "iobj", "nmod", "obl", "appos", "nsubj:pass"}
+
+    def __init__(self):
+        self._model = None
+        self._tokenizer = None
+
+    def extract_chunks(
+        self,
+        text: str,
+    ) -> List[NpChunk]:
+        self._ensure_loaded()
+        logger.info("[Step 1 / DictaBERT-Shallow] Extracting shallow NP heads from: %s", text[:120])
+        parse_result = self._model.predict([text], self._tokenizer)
+        token_list = parse_result[0]["tree"]
+        chunks = [
+            NpChunk(text=token["word"])
+            for token in token_list
+            if token.get("dep_func") in self._NOMINAL_DEPS
+        ]
+        logger.info("[Step 1 / DictaBERT-Shallow] Extracted %d chunks: %s", len(chunks), [c.text for c in chunks])
+        return chunks
+
+    def _ensure_loaded(self):
+        if self._model is not None:
+            return
+        from transformers import AutoModel, AutoTokenizer
+        self._tokenizer = AutoTokenizer.from_pretrained(self._MODEL_NAME)
+        self._model = AutoModel.from_pretrained(self._MODEL_NAME, trust_remote_code=True)
+        self._model.eval()
+
+
 class OpenAiAnswerSelector(AnswerSelector):
     """Extract NP chunks by prompting an OpenAI model."""
 
@@ -424,6 +469,8 @@ class QaFactEvalPipeline:
         self,
         pairs: List[tuple],
         max_workers: int = 4,
+        stop_event=None,
+        result_queue=None,
     ) -> List[dict]:
         """
         Run the pipeline on multiple (summary, source_article) pairs in parallel.
@@ -432,28 +479,44 @@ class QaFactEvalPipeline:
         concurrently.  Each dict in the returned list has keys:
             index, result (QaFactEvalResult | None), error (str | None)
         Results are returned in input order.
+
+        Args:
+            stop_event:   threading.Event — set it to cancel remaining work.
+            result_queue: queue.Queue — each completed result dict is put here
+                          immediately so callers can show live progress.
         """
         self.warm_up()
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        def _run_one(idx: int, summary: str, source: str) -> dict:
+        def _run_one(
+            sample_index: int,
+            summary_text: str,
+            source_text: str,
+        ) -> dict:
             try:
-                return {"index": idx, "result": self.run(summary, source), "error": None}
-            except Exception as exc:
+                return {"index": sample_index, "result": self.run(summary_text, source_text), "error": None}
+            except Exception:
                 import traceback
-                full_tb = traceback.format_exc()
-                logger.error("QAFactEval error on sample %d:\n%s", idx, full_tb)
-                return {"index": idx, "result": None, "error": full_tb}
+                full_traceback = traceback.format_exc()
+                logger.error("QAFactEval error on sample %d:\n%s", sample_index, full_traceback)
+                return {"index": sample_index, "result": None, "error": full_traceback}
 
         slots: List[dict] = [{}] * len(pairs)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
-                pool.submit(_run_one, i, summary, source): i
-                for i, (summary, source) in enumerate(pairs)
+                pool.submit(_run_one, sample_index, summary_text, source_text): sample_index
+                for sample_index, (summary_text, source_text) in enumerate(pairs)
+                if not (stop_event and stop_event.is_set())
             }
             for future in as_completed(futures):
-                item = future.result()
-                slots[item["index"]] = item
+                if stop_event and stop_event.is_set():
+                    for pending_future in futures:
+                        pending_future.cancel()
+                    break
+                result_item = future.result()
+                slots[result_item["index"]] = result_item
+                if result_queue is not None:
+                    result_queue.put(result_item)
         return slots
 
     def run(self, summary: str, source_article: str) -> QaFactEvalResult:

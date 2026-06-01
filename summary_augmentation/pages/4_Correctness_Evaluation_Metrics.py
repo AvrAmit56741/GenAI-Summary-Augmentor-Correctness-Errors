@@ -2,6 +2,11 @@ import sys
 import os
 import json
 import math
+import time
+import queue
+import threading
+import zipfile
+import io
 from datetime import datetime
 import streamlit as st
 import pandas as pd
@@ -19,7 +24,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dir
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from metrics import (
-    RougeCalculator, BleuCalculator, ChrfCalculator, TokenF1Calculator,
+    RougeCalculator, BleuCalculator, ChrfCalculator, TokenF1Calculator, NovelNgramCalculator,
     BertScoreCalculator, BERTSCORE_AVAILABLE,
     KendallTauCalculator, PointBiserialCalculator, ComparisonResult,
     ALL_METRICS_EXPLANATION, KENDALL_TAU_EXPLANATION,
@@ -37,7 +42,7 @@ Evaluate summary quality using standard text-overlap metrics. Compare a generate
 """)
 
 # Create tabs for single vs batch evaluation
-tab_single, tab_ngram, tab_semantic, tab_classifier, tab_hallucination, tab_compare, tab_qafacteval, tab_summac, tab_geval, tab_vanilla, tab_bartscore = st.tabs(["Single Evaluation", "N-gram", "Semantic", "Classifier Predictions", "Hallucination Metrics", "Compare Metrics", "QAFactEval", "SummaC", "G-EVAL", "LLM-as-Judge", "BARTScore"])
+tab_single, tab_ngram, tab_semantic, tab_classifier, tab_hallucination, tab_compare, tab_qafacteval, tab_summac, tab_geval, tab_vanilla, tab_bartscore, tab_mfact = st.tabs(["Single Evaluation", "N-gram", "Semantic", "Classifier Predictions", "Hallucination Metrics", "Compare Metrics", "QAFactEval", "SummaC", "G-EVAL", "LLM-as-Judge", "BARTScore", "MFact"])
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -97,6 +102,118 @@ def _build_run_config_md(metric_name: str, dataset_info: dict, config_rows: list
     return "\n".join(lines)
 
 
+def _build_llm_judge_summary_dataframe(
+    result_log: list,
+    sliced_dataframe: pd.DataFrame,
+    core_field_names: dict,
+) -> pd.DataFrame:
+    """
+    Build the results summary DataFrame for any LLM-as-Judge metric.
+    Produces core scored columns (defined by core_field_names) followed by
+    all metadata columns from the original CSV slice (everything except 'label',
+    which is already included as a core field).
+    """
+    metadata_columns = [col for col in sliced_dataframe.columns if col != "label"]
+    result_rows = []
+    for row_offset, result_entry in enumerate(result_log):
+        if result_entry is None:
+            continue
+        row_dict = {
+            output_col: result_entry.get(source_key)
+            for output_col, source_key in core_field_names.items()
+        }
+        original_row = sliced_dataframe.iloc[row_offset]
+        for metadata_col in metadata_columns:
+            row_dict[metadata_col] = original_row[metadata_col]
+        result_rows.append(row_dict)
+    return pd.DataFrame(result_rows)
+
+
+def _run_llm_judge_batch(
+    scorer_fn,
+    serialize_fn,
+    sliced_dataframe: pd.DataFrame,
+    start_index: int,
+    num_parallel_workers: int,
+    stop_event: threading.Event,
+    progress_label: str,
+) -> tuple:
+    """
+    Shared execution loop for G-EVAL and Vanilla LLM-as-Judge.
+    Submits all pairs to a ThreadPoolExecutor, updates a progress bar,
+    and honours stop_event between completions.
+    Returns (result_log, was_stopped).
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from dataclasses import asdict as dataclass_asdict
+
+    total_samples = len(sliced_dataframe)
+    result_log = [None] * total_samples
+    completed_count = 0
+    was_stopped = False
+
+    progress_bar = st.progress(0, text=f"Starting {progress_label}...")
+
+    def _score_single_row(row_offset, csv_row):
+        if stop_event.is_set():
+            return row_offset, None
+        return row_offset, scorer_fn(
+            source_document=str(csv_row['premise']),
+            generated_summary=str(csv_row['hypothesis']),
+        )
+
+    with ThreadPoolExecutor(max_workers=num_parallel_workers) as pool:
+        futures = {
+            pool.submit(_score_single_row, i, row): i
+            for i, (_, row) in enumerate(sliced_dataframe.iterrows())
+        }
+        for future in as_completed(futures):
+            row_offset = futures[future]
+            csv_row = sliced_dataframe.iloc[row_offset]
+            try:
+                _, eval_result = future.result()
+                if eval_result is None:
+                    result_log[row_offset] = {
+                        "index": start_index + row_offset,
+                        "premise": str(csv_row['premise']),
+                        "hypothesis": str(csv_row['hypothesis']),
+                        "label": str(csv_row.get('label', '')),
+                        "score": None,
+                        "error": "stopped",
+                    }
+                else:
+                    result_log[row_offset] = dataclass_asdict(serialize_fn(
+                        sample_index=start_index + row_offset,
+                        source_document=str(csv_row['premise']),
+                        generated_summary=str(csv_row['hypothesis']),
+                        ground_truth_label=str(csv_row.get('label', '')),
+                        eval_result=eval_result,
+                    ))
+            except Exception as sample_error:
+                result_log[row_offset] = {
+                    "index": start_index + row_offset,
+                    "premise": str(csv_row['premise']),
+                    "hypothesis": str(csv_row['hypothesis']),
+                    "label": str(csv_row.get('label', '')),
+                    "score": None,
+                    "error": str(sample_error),
+                }
+
+            completed_count += 1
+            if stop_event.is_set():
+                was_stopped = True
+                for pending_future in futures:
+                    pending_future.cancel()
+                break
+            progress_bar.progress(
+                completed_count / total_samples,
+                text=f"{progress_label}: {completed_count} / {total_samples}",
+            )
+
+    progress_bar.empty()
+    return result_log, was_stopped
+
+
 def _batch_upload_and_range(key_prefix: str):
     """Shared: file upload + validation + row-range widgets. Returns (df, start, end) or (None, 0, 0)."""
     f = st.file_uploader("Upload CSV (premise, hypothesis, label columns required)", type=["csv"], key=f"{key_prefix}_csv")
@@ -133,6 +250,9 @@ def _render_batch_results(results_df: pd.DataFrame, df_eval: pd.DataFrame, base_
     st.markdown("---")
     st.subheader("📈 Results Summary")
     st.markdown("**Average Scores Across All Samples:**")
+    if not avg_scores:
+        st.warning("⚠️ No scores to display — all samples may have failed. Check the API connection and error messages above.")
+        return
     cols = st.columns(min(4, len(avg_scores)))
     for idx, (name, val) in enumerate(avg_scores.items()):
         with cols[idx % 4]:
@@ -562,12 +682,16 @@ with tab_ngram:
             b_r2  = st.checkbox("ROUGE-2", True, key="ng_r2")
             b_rl  = st.checkbox("ROUGE-L", True, key="ng_rl")
         with col2:
-            b_bleu = st.checkbox("BLEU",  True, key="ng_bleu")
-            b_chrf = st.checkbox("ChrF",  True, key="ng_chrf")
-            b_f1   = st.checkbox("Token F1", True, key="ng_f1",
-                                 help="Set-intersection F1: each unique word counted once. "
-                                      "Matches the TRUE paper baseline. Differs from ROUGE-1 "
-                                      "which clips by word frequency.")
+            b_bleu   = st.checkbox("BLEU",  True, key="ng_bleu")
+            b_chrf   = st.checkbox("ChrF",  True, key="ng_chrf")
+            b_f1     = st.checkbox("Token F1", True, key="ng_f1",
+                                   help="Set-intersection F1: each unique word counted once. "
+                                        "Matches the TRUE paper baseline. Differs from ROUGE-1 "
+                                        "which clips by word frequency.")
+            b_novel  = st.checkbox("Novel N-grams", True, key="ng_novel",
+                                   help="Fraction of summary unigrams / bigrams / trigrams absent "
+                                        "from the source. Higher = more abstractive / higher hallucination risk. "
+                                        "Baseline from Aharoni et al. 2023 (multilingual summarisation).")
 
         if st.button("🚀 Evaluate", type="primary", use_container_width=True, key="run_ngram"):
             df_eval = df_ng.iloc[ng_start:ng_end].copy()
@@ -596,6 +720,9 @@ with tab_ngram:
                 if b_f1:
                     r = TokenF1Calculator(p, h).compute()
                     res.update({'tokenf1_precision': r['precision'], 'tokenf1_recall': r['recall'], 'tokenf1_f1': r['f1']})
+                if b_novel:
+                    r = NovelNgramCalculator(p, h).compute()
+                    res.update({'novel_unigram_pct': r['novel_unigram_pct'], 'novel_bigram_pct': r['novel_bigram_pct'], 'novel_trigram_pct': r['novel_trigram_pct']})
                 results_list.append(res)
             progress.empty()
             _render_batch_results(pd.DataFrame(results_list), df_eval, "ngram_results")
@@ -606,25 +733,64 @@ with tab_semantic:
     st.subheader("📊 Semantic Evaluation")
     df_sem, sem_start, sem_end = _batch_upload_and_range("semantic")
     if df_sem is not None:
-        if not BERTSCORE_AVAILABLE:
-            st.error("⚠️ BERTScore not available. Install: `pip install bert-score`")
+        st.markdown("---")
+        st.subheader("⚙️ BERTScore Configuration")
+        sem_inference_type = st.radio(
+            "Inference type:",
+            ["Local", "Remote API"],
+            horizontal=True,
+            key="sem_inference_type",
+            help="Local: runs bert-score on this machine. Remote API: calls inference server (GPU).",
+        )
+        if sem_inference_type == "Remote API":
+            sem_api_url = st.text_input("API URL", value="http://localhost:8080", key="sem_api_url")
+            if st.button("🏥 Check API Health", key="sem_health_check"):
+                import requests as _req
+                try:
+                    resp = _req.get(f"{sem_api_url}/health", timeout=5)
+                    if resp.status_code == 200:
+                        h = resp.json()
+                        if h.get("bertscore_ready"):
+                            st.success("✅ BERTScore is ready on the remote API")
+                        else:
+                            st.error("❌ BERTScore not ready on remote API (bert-score library may not be installed on server)")
+                    else:
+                        st.error(f"❌ API returned status {resp.status_code}")
+                except Exception as _e:
+                    st.error(f"❌ Cannot reach API: {_e}")
         else:
-            st.markdown("---")
-            st.subheader("⚙️ BERTScore Configuration")
-            bert_model_batch = st.selectbox(
-                "Hebrew BERT Model:",
-                ["avichr/heBERT", "onlplab/alephbert-base", "dicta-il/neodictabert"],
-                key="sem_bert_model",
-            )
+            if not BERTSCORE_AVAILABLE:
+                st.error("⚠️ BERTScore not available locally. Install: `pip install bert-score`")
+        bert_model_batch = st.selectbox(
+            "Hebrew BERT Model:",
+            ["avichr/heBERT", "onlplab/alephbert-base", "dicta-il/neodictabert"],
+            key="sem_bert_model",
+        )
+        if sem_inference_type == "Local":
             st.warning("⚠️ BERTScore loads a BERT model (~500MB) and is slow for large batches.")
-            if st.button("🚀 Evaluate", type="primary", use_container_width=True, key="run_semantic"):
+        if st.button("🚀 Evaluate", type="primary", use_container_width=True, key="run_semantic"):
+            if sem_inference_type == "Local" and not BERTSCORE_AVAILABLE:
+                st.error("⚠️ BERTScore not available locally. Install: `pip install bert-score`")
+            else:
+                import requests as _requests
                 df_eval = df_sem.iloc[sem_start:sem_end].copy()
                 results_list = []
                 progress = st.progress(0)
                 for n, (idx, row) in enumerate(df_eval.iterrows()):
                     progress.progress((n + 1) / len(df_eval))
                     p, h = str(row['premise']), str(row['hypothesis'])
-                    r = BertScoreCalculator(p, h, bert_model_batch).compute_bert_score()
+                    if sem_inference_type == "Remote API":
+                        try:
+                            resp = _requests.post(
+                                f"{sem_api_url}/bertscore/predict",
+                                json={"reference": p, "hypothesis": h, "model_name": bert_model_batch},
+                                timeout=60,
+                            )
+                            r = resp.json() if resp.status_code == 200 else {"error": resp.text}
+                        except Exception as _api_err:
+                            r = {"error": str(_api_err)}
+                    else:
+                        r = BertScoreCalculator(p, h, bert_model_batch).compute_bert_score()
                     res = {'index': idx}
                     if 'error' not in r:
                         res.update({'bertscore_precision': r['precision'], 'bertscore_recall': r['recall'], 'bertscore_f1': r['f1']})
@@ -1337,7 +1503,12 @@ with tab_qafacteval:
 
                 with col1:
                     st.markdown("**Step 1: Answer Selection**")
-                    answer_backend = st.radio("Backend:", ["DictaBERT (HF)", "OpenAI"], key="qa_selector")
+                    answer_backend = st.radio(
+                        "Backend:",
+                        ["DictaBERT Shallow NP (paper best)", "DictaBERT Max NP", "OpenAI"],
+                        key="qa_selector",
+                        help="Shallow NP: head token only — closest to the paper's best-performing NP Chunks strategy (77.5). Max NP: head + modifiers — slightly lower (75.7). OpenAI: GPT-based extraction.",
+                    )
 
                 with col2:
                     st.markdown("**Step 2: Question Generation**")
@@ -1374,17 +1545,46 @@ with tab_qafacteval:
                 needs_openai = (answer_backend == "OpenAI" or qg_backend == "OpenAI"
                                 or qa_backend == "OpenAI" or cmp_method == "GPT Judge")
 
-                max_workers = int(st.number_input("Parallel workers:", min_value=1, max_value=8, value=4, step=1, key="qa_workers", help="Number of samples evaluated simultaneously. Higher = faster but more memory/API quota."))
-
                 openai_model = "gpt-4o-mini"
                 if needs_openai:
                     st.markdown("---")
                     openai_model = st.selectbox("OpenAI Model:", ["gpt-4o-mini", "gpt-4o", "gpt-4", "gpt-3.5-turbo"], key="qa_openai_model")
 
-                if st.button("🔍 Run QAFactEval", type="primary", use_container_width=True):
+                max_workers = int(st.number_input(
+                    "Parallel workers:",
+                    min_value=1, max_value=8, value=4, step=1,
+                    key="qa_workers",
+                    help="Samples evaluated simultaneously. Higher = faster but uses more memory / API quota.",
+                ))
+
+                # ── Run / Stop buttons ────────────────────────────────────────────
+                run_col, stop_col = st.columns(2)
+                with run_col:
+                    run_clicked = st.button(
+                        "🔍 Run QAFactEval",
+                        type="primary",
+                        use_container_width=True,
+                        disabled=st.session_state.get('qa_running', False),
+                    )
+                with stop_col:
+                    stop_clicked = st.button(
+                        "⏹ Stop",
+                        type="secondary",
+                        use_container_width=True,
+                        disabled=not st.session_state.get('qa_running', False),
+                    )
+
+                if stop_clicked:
+                    stop_ev = st.session_state.get('qa_stop_event')
+                    if stop_ev is not None:
+                        stop_ev.set()
+                    st.session_state['qa_running'] = False
+                    st.session_state['qa_stop_requested'] = True
+
+                if run_clicked:
                     from metrics.qa_facteval import (
                         PipelineConfig, QaFactEvalPipeline,
-                        DictaBertAnswerSelector, OpenAiAnswerSelector,
+                        DictaBertAnswerSelector, DictaBertShallowNPSelector, OpenAiAnswerSelector,
                         OpenAiQuestionGenerator, HfQuestionGenerator,
                         HfQuestionAnswerer, OpenAiQuestionAnswerer,
                         TokenF1Comparator, ExactMatchComparator, OpenAiAnswerComparator,
@@ -1399,11 +1599,12 @@ with tab_qafacteval:
                             st.stop()
                         openai_client = OpenAI(api_key=openai_api_key)
 
-                    selector = (
-                        DictaBertAnswerSelector()
-                        if answer_backend == "DictaBERT (HF)"
-                        else OpenAiAnswerSelector(openai_client, openai_model)
-                    )
+                    if answer_backend == "DictaBERT Shallow NP (paper best)":
+                        selector = DictaBertShallowNPSelector()
+                    elif answer_backend == "DictaBERT Max NP":
+                        selector = DictaBertAnswerSelector()
+                    else:
+                        selector = OpenAiAnswerSelector(openai_client, openai_model)
                     generator = (
                         OpenAiQuestionGenerator(openai_client, openai_model)
                         if qg_backend == "OpenAI"
@@ -1428,62 +1629,160 @@ with tab_qafacteval:
                         answer_comparator=comparator,
                         isanswered_f1_threshold=isanswered_threshold,
                     ))
-                    df_slice = df_qa.iloc[qa_start:qa_end].copy()
-                    pairs = [
+                    df_slice_new = df_qa.iloc[qa_start:qa_end].copy()
+                    pairs_new = [
                         (str(row['hypothesis']), str(row['premise']))
-                        for _, row in df_slice.iterrows()
+                        for _, row in df_slice_new.iterrows()
                     ]
+                    with st.spinner("Warming up models..."):
+                        pipeline_obj.warm_up()
 
-                    with st.spinner(f"Running QAFactEval on {len(pairs)} samples ({max_workers} threads)..."):
-                        batch = pipeline_obj.run_batch(pairs, max_workers=max_workers)
+                    stop_event_new = threading.Event()
+                    results_queue_new = queue.Queue()
 
-                    all_qa_results = []
-                    for i, item in enumerate(batch):
-                        row = df_slice.iloc[i]
-                        if item.get('error'):
-                            all_qa_results.append({'index': qa_start + i, 'error': item['error'], 'f1_score': 0.0, 'qa_answers': []})
+                    def _background_run(
+                        pipeline_ref,
+                        pairs_ref,
+                        workers_count,
+                        stop_event_ref,
+                        result_queue_ref,
+                    ):
+                        pipeline_ref.run_batch(
+                            pairs_ref,
+                            max_workers=workers_count,
+                            stop_event=stop_event_ref,
+                            result_queue=result_queue_ref,
+                        )
+
+                    bg_thread = threading.Thread(
+                        target=_background_run,
+                        args=(pipeline_obj, pairs_new, max_workers, stop_event_new, results_queue_new),
+                        daemon=True,
+                    )
+
+                    st.session_state['qa_pipeline'] = pipeline_obj
+                    st.session_state['qa_pairs'] = pairs_new
+                    st.session_state['qa_df_slice'] = df_slice_new
+                    st.session_state['qa_partial_results'] = []
+                    st.session_state['qa_running'] = True
+                    st.session_state['qa_stop_requested'] = False
+                    st.session_state['qa_stop_event'] = stop_event_new
+                    st.session_state['qa_results_queue'] = results_queue_new
+                    st.session_state['qa_bg_thread'] = bg_thread
+                    st.session_state['qa_start_offset'] = qa_start
+                    st.session_state['qa_cmp_method'] = cmp_method
+                    st.session_state['qa_run_config'] = {
+                        'file_name': qa_file.name,
+                        'total_size': len(df_qa),
+                        'answer_backend': answer_backend,
+                        'qg_backend': qg_backend,
+                        'qg_model': qg_model,
+                        'qa_backend': qa_backend,
+                        'cmp_method': cmp_method,
+                        'isanswered_threshold': isanswered_threshold,
+                        'openai_model': openai_model if needs_openai else 'N/A',
+                        'qa_start': qa_start,
+                        'qa_end': qa_end,
+                        'max_workers': max_workers,
+                    }
+                    bg_thread.start()
+                    st.rerun()
+
+                # ── Live progress: drain queue, update bar, poll until done ─────
+                if st.session_state.get('qa_running', False):
+                    results_q = st.session_state['qa_results_queue']
+                    df_s = st.session_state['qa_df_slice']
+                    start_off = st.session_state['qa_start_offset']
+                    total_samples = len(st.session_state['qa_pairs'])
+
+                    # Drain all results that arrived since the last rerun
+                    while not results_q.empty():
+                        raw_item = results_q.get_nowait()
+                        sample_idx = raw_item['index']
+                        row = df_s.iloc[sample_idx]
+                        if raw_item.get('error'):
+                            result_dict = {
+                                'index': start_off + sample_idx,
+                                'error': raw_item['error'],
+                                'f1_score': 0.0,
+                                'qa_answers': [],
+                            }
                         else:
-                            result = item['result']
-                            answerable = sum(1 for a in result.qa_answers if a.is_answerable)
-                            all_qa_results.append({
-                                'index': qa_start + i,
+                            qa_result = raw_item['result']
+                            answerable_count = sum(1 for answer in qa_result.qa_answers if answer.is_answerable)
+                            result_dict = {
+                                'index': start_off + sample_idx,
                                 'hypothesis': str(row['hypothesis']),
                                 'premise': str(row['premise']),
                                 'label': str(row['label']) if 'label' in row.index else '',
-                                'questions_generated': result.questions_generated,
-                                'questions_after_filter': result.questions_after_filter,
-                                'answerable': answerable,
-                                'f1_score': round(result.f1_score, 4),
+                                'questions_generated': qa_result.questions_generated,
+                                'questions_after_filter': qa_result.questions_after_filter,
+                                'answerable': answerable_count,
+                                'f1_score': round(qa_result.f1_score, 4),
                                 'qa_answers': [
                                     {
-                                        'np_chunk': a.np_chunk,
-                                        'question': a.question,
-                                        'summary_answer': a.summary_answer,
-                                        'source_answer': a.source_answer,
-                                        'is_answerable': a.is_answerable,
-                                        'answer_f1': round(a.answer_f1, 4),
+                                        'np_chunk': answer.np_chunk,
+                                        'question': answer.question,
+                                        'summary_answer': answer.summary_answer,
+                                        'source_answer': answer.source_answer,
+                                        'is_answerable': answer.is_answerable,
+                                        'answer_f1': round(answer.answer_f1, 4),
                                     }
-                                    for a in result.qa_answers
+                                    for answer in qa_result.qa_answers
                                 ],
-                            })
+                            }
+                        st.session_state['qa_partial_results'].append(result_dict)
 
-                    st.success("✅ Done!")
+                    completed_count = len(st.session_state['qa_partial_results'])
+                    st.progress(
+                        completed_count / total_samples,
+                        text=f"Processed {completed_count} / {total_samples} samples  ({max_workers} workers)",
+                    )
+
+                    bg_thread = st.session_state.get('qa_bg_thread')
+                    if bg_thread and not bg_thread.is_alive():
+                        # Background thread finished (completed or stopped)
+                        st.session_state['qa_running'] = False
+                        st.rerun()
+                    else:
+                        # Poll again in 0.5 s
+                        time.sleep(0.5)
+                        st.rerun()
+
+                # ── Results (shown after run completes or is stopped) ─────────────
+                if (not st.session_state.get('qa_running', False)
+                        and st.session_state.get('qa_partial_results')):
+
+                    # Sort by original input index (parallel completion is unordered)
+                    all_qa_results = sorted(
+                        st.session_state['qa_partial_results'],
+                        key=lambda result_item: result_item['index'],
+                    )
+                    cfg = st.session_state.get('qa_run_config', {})
+                    n_evaluated = len(all_qa_results)
+
+                    if st.session_state.get('qa_stop_requested', False):
+                        st.warning(f"⏹ Stopped — {n_evaluated} / {cfg.get('total_size', '?')} samples evaluated.")
+                    else:
+                        st.success(f"✅ Done! Processed {n_evaluated} samples.")
+
                     st.session_state['qafacteval_log'] = all_qa_results
                     st.session_state['qafacteval_config_md'] = _build_run_config_md(
                         "QAFactEval",
-                        {"name": qa_file.name, "total_size": len(df_qa), "evaluated": len(pairs)},
+                        {"name": cfg.get('file_name', ''), "total_size": cfg.get('total_size', '?'), "evaluated": n_evaluated},
                         [
-                            ("Row Range", f"{qa_start}–{qa_end - 1} ({len(pairs)} samples)"),
-                            ("Step 1 — Answer Selection", answer_backend),
-                            ("Step 2 — Question Generation", f"{qg_backend}" + (f" ({qg_model})" if qg_backend == "HuggingFace" else "")),
-                            ("Step 3 — Question Answering", qa_backend),
-                            ("Step 4 — Answer Comparison", cmp_method),
-                            ("IsAnsweredSumm F1 Threshold", isanswered_threshold),
-                            ("OpenAI Model", openai_model if needs_openai else "N/A"),
-                            ("Parallel Workers", max_workers),
+                            ("Row Range", f"{cfg.get('qa_start')}–{cfg.get('qa_start', 0) + n_evaluated - 1} ({n_evaluated} samples)"),
+                            ("Step 1 — Answer Selection", cfg.get('answer_backend', '')),
+                            ("Step 2 — Question Generation", cfg.get('qg_backend', '') + (f" ({cfg.get('qg_model')})" if cfg.get('qg_backend') == "HuggingFace" else "")),
+                            ("Step 3 — Question Answering", cfg.get('qa_backend', '')),
+                            ("Step 4 — Answer Comparison", cfg.get('cmp_method', '')),
+                            ("IsAnsweredSumm F1 Threshold", cfg.get('isanswered_threshold', '')),
+                            ("OpenAI Model", cfg.get('openai_model', 'N/A')),
+                            ("Parallel Workers", cfg.get('max_workers', '')),
                         ],
                     )
 
+                    cmp_method_stored = cfg.get('cmp_method', '')
                     summary_rows = [{k: v for k, v in r.items() if k not in ('qa_answers', 'hypothesis', 'premise', 'label')} for r in all_qa_results]
                     result_df = pd.DataFrame(summary_rows)
                     mean_f1 = result_df['f1_score'].mean()
@@ -1492,7 +1791,7 @@ with tab_qafacteval:
                     score_label = {
                         "GPT Judge": "Mean QAFactEval Score (GPT Judge)",
                         "Exact Match": "Mean QAFactEval Score (Exact Match)",
-                    }.get(cmp_method, "Mean QAFactEval F1 Score")
+                    }.get(cmp_method_stored, "Mean QAFactEval F1 Score")
                     st.metric(score_label, f"{mean_f1:.4f}")
                     st.dataframe(result_df, use_container_width=True)
 
@@ -1616,37 +1915,92 @@ with tab_summac:
                                          help="Score ≥ threshold → consistent. Tune on your validation set.")
                 sc_workers = int(st.number_input("Parallel workers:", 1, 4, 1, key="sc_workers"))
 
+                sc_inference_type = st.radio(
+                    "Inference type:",
+                    ["Local", "Remote API"],
+                    horizontal=True,
+                    key="sc_inference_type",
+                    help="Local: loads NLI model on this machine. Remote API: calls inference server on GPU.",
+                )
+                if sc_inference_type == "Remote API":
+                    sc_api_url = st.text_input("API URL", value="http://localhost:8080", key="sc_api_url")
+                    if st.button("🏥 Check API Health", key="sc_health_check"):
+                        import requests as _req
+                        try:
+                            resp = _req.get(f"{sc_api_url}/health", timeout=5)
+                            if resp.status_code == 200:
+                                h = resp.json()
+                                if h.get("summac_ready"):
+                                    st.success("✅ SummaC is ready on the remote API")
+                                else:
+                                    st.error("❌ SummaC not ready on remote API")
+                            else:
+                                st.error(f"❌ API returned status {resp.status_code}")
+                        except Exception as _e:
+                            st.error(f"❌ Cannot reach API: {_e}")
+
                 if st.button("▶️ Run SummaC", type="primary", use_container_width=True):
-                    from metrics.summac import SummacFactory, serialize_result
-
-                    pipeline_sc = SummacFactory.zero_shot(sc_model, sc_threshold)
+                    import requests as _requests
                     df_slice = df_sc.iloc[sc_start:sc_end].copy()
-                    pairs = [(str(r['hypothesis']), str(r['premise'])) for _, r in df_slice.iterrows()]
-
-                    with st.spinner(f"Running SummaC on {len(pairs)} samples..."):
-                        batch = pipeline_sc.score_batch(pairs, max_workers=sc_workers)
-
                     log = []
-                    for i, item in enumerate(batch):
-                        row = df_slice.iloc[i]
-                        if item.get("error"):
-                            log.append({"index": sc_start + i, "error": item["error"], "summary_score": 0.0})
-                        else:
-                            log.append(serialize_result(
-                                sc_start + i, str(row['premise']), str(row['hypothesis']),
-                                str(row.get('label', '')), item["result"],
-                            ))
+
+                    if sc_inference_type == "Remote API":
+                        progress_bar = st.progress(0, text="Starting SummaC via API...")
+                        for i, (_, row) in enumerate(df_slice.iterrows()):
+                            try:
+                                resp = _requests.post(
+                                    f"{sc_api_url}/summac/predict",
+                                    json={"source_document": str(row['premise']), "summary": str(row['hypothesis']), "model_name": sc_model},
+                                    timeout=120,
+                                )
+                                if resp.status_code == 200:
+                                    r = resp.json()
+                                    log.append({
+                                        "index": sc_start + i,
+                                        "label": str(row.get('label', '')),
+                                        "summary_score": r["summary_score"],
+                                        "is_consistent": r["summary_score"] >= sc_threshold,
+                                        "threshold": sc_threshold,
+                                        "doc_sentences": r["doc_sentences"],
+                                        "summary_sentences": r["summary_sentences"],
+                                        "nli_matrix": r["nli_matrix"],
+                                        "sentence_scores": r["sentence_scores"],
+                                        "hypothesis": str(row['hypothesis']),
+                                        "premise": str(row['premise']),
+                                    })
+                                else:
+                                    log.append({"index": sc_start + i, "error": resp.text, "summary_score": 0.0})
+                            except Exception as _e:
+                                log.append({"index": sc_start + i, "error": str(_e), "summary_score": 0.0})
+                            progress_bar.progress((i + 1) / len(df_slice), text=f"Scored {i + 1} / {len(df_slice)}")
+                        progress_bar.empty()
+                    else:
+                        from metrics.summac import SummacFactory, serialize_result
+                        pipeline_sc = SummacFactory.zero_shot(sc_model, sc_threshold)
+                        pairs = [(str(r['hypothesis']), str(r['premise'])) for _, r in df_slice.iterrows()]
+                        with st.spinner(f"Running SummaC on {len(pairs)} samples..."):
+                            batch = pipeline_sc.score_batch(pairs, max_workers=sc_workers)
+                        for i, item in enumerate(batch):
+                            row = df_slice.iloc[i]
+                            if item.get("error"):
+                                log.append({"index": sc_start + i, "error": item["error"], "summary_score": 0.0})
+                            else:
+                                log.append(serialize_result(
+                                    sc_start + i, str(row['premise']), str(row['hypothesis']),
+                                    str(row.get('label', '')), item["result"],
+                                ))
 
                     st.session_state['summac_log'] = log
                     st.session_state['summac_config_md'] = _build_run_config_md(
                         "SummaC",
-                        {"name": summac_file.name, "total_size": len(df_sc), "evaluated": len(pairs)},
+                        {"name": summac_file.name, "total_size": len(df_sc), "evaluated": len(df_slice)},
                         [
+                            ("Inference Type", sc_inference_type),
                             ("Variant", "Zero-Shot (col-max → mean)"),
                             ("NLI Model", sc_model),
                             ("Decision Threshold", sc_threshold),
-                            ("Parallel Workers", sc_workers),
-                            ("Row Range", f"{sc_start}–{sc_end - 1} ({len(pairs)} samples)"),
+                            ("Parallel Workers", sc_workers if sc_inference_type == "Local" else "N/A (API)"),
+                            ("Row Range", f"{sc_start}–{sc_end - 1} ({len(df_slice)} samples)"),
                         ],
                     )
                     st.success("✅ Done!")
@@ -1787,10 +2141,36 @@ distribution over all 5 score tokens, not just the argmax.
                     key="ge_model",
                     help="gpt-4o-mini is fastest and cheapest; gpt-4o gives highest accuracy.",
                 )
-                num_parallel_workers = int(st.number_input("Parallel workers:", min_value=1, max_value=4, value=2, step=1, key="ge_workers"))
+                num_parallel_workers = int(st.number_input("Parallel workers:", min_value=1, max_value=32, value=2, step=1, key="ge_workers"))
 
-                if st.button("▶️ Run G-EVAL", type="primary", use_container_width=True):
-                    from dataclasses import asdict as dataclass_asdict
+                if 'geval_stop_event' not in st.session_state:
+                    st.session_state['geval_stop_event'] = threading.Event()
+
+                ge_run_col, ge_stop_col = st.columns([3, 1])
+                with ge_run_col:
+                    ge_run_clicked = st.button(
+                        "▶️ Run G-EVAL",
+                        type="primary",
+                        use_container_width=True,
+                        disabled=st.session_state.get('geval_running', False),
+                        key="ge_run",
+                    )
+                with ge_stop_col:
+                    ge_stop_clicked = st.button(
+                        "⏹ Stop",
+                        type="secondary",
+                        use_container_width=True,
+                        disabled=not st.session_state.get('geval_running', False),
+                        key="ge_stop",
+                    )
+
+                if ge_stop_clicked:
+                    ge_stop_ev = st.session_state.get('geval_stop_event')
+                    if ge_stop_ev is not None:
+                        ge_stop_ev.set()
+                    st.session_state['geval_running'] = False
+
+                if ge_run_clicked:
                     from metrics.llm_as_a_judge.g_eval import GEvalScorer, serialize_result as geval_serialize_result
 
                     if not os.getenv("OPENAI_API_KEY", ""):
@@ -1798,56 +2178,35 @@ distribution over all 5 score tokens, not just the argmax.
                         st.stop()
 
                     geval_scorer = GEvalScorer(model_name=selected_model)
-
                     sliced_dataframe = geval_dataframe.iloc[start_index:end_index].copy()
                     total_samples = len(sliced_dataframe)
 
-                    progress_bar = st.progress(0, text="Starting G-EVAL...")
-                    status_text = st.empty()
-                    result_log = [None] * total_samples
-                    completed_count = 0
+                    geval_stop_event = threading.Event()
+                    st.session_state['geval_stop_event'] = geval_stop_event
+                    st.session_state['geval_running'] = True
 
-                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    result_log, was_stopped = _run_llm_judge_batch(
+                        scorer_fn=geval_scorer.score_one,
+                        serialize_fn=geval_serialize_result,
+                        sliced_dataframe=sliced_dataframe,
+                        start_index=start_index,
+                        num_parallel_workers=num_parallel_workers,
+                        stop_event=geval_stop_event,
+                        progress_label="G-EVAL",
+                    )
 
-                    def _score_row(row_offset, csv_row):
-                        return row_offset, geval_scorer.score_one(
-                            source_document=str(csv_row['premise']),
-                            generated_summary=str(csv_row['hypothesis']),
-                        )
+                    st.session_state['geval_running'] = False
 
-                    with ThreadPoolExecutor(max_workers=num_parallel_workers) as pool:
-                        futures = {
-                            pool.submit(_score_row, i, row): i
-                            for i, (_, row) in enumerate(sliced_dataframe.iterrows())
-                        }
-                        for future in as_completed(futures):
-                            completed_count += 1
-                            progress_bar.progress(completed_count / total_samples, text=f"Completed {completed_count} / {total_samples}")
-                            row_offset = futures[future]
-                            csv_row = sliced_dataframe.iloc[row_offset]
-                            try:
-                                _, eval_result = future.result()
-                                result_log[row_offset] = dataclass_asdict(geval_serialize_result(
-                                    sample_index=start_index + row_offset,
-                                    source_document=str(csv_row['premise']),
-                                    generated_summary=str(csv_row['hypothesis']),
-                                    ground_truth_label=str(csv_row.get('label', '')),
-                                    eval_result=eval_result,
-                                ))
-                            except Exception as sample_error:
-                                result_log[row_offset] = {
-                                    "index": start_index + row_offset,
-                                    "premise": str(csv_row['premise']),
-                                    "hypothesis": str(csv_row['hypothesis']),
-                                    "label": str(csv_row.get('label', '')),
-                                    "score": None,
-                                    "error": str(sample_error),
-                                }
-
-                    progress_bar.empty()
-                    status_text.empty()
+                    if was_stopped:
+                        st.warning(f"⏹ Stopped — {sum(r is not None for r in result_log)} / {total_samples} samples completed")
+                    else:
+                        st.success("✅ Done!")
 
                     st.session_state['geval_log'] = result_log
+                    st.session_state['geval_summary_csv'] = pd.DataFrame([
+                        {"index": r["index"], "label": r.get("label", ""), "score": r.get("score"), "error": r.get("error", "")}
+                        for r in result_log
+                    ]).to_csv(index=False)
                     st.session_state['geval_config_md'] = _build_run_config_md(
                         "G-EVAL",
                         {"name": geval_csv_file.name, "total_size": len(geval_dataframe), "evaluated": total_samples},
@@ -1861,10 +2220,19 @@ distribution over all 5 score tokens, not just the argmax.
                     )
                     st.success("✅ Done!")
 
-                    summary_dataframe = pd.DataFrame([
-                        {"index": r["index"], "label": r.get("label", ""), "score": r.get("score"), "error": r.get("error", "")}
-                        for r in result_log
-                    ])
+                    summary_dataframe = _build_llm_judge_summary_dataframe(
+                        result_log=result_log,
+                        sliced_dataframe=sliced_dataframe,
+                        core_field_names={
+                            "index": "index",
+                            "label": "label",
+                            "score": "score",
+                            "reasoning": "evaluation",
+                            "model": "model",
+                            "passed": "passed",
+                            "error": "error",
+                        },
+                    )
                     valid_scores = summary_dataframe[summary_dataframe["score"].notna()]["score"]
                     if len(valid_scores):
                         st.metric("Mean G-EVAL Score (0–1)", f"{valid_scores.mean():.4f}")
@@ -1890,8 +2258,12 @@ distribution over all 5 score tokens, not just the argmax.
                 if st.session_state.get('geval_log'):
                     trace_log = st.session_state['geval_log']
                     st.markdown("---")
-                    if st.session_state.get('geval_config_md'):
-                        st.download_button("📋 Download Config (MD)", st.session_state['geval_config_md'].encode(), "geval_config.md", "text/markdown", key="dl_md_geval")
+                    if st.session_state.get('geval_config_md') and st.session_state.get('geval_summary_csv'):
+                        _zip_buf = io.BytesIO()
+                        with zipfile.ZipFile(_zip_buf, 'w', zipfile.ZIP_DEFLATED) as _zf:
+                            _zf.writestr("geval_results.csv", st.session_state['geval_summary_csv'])
+                            _zf.writestr("geval_config.md",   st.session_state['geval_config_md'])
+                        st.download_button("📦 Download Results + Config (ZIP)", _zip_buf.getvalue(), "geval_results.zip", "application/zip", key="dl_zip_geval")
                     st.subheader("🔎 Trace Viewer")
                     selected_sample = st.selectbox(
                         "Select sample:",
@@ -1998,10 +2370,36 @@ model wrote as text → integer 1–5. Simpler but less precise.
                     key="vn_model",
                     help="gpt-4o-mini is fastest and cheapest; gpt-4o gives highest accuracy.",
                 )
-                num_parallel_workers = int(st.number_input("Parallel workers:", min_value=1, max_value=4, value=2, step=1, key="vn_workers"))
+                num_parallel_workers = int(st.number_input("Parallel workers:", min_value=1, max_value=32, value=2, step=1, key="vn_workers"))
 
-                if st.button("▶️ Run Vanilla LLM-as-Judge", type="primary", use_container_width=True):
-                    from dataclasses import asdict as dataclass_asdict
+                if 'vanilla_stop_event' not in st.session_state:
+                    st.session_state['vanilla_stop_event'] = threading.Event()
+
+                vn_run_col, vn_stop_col = st.columns([3, 1])
+                with vn_run_col:
+                    vn_run_clicked = st.button(
+                        "▶️ Run Vanilla LLM-as-Judge",
+                        type="primary",
+                        use_container_width=True,
+                        disabled=st.session_state.get('vanilla_running', False),
+                        key="vn_run",
+                    )
+                with vn_stop_col:
+                    vn_stop_clicked = st.button(
+                        "⏹ Stop",
+                        type="secondary",
+                        use_container_width=True,
+                        disabled=not st.session_state.get('vanilla_running', False),
+                        key="vn_stop",
+                    )
+
+                if vn_stop_clicked:
+                    vn_stop_ev = st.session_state.get('vanilla_stop_event')
+                    if vn_stop_ev is not None:
+                        vn_stop_ev.set()
+                    st.session_state['vanilla_running'] = False
+
+                if vn_run_clicked:
                     from metrics.llm_as_a_judge.vanila_zero_shot import VanillaScorer, serialize_result as vanilla_serialize_result
                     from openai import OpenAI as _OpenAI
 
@@ -2014,55 +2412,29 @@ model wrote as text → integer 1–5. Simpler but less precise.
                         openai_client=_OpenAI(api_key=openai_api_key),
                         model_name=selected_model,
                     )
-
                     sliced_dataframe = vanilla_dataframe.iloc[start_index:end_index].copy()
                     total_samples = len(sliced_dataframe)
 
-                    progress_bar = st.progress(0, text="Starting Vanilla LLM-as-Judge...")
-                    status_text = st.empty()
-                    result_log = [None] * total_samples
-                    completed_count = 0
+                    vanilla_stop_event = threading.Event()
+                    st.session_state['vanilla_stop_event'] = vanilla_stop_event
+                    st.session_state['vanilla_running'] = True
 
-                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    result_log, was_stopped = _run_llm_judge_batch(
+                        scorer_fn=vanilla_scorer.score_one,
+                        serialize_fn=vanilla_serialize_result,
+                        sliced_dataframe=sliced_dataframe,
+                        start_index=start_index,
+                        num_parallel_workers=num_parallel_workers,
+                        stop_event=vanilla_stop_event,
+                        progress_label="Vanilla LLM-as-Judge",
+                    )
 
-                    def _score_vanilla_row(row_offset, csv_row):
-                        return row_offset, vanilla_scorer.score_one(
-                            source_document=str(csv_row['premise']),
-                            generated_summary=str(csv_row['hypothesis']),
-                        )
+                    st.session_state['vanilla_running'] = False
 
-                    with ThreadPoolExecutor(max_workers=num_parallel_workers) as pool:
-                        futures = {
-                            pool.submit(_score_vanilla_row, i, row): i
-                            for i, (_, row) in enumerate(sliced_dataframe.iterrows())
-                        }
-                        for future in as_completed(futures):
-                            completed_count += 1
-                            progress_bar.progress(completed_count / total_samples, text=f"Completed {completed_count} / {total_samples}")
-                            row_offset = futures[future]
-                            csv_row = sliced_dataframe.iloc[row_offset]
-                            try:
-                                _, eval_result = future.result()
-                                result_log[row_offset] = dataclass_asdict(vanilla_serialize_result(
-                                    sample_index=start_index + row_offset,
-                                    source_document=str(csv_row['premise']),
-                                    generated_summary=str(csv_row['hypothesis']),
-                                    ground_truth_label=str(csv_row.get('label', '')),
-                                    eval_result=eval_result,
-                                ))
-                            except Exception as sample_error:
-                                result_log[row_offset] = {
-                                    "index": start_index + row_offset,
-                                    "premise": str(csv_row['premise']),
-                                    "hypothesis": str(csv_row['hypothesis']),
-                                    "label": str(csv_row.get('label', '')),
-                                    "score": None,
-                                    "score_normalized": None,
-                                    "error": str(sample_error),
-                                }
-
-                    progress_bar.empty()
-                    status_text.empty()
+                    if was_stopped:
+                        st.warning(f"⏹ Stopped — {sum(r is not None for r in result_log)} / {total_samples} samples completed")
+                    else:
+                        st.success("✅ Done!")
 
                     st.session_state['vanilla_log'] = result_log
                     st.session_state['vanilla_config_md'] = _build_run_config_md(
@@ -2078,16 +2450,20 @@ model wrote as text → integer 1–5. Simpler but less precise.
                     )
                     st.success("✅ Done!")
 
-                    summary_dataframe = pd.DataFrame([
-                        {
-                            "index": r["index"],
-                            "label": r.get("label", ""),
-                            "score (1–5)": r.get("score"),
-                            "score_normalized (0–1)": r.get("score_normalized"),
-                            "error": r.get("error", ""),
-                        }
-                        for r in result_log
-                    ])
+                    summary_dataframe = _build_llm_judge_summary_dataframe(
+                        result_log=result_log,
+                        sliced_dataframe=sliced_dataframe,
+                        core_field_names={
+                            "index": "index",
+                            "label": "label",
+                            "score (1–5)": "score",
+                            "score_normalized (0–1)": "score_normalized",
+                            "reasoning": "reasoning",
+                            "model": "model",
+                            "passed": "passed",
+                            "error": "error",
+                        },
+                    )
                     valid_normalized = summary_dataframe[summary_dataframe["score_normalized (0–1)"].notna()]["score_normalized (0–1)"]
                     if len(valid_normalized):
                         col_raw, col_norm = st.columns(2)
@@ -2250,67 +2626,94 @@ which pulls the average down. Faithful summaries score closer to 0; hallucinated
                     help="exp(raw_score). Typical faithful summaries score 0.05–0.20.",
                 )
 
-                if st.button("▶️ Run BARTScore", type="primary", use_container_width=True):
-                    from dataclasses import asdict as dataclass_asdict
-                    from metrics.bartscore import BartScorer, serialize_result as bart_serialize_result
+                bs_inference_type = st.radio(
+                    "Inference type:",
+                    ["Local", "Remote API"],
+                    horizontal=True,
+                    key="bs_inference_type",
+                    help="Local: loads BART on this machine (~1.5GB). Remote API: calls inference server on GPU.",
+                )
+                if bs_inference_type == "Remote API":
+                    bs_api_url = st.text_input("API URL", value="http://localhost:8080", key="bs_api_url")
 
+                if st.button("▶️ Run BARTScore", type="primary", use_container_width=True):
+                    import requests as _requests
                     sliced_dataframe = bartscore_dataframe.iloc[start_index:end_index].copy()
                     total_samples = len(sliced_dataframe)
-                    document_summary_pairs = list(zip(
-                        sliced_dataframe['premise'].astype(str),
-                        sliced_dataframe['hypothesis'].astype(str),
-                    ))
-
-                    model_load_status = st.empty()
-                    model_load_status.info(f"⏳ Loading `{selected_model}`… first run downloads weights (~1.5 GB)")
-
-                    @st.cache_resource
-                    def _load_bart_scorer(
-                        cached_model_name: str,
-                        cached_batch_size: int,
-                        cached_threshold: float,
-                    ) -> BartScorer:
-                        return BartScorer.from_pretrained(
-                            model_name=cached_model_name,
-                            batch_size=cached_batch_size,
-                            passing_threshold=cached_threshold,
-                        )
-
-                    bart_scorer = _load_bart_scorer(selected_model, selected_batch_size, passing_threshold)
-                    model_load_status.empty()
-
                     progress_bar = st.progress(0, text="Starting BARTScore…")
                     result_log = []
-                    scored_count = 0
 
-                    for chunk_start in range(0, total_samples, selected_batch_size):
-                        chunk_end = min(chunk_start + selected_batch_size, total_samples)
-                        chunk_pairs = document_summary_pairs[chunk_start:chunk_end]
-                        chunk_results = bart_scorer.score_batch(chunk_pairs)
+                    if bs_inference_type == "Remote API":
+                        for i, (_, csv_row) in enumerate(sliced_dataframe.iterrows()):
+                            try:
+                                resp = _requests.post(
+                                    f"{bs_api_url}/bartscore/predict",
+                                    json={
+                                        "source_document": str(csv_row['premise']),
+                                        "summary": str(csv_row['hypothesis']),
+                                    },
+                                    timeout=60,
+                                )
+                                if resp.status_code == 200:
+                                    r = resp.json()
+                                    result_log.append({
+                                        "index": start_index + i,
+                                        "premise": str(csv_row['premise']),
+                                        "hypothesis": str(csv_row['hypothesis']),
+                                        "label": str(csv_row.get('label', '')),
+                                        "raw_score": r["raw_score"],
+                                        "normalized_score": r["normalized_score"],
+                                    })
+                                else:
+                                    result_log.append({"index": start_index + i, "premise": str(csv_row['premise']), "hypothesis": str(csv_row['hypothesis']), "label": str(csv_row.get('label', '')), "raw_score": None, "normalized_score": None, "error": resp.text})
+                            except Exception as _api_err:
+                                result_log.append({"index": start_index + i, "premise": str(csv_row['premise']), "hypothesis": str(csv_row['hypothesis']), "label": str(csv_row.get('label', '')), "raw_score": None, "normalized_score": None, "error": str(_api_err)})
+                            progress_bar.progress((i + 1) / total_samples, text=f"Scored {i + 1} / {total_samples}")
+                    else:
+                        from dataclasses import asdict as dataclass_asdict
+                        from metrics.bartscore import BartScorer, serialize_result as bart_serialize_result
 
-                        for batch_item in chunk_results:
-                            csv_row = sliced_dataframe.iloc[batch_item.sample_index]
-                            if batch_item.error_message:
-                                result_log.append({
-                                    "index": start_index + batch_item.sample_index,
-                                    "premise": str(csv_row['premise']),
-                                    "hypothesis": str(csv_row['hypothesis']),
-                                    "label": str(csv_row.get('label', '')),
-                                    "raw_score": None,
-                                    "normalized_score": None,
-                                    "error": batch_item.error_message,
-                                })
-                            else:
-                                result_log.append(dataclass_asdict(bart_serialize_result(
-                                    sample_index=start_index + batch_item.sample_index,
-                                    source_document=str(csv_row['premise']),
-                                    generated_summary=str(csv_row['hypothesis']),
-                                    ground_truth_label=str(csv_row.get('label', '')),
-                                    eval_result=batch_item.eval_result,
-                                )))
+                        document_summary_pairs = list(zip(
+                            sliced_dataframe['premise'].astype(str),
+                            sliced_dataframe['hypothesis'].astype(str),
+                        ))
+                        model_load_status = st.empty()
+                        model_load_status.info(f"⏳ Loading `{selected_model}`… first run downloads weights (~1.5 GB)")
 
-                        scored_count = chunk_end
-                        progress_bar.progress(scored_count / total_samples, text=f"Scored {scored_count} / {total_samples}")
+                        @st.cache_resource
+                        def _load_bart_scorer(
+                            cached_model_name: str,
+                            cached_batch_size: int,
+                            cached_threshold: float,
+                        ) -> BartScorer:
+                            return BartScorer.from_pretrained(
+                                model_name=cached_model_name,
+                                batch_size=cached_batch_size,
+                                passing_threshold=cached_threshold,
+                            )
+
+                        bart_scorer = _load_bart_scorer(selected_model, selected_batch_size, passing_threshold)
+                        model_load_status.empty()
+
+                        scored_count = 0
+                        for chunk_start in range(0, total_samples, selected_batch_size):
+                            chunk_end = min(chunk_start + selected_batch_size, total_samples)
+                            chunk_pairs = document_summary_pairs[chunk_start:chunk_end]
+                            chunk_results = bart_scorer.score_batch(chunk_pairs)
+                            for batch_item in chunk_results:
+                                csv_row = sliced_dataframe.iloc[batch_item.sample_index]
+                                if batch_item.error_message:
+                                    result_log.append({"index": start_index + batch_item.sample_index, "premise": str(csv_row['premise']), "hypothesis": str(csv_row['hypothesis']), "label": str(csv_row.get('label', '')), "raw_score": None, "normalized_score": None, "error": batch_item.error_message})
+                                else:
+                                    result_log.append(dataclass_asdict(bart_serialize_result(
+                                        sample_index=start_index + batch_item.sample_index,
+                                        source_document=str(csv_row['premise']),
+                                        generated_summary=str(csv_row['hypothesis']),
+                                        ground_truth_label=str(csv_row.get('label', '')),
+                                        eval_result=batch_item.eval_result,
+                                    )))
+                            scored_count = chunk_end
+                            progress_bar.progress(scored_count / total_samples, text=f"Scored {scored_count} / {total_samples}")
 
                     progress_bar.empty()
                     st.session_state['bartscore_log'] = result_log
@@ -2318,9 +2721,10 @@ which pulls the average down. Faithful summaries score closer to 0; hallucinated
                         "BARTScore",
                         {"name": bartscore_csv_file.name, "total_size": len(bartscore_dataframe), "evaluated": total_samples},
                         [
+                            ("Inference Type", bs_inference_type),
                             ("BART Model", selected_model),
-                            ("Batch Size", selected_batch_size),
-                            ("Device", detected_device),
+                            ("Batch Size", selected_batch_size if bs_inference_type == "Local" else "N/A (API)"),
+                            ("Device", detected_device if bs_inference_type == "Local" else "Remote GPU"),
                             ("Passing Threshold", passing_threshold),
                             ("Row Range", f"{start_index}–{end_index - 1} ({total_samples} samples)"),
                         ],
@@ -2413,4 +2817,187 @@ which pulls the average down. Faithful summaries score closer to 0; hallucinated
         - `premise` — source document
         - `hypothesis` — generated summary
         - `label` — optional; used for Kendall τ (`entailment` / `contradiction`)
+        """)
+
+# ===== MFACT TAB =====
+with tab_mfact:
+    st.markdown("---")
+    st.subheader("🔬 MFact — Hebrew Factual Consistency (NeoDictaBERT)")
+    st.markdown(
+        "Evaluates factual consistency using a NeoDictaBERT model fine-tuned on the MFact Hebrew dataset. "
+        "Runs inference via the remote API."
+    )
+
+    # ── API configuration ──────────────────────────────────────────────────
+    mfact_api_url = st.text_input("API URL", value="http://localhost:8080", key="mfact_api_url")
+    if st.button("🏥 Check API Health", key="mfact_health_check"):
+        import requests as _req
+        try:
+            resp = _req.get(f"{mfact_api_url}/health", timeout=5)
+            if resp.status_code == 200:
+                h = resp.json()
+                if h.get("mfact_model_loaded"):
+                    st.success(f"✅ MFact model loaded on {h.get('mfact_device', 'unknown')}")
+                else:
+                    st.error("❌ MFact model not loaded on remote API")
+            else:
+                st.error(f"❌ API returned status {resp.status_code}")
+        except Exception as _e:
+            st.error(f"❌ Cannot reach API: {_e}")
+
+    st.markdown("---")
+
+    # ── File upload ────────────────────────────────────────────────────────
+    mfact_file = st.file_uploader(
+        "Upload CSV (premise, hypothesis columns required; label optional)",
+        type=["csv"],
+        key="mfact_csv",
+    )
+
+    if mfact_file is not None:
+        try:
+            df_mfact = pd.read_csv(mfact_file)
+            st.success(f"✅ Loaded {len(df_mfact)} records")
+
+            if not {'premise', 'hypothesis'}.issubset(df_mfact.columns):
+                st.error("❌ CSV must contain 'premise' and 'hypothesis' columns")
+            else:
+                # Label filter
+                if 'label' in df_mfact.columns:
+                    available_labels = df_mfact['label'].dropna().unique().tolist()
+                    selected_labels = st.multiselect(
+                        "Filter by label (optional):",
+                        options=available_labels,
+                        default=[],
+                        key="mfact_label_filter",
+                    )
+                    if selected_labels:
+                        df_mfact = df_mfact[df_mfact['label'].isin(selected_labels)].reset_index(drop=True)
+                        st.info(f"📊 Filtered to {len(df_mfact)} records")
+
+                with st.expander("🔍 Dataset Preview (first 5 rows)"):
+                    st.dataframe(df_mfact.head(), use_container_width=True)
+
+                # Row range
+                col_s, col_e = st.columns(2)
+                with col_s:
+                    mf_start = int(st.number_input("Start index:", 0, len(df_mfact) - 1, 0, 1, key="mfact_start"))
+                with col_e:
+                    mf_end = int(st.number_input("End index:", mf_start + 1, len(df_mfact), min(mf_start + 100, len(df_mfact)), 1, key="mfact_end"))
+                st.info(f"📊 Will evaluate rows {mf_start}–{mf_end - 1} ({mf_end - mf_start} samples)")
+
+                if st.button("▶️ Run MFact", type="primary", use_container_width=True):
+                    import requests as _requests
+                    df_slice = df_mfact.iloc[mf_start:mf_end].copy()
+                    result_log = []
+                    progress_bar = st.progress(0, text="Running MFact inference...")
+
+                    for i, (_, row) in enumerate(df_slice.iterrows()):
+                        try:
+                            resp = _requests.post(
+                                f"{mfact_api_url}/mfact/predict",
+                                json={"premise": str(row['premise']), "hypothesis": str(row['hypothesis']), "return_attention": False},
+                                timeout=30,
+                            )
+                            if resp.status_code == 200:
+                                r = resp.json()
+                                result_log.append({
+                                    "index": mf_start + i,
+                                    "premise": str(row['premise'])[:120],
+                                    "hypothesis": str(row['hypothesis']),
+                                    "label": str(row.get('label', '')) if 'label' in df_slice.columns else '',
+                                    "prediction": r["prediction"],
+                                    "confidence": round(r["confidence"], 4),
+                                    **{f"prob_{k}": round(v, 4) for k, v in r["probabilities"].items()},
+                                })
+                            else:
+                                result_log.append({"index": mf_start + i, "error": resp.text})
+                        except Exception as _e:
+                            result_log.append({"index": mf_start + i, "error": str(_e)})
+                        progress_bar.progress((i + 1) / len(df_slice), text=f"Scored {i + 1} / {len(df_slice)}")
+
+                    progress_bar.empty()
+                    st.session_state['mfact_log'] = result_log
+                    st.success("✅ Done!")
+
+                if st.session_state.get('mfact_log'):
+                    log = st.session_state['mfact_log']
+                    result_df = pd.DataFrame([r for r in log if 'error' not in r])
+                    errors = [r for r in log if 'error' in r]
+
+                    if errors:
+                        st.warning(f"⚠️ {len(errors)} samples failed")
+
+                    if not result_df.empty:
+                        st.markdown("---")
+                        st.subheader("📊 Results")
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Samples scored", len(result_df))
+                        with col2:
+                            st.metric("Avg confidence", f"{result_df['confidence'].mean():.4f}")
+                        with col3:
+                            if 'label' in result_df.columns and result_df['label'].ne('').any():
+                                valid = result_df[result_df['label'].ne('')]
+                                acc = (valid['prediction'] == valid['label']).mean()
+                                st.metric("Accuracy vs label", f"{acc:.2%}")
+
+                        st.markdown("#### Prediction Distribution")
+                        pred_counts = result_df['prediction'].value_counts().reset_index()
+                        pred_counts.columns = ['Prediction', 'Count']
+                        st.dataframe(pred_counts, use_container_width=True)
+
+                        # Kendall Tau vs label
+                        if 'label' in result_df.columns and result_df['label'].ne('').any():
+                            valid = result_df[result_df['label'].ne('')]
+                            label_binary = label_to_binary(valid['label'])
+                            valid_idx = [i for i, l in enumerate(label_binary) if l is not None]
+                            if len(valid_idx) >= 4:
+                                prob_cols = [c for c in result_df.columns if c.startswith('prob_')]
+                                if prob_cols:
+                                    st.markdown("#### Kendall τ Correlation (probability vs label)")
+                                    clean_labels = [label_binary[i] for i in valid_idx]
+                                    tau_cols = st.columns(len(prob_cols))
+                                    for ci, col in enumerate(prob_cols):
+                                        scores = [float(valid.iloc[i][col]) for i in valid_idx]
+                                        tau_r = KendallTauCalculator(scores, clean_labels, col).compute()
+                                        delta_color = "normal" if tau_r.statistic > 0.3 else ("inverse" if tau_r.statistic < -0.1 else "off")
+                                        with tau_cols[ci]:
+                                            st.metric(col, f"τ = {tau_r.statistic:.4f}", f"p = {tau_r.p_value:.4f}", delta_color=delta_color, help=tau_r.interpretation)
+
+                        st.markdown("#### Detailed Results")
+                        with st.expander("🔍 View All Results", expanded=True):
+                            st.dataframe(result_df, use_container_width=True)
+
+                        st.markdown("---")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.download_button(
+                                "📥 Download Results (CSV)",
+                                result_df.to_csv(index=False).encode('utf-8'),
+                                "mfact_results.csv", "text/csv",
+                            )
+                        with col2:
+                            st.download_button(
+                                "📥 Download Results (JSON)",
+                                json.dumps(log, ensure_ascii=False, indent=2).encode('utf-8'),
+                                "mfact_results.json", "application/json",
+                            )
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+    else:
+        st.info("📁 Upload a CSV with `premise` and `hypothesis` columns to begin")
+        st.markdown("""
+        **Expected CSV format:**
+        ```
+        premise, hypothesis, label
+        source article text..., claim to verify..., supports
+        ```
+        - `premise` — source document / article
+        - `hypothesis` — claim to verify
+        - `label` — optional; used for accuracy and Kendall τ
         """)

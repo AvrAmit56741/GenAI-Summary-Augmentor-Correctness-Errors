@@ -56,6 +56,12 @@ LLM_MAX_SEQ_LENGTH = 4096
 LLM_USE_VLLM = False
 LLM_PROMPT_FORMAT = "alpaca"  # Options: "alpaca", "gemma", "chatml"
 
+# MFact Hebrew classifier
+MFACT_MODEL_PATH = "/home/avramit/classifier/mfact_he/neodictabert-finetuned-mfact-he"
+MFACT_MAX_SEQ_LENGTH = 512
+MFACT_ENABLE_ATTENTION = True
+MFACT_TOP_K_TOKENS = 15
+
 PORT = 8080
 HOST = "0.0.0.0"
 
@@ -69,6 +75,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoConfig
 import uvicorn
 import logging
+import models as _models
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -109,6 +116,12 @@ multilabel_setup3_config = None
 llm_model = None
 llm_tokenizer = None
 llm_device = None
+
+# MFact classifier
+mfact_model = None
+mfact_tokenizer = None
+mfact_device = None
+mfact_config = None
 
 # ============================================================================
 # REQUEST/RESPONSE SCHEMAS
@@ -156,6 +169,20 @@ class LLMClassifierResponse(BaseModel):
     generated_text: str
     parsed_json: Optional[dict] = None
 
+class BartScoreRequest(BaseModel):
+    source_document: str
+    summary: str
+
+class BertScoreRequest(BaseModel):
+    reference: str
+    hypothesis: str
+    model_name: str = "avichr/heBERT"
+
+class SummacRequest(BaseModel):
+    source_document: str
+    summary: str
+    model_name: str = "roberta-large-mnli"
+
 # ============================================================================
 # FASTAPI APP
 # ============================================================================
@@ -171,6 +198,7 @@ async def load_models():
     global multilabel_setup2_v2_model, multilabel_setup2_v2_tokenizer, multilabel_setup2_v2_config
     global multilabel_setup3_model, multilabel_setup3_tokenizer, multilabel_setup3_config
     global llm_model, llm_tokenizer, llm_device
+    global mfact_model, mfact_tokenizer, mfact_device, mfact_config
 
     # ========================================================================
     # BINARY CLASSIFIER V1
@@ -315,6 +343,36 @@ async def load_models():
         logger.error(f"❌ Failed to load multi-label setup3: {e}")
         import traceback
         traceback.print_exc()
+
+    # ========================================================================
+    # MFACT CLASSIFIER
+    # ========================================================================
+    logger.info(f"Loading MFact model from {MFACT_MODEL_PATH}...")
+    try:
+        model_kwargs = {"trust_remote_code": True}
+        if MFACT_ENABLE_ATTENTION:
+            model_kwargs["attn_implementation"] = "eager"
+            model_kwargs["output_attentions"] = True
+        mfact_model = AutoModelForSequenceClassification.from_pretrained(MFACT_MODEL_PATH, **model_kwargs)
+        mfact_config = mfact_model.config
+        mfact_tokenizer = AutoTokenizer.from_pretrained(MFACT_MODEL_PATH, trust_remote_code=True)
+        mfact_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        mfact_model.to(mfact_device)
+        mfact_model.eval()
+        logger.info(f"✅ MFact classifier loaded on {mfact_device}")
+        if hasattr(mfact_config, 'id2label'):
+            logger.info(f"Labels: {[mfact_config.id2label[i] for i in range(mfact_config.num_labels)]}")
+    except Exception as e:
+        logger.error(f"❌ Failed to load MFact classifier: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # ========================================================================
+    # BARTSCORE + BERTSCORE (GPU-accelerated, via models.py)
+    # ========================================================================
+    _models.load_bartscore()
+    _models.load_bertscore()
+    _models.load_summac()
 
     # ========================================================================
     # LLM CLASSIFIER - Load separately with unsloth
@@ -464,6 +522,11 @@ async def health():
         "binary_v1_device": str(binary_device) if binary_device else None,
         "binary_v2_device": str(binary_v2_device) if binary_v2_device else None,
         "llm_device": str(llm_device) if llm_device else None,
+        "mfact_model_loaded": mfact_model is not None,
+        "mfact_device": str(mfact_device) if mfact_device else None,
+        "bartscore_loaded": _models.bartscore_is_loaded(),
+        "bertscore_ready": _models.bertscore_is_ready(),
+        "summac_ready": _models.summac_is_ready(),
         # Backward compatibility
         "binary_model_loaded": binary_model is not None,
         "binary_device": str(binary_device) if binary_device else None,
@@ -842,6 +905,101 @@ async def predict_llm(request: LLMClassifierRequest):
 
 
 # ============================================================================
+# MFACT ENDPOINT
+# ============================================================================
+@app.post("/mfact/predict", response_model=BinaryClassifierResponse)
+async def predict_mfact(request: BinaryClassifierRequest):
+    """Run MFact Hebrew binary NLI inference on premise-hypothesis pair."""
+    if mfact_model is None or mfact_tokenizer is None:
+        raise HTTPException(status_code=503, detail="MFact model not loaded")
+    try:
+        inputs = mfact_tokenizer(
+            request.premise,
+            request.hypothesis,
+            return_tensors="pt",
+            padding="max_length",
+            max_length=MFACT_MAX_SEQ_LENGTH,
+            truncation=True,
+        )
+        inputs = {k: v.to(mfact_device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            if MFACT_ENABLE_ATTENTION and request.return_attention:
+                outputs = mfact_model(**inputs, output_attentions=True)
+            else:
+                outputs = mfact_model(**inputs)
+
+        logits = outputs.logits[0].cpu()
+        probs = torch.softmax(logits, dim=-1)
+        predicted_class_idx = torch.argmax(probs).item()
+        predicted_class = mfact_config.id2label[predicted_class_idx]
+        confidence = probs[predicted_class_idx].item()
+        probabilities = {mfact_config.id2label[i]: float(probs[i].item()) for i in range(mfact_config.num_labels)}
+
+        attention_top_tokens = None
+        if MFACT_ENABLE_ATTENTION and request.return_attention and outputs.attentions is not None:
+            attention_top_tokens = _extract_attention_generic(inputs, outputs.attentions, mfact_tokenizer, MFACT_TOP_K_TOKENS)
+
+        return BinaryClassifierResponse(
+            prediction=predicted_class,
+            confidence=confidence,
+            probabilities=probabilities,
+            attention_top_tokens=attention_top_tokens,
+        )
+    except Exception as e:
+        logger.error(f"MFact prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# BARTSCORE ENDPOINT
+# ============================================================================
+@app.post("/bartscore/predict")
+async def predict_bartscore(request: BartScoreRequest):
+    """Compute BARTScore P(summary|source) on GPU."""
+    if not _models.bartscore_is_loaded():
+        raise HTTPException(status_code=503, detail="BARTScore model not loaded")
+    try:
+        result = _models.compute_bartscore(request.source_document, request.summary)
+        return BartScoreResponse(**result)
+    except Exception as e:
+        logger.error(f"BARTScore error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# BERTSCORE ENDPOINT
+# ============================================================================
+@app.post("/bertscore/predict")
+async def predict_bertscore(request: BertScoreRequest):
+    """Compute BERTScore semantic similarity on GPU."""
+    if not _models.bertscore_is_ready():
+        raise HTTPException(status_code=503, detail="BERTScore not available")
+    try:
+        result = _models.compute_bertscore(request.reference, request.hypothesis, request.model_name)
+        return BertScoreResponse(**result)
+    except Exception as e:
+        logger.error(f"BERTScore error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# SUMMAC ENDPOINT
+# ============================================================================
+@app.post("/summac/predict")
+async def predict_summac(request: SummacRequest):
+    """Run SummaC-ZS NLI pipeline. Returns raw scores; threshold decision is caller's responsibility."""
+    if not _models.summac_is_ready():
+        raise HTTPException(status_code=503, detail="SummaC not available")
+    try:
+        result = _models.compute_summac(request.source_document, request.summary, request.model_name)
+        return result
+    except Exception as e:
+        logger.error(f"SummaC error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 def format_alpaca_prompt(article, summary, claim):
@@ -1041,6 +1199,25 @@ def extract_attention_multilabel(inputs, attentions, tokenizer) -> List[Attentio
             for _, token, weight in filtered_results[:top_k]
         ]
 
+    except Exception as e:
+        logger.error(f"Attention extraction error: {e}")
+        return None
+
+
+def _extract_attention_generic(inputs, attentions, tokenizer, top_k: int) -> List[AttentionToken]:
+    """Generic CLS-attention extractor — reused by any classifier endpoint."""
+    try:
+        tokens = tokenizer.convert_ids_to_tokens(inputs['input_ids'][0])
+        avg_attn = attentions[-1].mean(dim=1)[0]
+        cls_attention = avg_attn[0, :].cpu().numpy()
+        content_end = tokens.index('[PAD]') if '[PAD]' in tokens else len(tokens)
+        content_tokens = tokens[1:content_end]
+        cls_attention_content = cls_attention[1:content_end]
+        if cls_attention_content.sum() > 0:
+            cls_attention_content = cls_attention_content / cls_attention_content.sum()
+        filtered = [(i, t, cls_attention_content[i]) for i, t in enumerate(content_tokens) if any(c.isalpha() for c in t)]
+        filtered.sort(key=lambda x: x[2], reverse=True)
+        return [AttentionToken(token=t, weight=float(w)) for _, t, w in filtered[:top_k]]
     except Exception as e:
         logger.error(f"Attention extraction error: {e}")
         return None

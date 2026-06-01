@@ -145,7 +145,7 @@ with tab1:
 # ============================================================================
 with tab2:
     st.markdown("### 🤖 Model Inference API")
-    st.markdown("### Tunnel command: `ssh -N -L 8080:localhost:8080 tunnel@192.168.1.100`")
+    st.markdown("### Tunnel command: `ssh -N -L 8080:localhost:8080 avramit@132.72.180.195`")
     st.markdown("Send inference requests to the model API server.")
     
     # API Configuration
@@ -572,25 +572,47 @@ with tab2:
                         st.error(f"❌ Missing required columns: {', '.join(missing_cols)}")
                     else:
                         st.success(f"✅ Loaded {len(df)} samples")
-                        
+
                         # Display column info
                         st.markdown(f"**Columns**: {', '.join(df.columns.tolist())}")
-                        
+
+                        # Label filter
+                        filter_col = None
+                        if 'label' in df.columns:
+                            filter_col = 'label'
+                        elif 'error_types' in df.columns:
+                            filter_col = 'error_types'
+
+                        df_filtered = df.copy()
+                        if filter_col:
+                            unique_labels = sorted(df[filter_col].dropna().astype(str).unique().tolist())
+                            selected_labels = st.multiselect(
+                                f"Filter by `{filter_col}`",
+                                options=unique_labels,
+                                default=unique_labels,
+                                help="Select which label values to include in inference"
+                            )
+                            if selected_labels:
+                                df_filtered = df[df[filter_col].astype(str).isin(selected_labels)].reset_index(drop=True)
+                            else:
+                                df_filtered = df.reset_index(drop=True)
+                            st.info(f"Showing **{len(df_filtered)}** / {len(df)} samples after filter")
+
                         # Sample selection
                         col1, col2 = st.columns([3, 1])
                         with col1:
-                            sample_idx = st.number_input("Select Sample Index", min_value=0, max_value=len(df)-1, value=0, step=1)
+                            sample_idx = st.number_input("Select Sample Index", min_value=0, max_value=max(0, len(df_filtered)-1), value=0, step=1)
                         with col2:
                             st.markdown("<br>", unsafe_allow_html=True)
                             load_sample = st.button("📥 Load Sample", type="secondary")
-                        
-                        # Show preview of all samples
+
+                        # Show preview of filtered samples
                         with st.expander("📋 Preview CSV Data"):
-                            st.dataframe(df, use_container_width=True)
-                        
+                            st.dataframe(df_filtered, use_container_width=True)
+
                         # Load selected sample
                         if load_sample or sample_idx is not None:
-                            selected_row = df.iloc[sample_idx]
+                            selected_row = df_filtered.iloc[sample_idx]
                             
                             if model_type == "Binary NLI Classifier":
                                 premise = str(selected_row['premise'])
