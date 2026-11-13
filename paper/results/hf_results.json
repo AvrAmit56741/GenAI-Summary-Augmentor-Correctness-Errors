@@ -1,0 +1,199 @@
+{
+  "binary": {
+    "n": 2918,
+    "n_faithful": 1218,
+    "n_unfaithful": 1700,
+    "accuracy": 0.9664153529814942,
+    "f1_unfaithful_as_positive": 0.9709371293001187,
+    "f1_faithful_as_positive": 0.9602272727272727,
+    "balanced_accuracy_argmax": 0.9671027721433401,
+    "roc_auc": 0.9899560513860718,
+    "kendall_tau_b": 0.6835156270112518,
+    "roc_auc_ci95": [
+      0.9865616363159648,
+      0.9928278223153789
+    ],
+    "balanced_accuracy_ci95": [
+      0.9607151782320641,
+      0.9733602538428003
+    ],
+    "kendall_tau_b_ci95": [
+      0.6772298269356893,
+      0.6893932230630974
+    ],
+    "test_rows_matched_in_combined_csv": 8,
+    "by_part": {
+      "benchmark-no-source": {
+        "n": 8,
+        "faithful": 0,
+        "accuracy": 1.0
+      },
+      "not-in-combined.csv": {
+        "n": 2910,
+        "faithful": 1218,
+        "accuracy": 0.9663230240549828,
+        "roc_auc": 0.9899085622673297,
+        "kendall_tau_b": 0.6837142379361434
+      }
+    },
+    "per_family_detection_mafat_aug": []
+  },
+  "setup3": {
+    "n_claims": 41650,
+    "n_clean_claims": 41650,
+    "n_families": 20,
+    "micro_p_r_f1": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "macro_p_r_f1": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "false_alarm_rate_on_clean_claims": 0.49483793517406965,
+    "per_family": [
+      {
+        "family": "construct_state_confusion",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "directional_preposition_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "verb_gender_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "specificity_shift_errors",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "sentence_negation",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "pronoun_reference_errors",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "number_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "noun_gender_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "morphological_connective_confusion",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "measure_unit_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "idiom_collocation_corruption",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "homographic_gender_errors",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "hebrew_root_pattern_confusion",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "entity_title_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "entity_person_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "entity_organization_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "entity_location_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "entity_event_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "entity_date_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "family": "verb_tense_swap",
+        "support": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    ]
+  }
+}
