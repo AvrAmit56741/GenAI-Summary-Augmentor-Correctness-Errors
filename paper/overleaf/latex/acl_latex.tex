@@ -30,6 +30,7 @@
 %Including images in your LaTeX document requires adding
 %additional package(s)
 \usepackage{graphicx}
+\usepackage{amsmath,amssymb}
 % Figures live in ../figures (relative to this file); also try figures/ for root-relative builds
 \graphicspath{{../figures/}{figures/}}
 
@@ -208,11 +209,78 @@ Figure~\ref{fig:pipeline} gives an overview of the augmentation pipeline.
 \end{figure*}
 \subsection{Source Documents}
 \subsection{Augmentation and Labeling}
+\label{sec:augmentation}
+
+\paragraph{Notation.}
+Let $D$ be a source article and $S$ a faithful reference summary of $D$. A factuality metric is a function $f(D,S)\in[0,1]$, where higher values mean the summary is more likely to be faithful. Each training and evaluation instance is a triple $(D, S, y)$, with label $y=1$ for a faithful (entailed) summary and $y=0$ for an unfaithful (contradicted) one. Negative instances also carry the set $E\subseteq\mathcal{K}$ of error families injected into them, where $\mathcal{K}$ is the set of families in the taxonomy (Figure~\ref{fig:taxonomy}).
+
+\paragraph{Negative summaries.}
+We decompose $S$ into claims $S=(c_1,\dots,c_n)$; in our experiments each claim is a sentence. For each claim, an LLM, together with DictaBERT NER for the entity families, selects the error families that can be applied to it, and a transformation $t_k$ for family $k$ rewrites the claim into a corrupted variant $t_k(c_i)$. Let $T$ be the total number of corrupted variants available across all claims. A negative summary combines
+\begin{equation}
+  m = \max\bigl(1, \lfloor \rho\, T \rfloor\bigr)
+  \label{eq:num_errors}
+\end{equation}
+of these variants, where the corruption rate $\rho$ controls how heavily a summary is corrupted ($\rho=0.9$ in all experiments). We enumerate allocations of the $m$ variants to claims (at most $20{,}000$), and apply one restriction rule: negation may not be combined with another transformation on the same claim. Each allocation is recomposed into a candidate summary $S'$ by replacing the affected claims, and we keep at most $M{=}51$ candidates per summary.
+% CHECK (code): the 51 comes from `if count > 50: break` in
+% correctness_errors_augmentation_v2.py; consider changing the code to 50.
+
+\paragraph{Diversity filter.}
+To avoid near-duplicate negatives, we measure the surface overlap between two summaries $a$ and $b$ as
+\begin{equation}
+  o(a,b) = \max\bigl(J_1(a,b),\, J_2(a,b)\bigr),
+  \label{eq:overlap}
+\end{equation}
+where $J_n$ is the Jaccard similarity of the two summaries' sets of word $n$-grams. A candidate $S'$ with error set $E'$ is kept only if $o(S',S)\le\theta(S')$ and $o(S',S'')\le\theta(S')$ for every candidate $S''$ already kept, with threshold
+\begin{equation}
+  \theta(S') = \theta_0 + 0.0013\,|E'|^{0.75},
+  \label{eq:threshold}
+\end{equation}
+where $\theta_0=0.85$. The small allowance grows with the number of distinct error families, since each extra injected error is a further small edit to the same summary.
+% CHECK (code): in utils.filter_diverse_summaries the threshold is updated
+% cumulatively (max_same = max_same + ...) inside the loop, so it grows with
+% every candidate examined, not per candidate as in Eq. (3). Fix the code to
+% use a per-candidate threshold, or describe the actual behavior here.
+% CHECK (code): if no candidate passes the filter, all candidates are kept
+% unfiltered. Decide whether to report this fallback.
+
+\paragraph{Positive summaries.}
+Faithful positives ($y=1$) are created by meaning-preserving rewrites of $S$: back-translation and paraphrasing.
+
 \subsection{Data Split Strategy}
 
 \section{MorphEvalHeb}
+\label{sec:model}
+
 \subsection{Binary Faithfulness Verifier}
+\label{sec:binary}
+The verifier encodes the article and the summary as a single sequence pair, $x=[\texttt{CLS}]\,D\,[\texttt{SEP}]\,S\,[\texttt{SEP}]$, truncated to $L$ tokens ($L=4096$). A pooled encoder representation $\mathbf{h}=\mathrm{Enc}(x)\in\mathbb{R}^{d}$ from NeoDictaBERT is mapped to a distribution over the two labels:
+\begin{equation}
+  p_\phi(y \mid D,S) = \mathrm{softmax}\bigl(\mathbf{W}\mathbf{h}+\mathbf{b}\bigr)_y .
+  \label{eq:binary}
+\end{equation}
+The model is trained with cross-entropy, $\mathcal{L}_{\mathrm{bin}} = -\log p_\phi(y \mid D,S)$. The MorphEvalHeb score of a summary is the probability of the faithful class, $f(D,S)=p_\phi(y{=}1 \mid D,S)$.
+% CHECK (code): class order is inconsistent between docs/classifier_models_docs.md
+% (class 1 = inconsistent) and the training script (index 1 = entailment).
+% Confirm which index is "faithful" in the released checkpoint.
+
 \subsection{Multi-label Error Detector}
+\label{sec:multilabel}
+The detector predicts which error families a summary contains. It uses the same encoder, with $K=|\mathcal{K}|$ independent sigmoid outputs,
+\begin{equation}
+  \hat{p}_k = \sigma\bigl(\mathbf{w}_k^{\top}\mathbf{h}+b_k\bigr), \qquad k=1,\dots,K,
+  \label{eq:multilabel}
+\end{equation}
+and predicts the error set $\hat{E}=\{k : \hat{p}_k \ge 0.5\}$. Error families are highly imbalanced, so we train with class-weighted binary cross-entropy:
+\begin{equation}
+  \begin{split}
+  \mathcal{L}_{\mathrm{ml}} = -\sum_{k=1}^{K}\Bigl[\, & w_k\, e_k \log \hat{p}_k \\
+  & + (1-e_k)\log(1-\hat{p}_k)\Bigr],
+  \end{split}
+  \label{eq:bce}
+\end{equation}
+where $e_k=\mathbf{1}[k\in E]$ and $w_k=N^{-}_k/N^{+}_k$, with $N^{+}_k$ and $N^{-}_k$ the numbers of training instances with and without family $k$. We also oversample rare families: training instances are drawn with probability proportional to the mean of $w_k$ over the families they contain.
+
+We compare three input granularities: the full article and summary, $(D,S)$ (Setup~1); the article and a single claim, $(D,c_i)$ (Setup~2); and a single claim with retrieved evidence sentences from the article, $(\mathrm{Ev}(c_i),c_i)$ (Setup~3).
 
 \section{Experimental Setup}
 \subsection{Datasets}
@@ -240,6 +308,34 @@ We evaluate \textbf{BARTScore} \cite{yuan2021bartscore}, which measures the cond
 
 
 \subsection{Evaluation Protocol}
+\label{sec:protocol}
+Given a test set $\{(D_i,S_i,y_i)\}_{i=1}^{N}$, we compare each metric's scores $s_i=f(D_i,S_i)$ with the binary labels $y_i$ using three statistics.
+
+\paragraph{Kendall's $\tau_b$.}
+Because the labels are binary, most pairs of instances are tied in $y$, so we use the tie-adjusted variant
+\begin{equation}
+  \tau_b = \frac{n_c - n_d}{\sqrt{(n_0-n_s)(n_0-n_y)}},
+  \label{eq:taub}
+\end{equation}
+where $n_c$ and $n_d$ are the numbers of concordant and discordant pairs, $n_0=N(N-1)/2$, and $n_s$ and $n_y$ are the numbers of pairs tied in $s$ and in $y$, respectively \citep{deutsch-etal-2023-ties}.
+
+\paragraph{ROC AUC.}
+The probability that a metric scores a randomly chosen faithful summary above a randomly chosen unfaithful one:
+\begin{equation}
+  \mathrm{AUC} = \frac{1}{N^{+}N^{-}}\sum_{i:\,y_i=1}\;\sum_{j:\,y_j=0} u(s_i,s_j),
+  \label{eq:auc}
+\end{equation}
+where $u(s_i,s_j)$ is $1$ if $s_i>s_j$, $\tfrac{1}{2}$ if $s_i=s_j$ and $0$ otherwise, and $N^{+}$ and $N^{-}$ are the numbers of faithful and unfaithful test summaries.
+AUC needs no decision threshold and is unaffected by the label imbalance.
+
+\paragraph{Balanced accuracy.}
+For a threshold $t$, $\mathrm{BAcc}(t)=\tfrac{1}{2}\bigl(\mathrm{TPR}(t)+\mathrm{TNR}(t)\bigr)$. For every metric we choose $t$ in the same way, maximizing $\mathrm{BAcc}$ on the development set, and report $\mathrm{BAcc}$ on the test set at that fixed threshold.
+
+\paragraph{Uncertainty and significance.}
+Following \citet{deutsch-etal-2021-statistical}, we report 95\% confidence intervals from a percentile bootstrap over test instances ($B=1000$ resamples). To test whether metric $A$ outperforms metric $B$, we use a paired bootstrap: both metrics are evaluated on the same resampled instances, and the one-sided $p$-value is the fraction of resamples in which $\mathrm{AUC}_A-\mathrm{AUC}_B\le 0$. We correct for multiple comparisons against MorphEvalHeb with the Holm--Bonferroni procedure.
+% NOTE: the bootstrap/permutation tests and BAcc are not implemented yet; the
+% current code (pages/metrics/compare_metrics_eval.py) computes scipy
+% kendalltau (tau-b by default) and point-biserial r only.
 
 \section{Results}
 

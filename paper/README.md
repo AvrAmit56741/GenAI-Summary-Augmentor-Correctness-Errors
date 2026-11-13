@@ -18,6 +18,14 @@ Everything related to writing the MorphEvalHeb paper (ACL format). This folder i
 
 ## Known open items
 
+- **Formulas (Eqs. 1–8) are drafted.** `% CHECK` comments in `acl_latex.tex` mark places where the code and the paper must be made to agree:
+  - the diversity threshold is updated cumulatively in `utils.filter_diverse_summaries`;
+  - if nothing passes the diversity filter, all candidates are kept unfiltered;
+  - the candidate cap is 51, from `count > 50`;
+  - the class index meaning "faithful" differs between the docs and the training script;
+  - the bootstrap test, balanced accuracy and AUC are not implemented yet.
+- The taxonomy paragraph says "24 families", but its groups add up to 17 + 3 + 6 = 26.
+
 - `fig1` and the pipeline figure in `acl_latex.tex` still point at the old PNGs. Swap in `fig1_llm_error_analysis.pdf` (typeset as a table) and `fig3_augmentation_pipeline.pdf`.
 - `research/Agent paper writing guidelines.md` §5 lists 11 corrections not yet applied to the guide.
 - The draft's meta-evaluation table and results sections are incomplete. The planned tables and charts are: main meta-evaluation table, dataset statistics, binary and multi-label results, per-error-family chart, ablation, and a human-labeled test set of real LLM summaries.
