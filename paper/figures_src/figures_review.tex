@@ -1,0 +1,58 @@
+% Review sheet for the proposed MorphEvalHeb figures. Not part of the paper.
+% Build: tectonic figures_review.tex
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=1.6cm]{geometry}
+\usepackage{graphicx,xcolor,booktabs,array}
+\usepackage{times}
+\graphicspath{{./}{charts/out/}}
+\definecolor{real}{HTML}{1b7a3e}
+\definecolor{ph}{HTML}{b3261e}
+\newcommand{\real}{\textcolor{real}{\textbf{REAL DATA}}}
+\newcommand{\ph}{\textcolor{ph}{\textbf{PLACEHOLDER DATA}}}
+\newcommand{\entry}[6]{% #1 title, #2 file, #3 width, #4 status, #5 where, #6 caption + notes
+\noindent\begin{minipage}{\textwidth}
+{\large\bfseries #1}\hfill #4\par\smallskip
+{\small\textit{Placement:} #5}\par\smallskip
+\centering\fbox{\includegraphics[width=#3]{#2}}\par\smallskip
+\raggedright\small #6
+\end{minipage}\par\vspace{14pt}}
+\begin{document}
+\section*{MorphEvalHeb: proposed figures for review}
+\small
+Figures marked \real{} are computed from files in the repo. Figures marked \ph{} use synthetic scores only to show the design; the script \texttt{charts/make\_charts.py --scores scores.csv} redraws them from real per-summary metric scores. Each figure is shown at its true print size: 7.7\,cm = one ACL column, 9.9\,cm $\approx$ 0.62 of the page width.
+\normalsize
+\vspace{8pt}
+
+\entry{A. Page-1 teaser}{fig0_teaser.pdf}{7.7cm}{\textcolor{ph}{\textbf{SCORES MISSING}}}{page 1, right column (single column)}
+{\textbf{Draft caption.} A real GPT-3.5-turbo summary error: the source says the law \emph{will not be advanced}, the summary says Liberman \emph{supports advancing} it, with the same root (\textsc{q.d.m}). Surface and NLI metrics score the summary as faithful, while MorphEvalHeb flags it.\\
+\textbf{To finish:} run the five metrics on this exact pair and fill the cells. Keep the figure only if the scores support the message; otherwise choose another example from Figure 1.}
+
+\entry{B. Error families in the benchmark}{fig_error_family_distribution.pdf}{7.7cm}{\real}{Dataset section or appendix (single column)}
+{\textbf{Draft caption.} Share of negative summaries containing each error family, grouped by taxonomy group ($n=1{,}250$ negatives with recorded families).\\
+\textbf{Finding:} only \textbf{20} families occur in the benchmark, not the 24 the text claims, and two are nearly absent (directional preposition 3.6\%, homographic gender 2.2\%). A further 1,058 negatives have no recorded families.}
+
+\entry{C. Error families per negative summary}{fig_errors_per_summary.pdf}{7.7cm}{\real}{Dataset section (single column)}
+{\textbf{Draft caption.} Number of distinct error families injected into each negative summary (median 7).\\
+\textbf{Finding:} negatives are heavily corrupted (90\% corruption rate). Reviewers may say they are too easy to detect; the per-family results (D) and real-summary evaluation should address this.}
+
+\entry{D. Per-family detection}{fig_per_family_detection_PLACEHOLDER.pdf}{7.7cm}{\ph}{Results (single column). The key evidence for the ``morphology matters'' claim}
+{\textbf{Draft caption.} Detection rate per error family on test negatives, at each metric's balanced-accuracy threshold tuned on dev. Filled marker = MorphEvalHeb.\\
+\textbf{Needs:} per-summary scores for MorphEvalHeb and the two strongest baselines, with \texttt{split} and \texttt{error\_types} columns. With multi-family negatives, a summary counts toward every family it contains; single-family negatives would give a cleaner per-family estimate.}
+
+\entry{E. Errors detected in real LLM summaries}{fig_llm_detected_errors.pdf}{9.9cm}{\real}{Introduction or taxonomy section (motivation)}
+{\textbf{Draft caption.} Share of real Hebrew summaries in which an LLM error-finder (Gemini) detected at least one factual error, and the severity mix of those errors, per summarizer. $n$ = summaries examined, pooled over detection runs.\\
+\textbf{Caveat:} errors were found by Gemini and are not human-verified, so the caption must say ``detected''. Two DictaLM runs overlap (rows 15--30 and 15--35), so those summaries count twice.}
+
+\entry{F. Score distributions}{fig_score_distributions_PLACEHOLDER.pdf}{9.9cm}{\ph}{Appendix (or Analysis if space allows)}
+{\textbf{Draft caption.} Distribution of metric scores for faithful and unfaithful test summaries. Bars show the interquartile range; white dots, the median. Less overlap means better separation, which is what AUC measures.\\
+\textbf{Needs:} the same per-summary scores as D.}
+
+\entry{G. Robustness to meaning-preserving rewrites}{fig_robustness_PLACEHOLDER.pdf}{7.7cm}{\ph}{Analysis (single column). Answers the ``Stress Testing'' critique (ACL 2026)}
+{\textbf{Draft caption.} Mean absolute score change when a faithful summary is paraphrased or back-translated. A faithful rewrite should not change the score, so lower is better.\\
+\textbf{Needs:} each metric's score on the 215 paraphrased and 215 back-translated positives and on their original summaries (\texttt{original\_hypothesis}). The script does not compute this yet.}
+
+\entry{H. Multi-label confusions}{fig_multilabel_confusion_PLACEHOLDER.pdf}{7.7cm}{\ph}{Appendix (single column)}
+{\textbf{Draft caption.} For each true error family (rows), the percentage of its instances in which the multi-label detector also predicts another family (columns) that is not present.\\
+\textbf{Needs:} multi-label detector predictions on the test set. The script does not compute this yet.}
+
+\end{document}

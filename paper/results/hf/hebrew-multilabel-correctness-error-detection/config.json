@@ -1,0 +1,97 @@
+{
+  "_name_or_path": "dicta-il/neodictabert",
+  "architectures": [
+    "NeoBERTForSequenceClassification"
+  ],
+  "auto_map": {
+    "AutoConfig": "dicta-il/neodictabert--modeling_neobert.NeoBERTConfig",
+    "AutoModel": "dicta-il/neodictabert--modeling_neobert.NeoBERT",
+    "AutoModelForMaskedLM": "dicta-il/neodictabert--modeling_neobert.NeoBERTLMHead",
+    "AutoModelForQuestionAnswering": "dicta-il/neodictabert--modeling_neobert.NeoBERTForQuestionAnswering",
+    "AutoModelForSequenceClassification": "dicta-il/neodictabert--modeling_neobert.NeoBERTForSequenceClassification",
+    "AutoModelForTokenClassification": "dicta-il/neodictabert--modeling_neobert.NeoBERTForTokenClassification"
+  },
+  "decoder_init_range": 0.02,
+  "dim_head": 64,
+  "embedding_init_range": 0.02,
+  "encoder_init_range": 0.02,
+  "hidden_size": 768,
+  "id2label": {
+    "0": "construct_state_confusion",
+    "1": "directional_preposition_swap",
+    "2": "entity_date_swap",
+    "3": "entity_event_swap",
+    "4": "entity_location_swap",
+    "5": "entity_organization_swap",
+    "6": "entity_person_swap",
+    "7": "entity_title_swap",
+    "8": "hebrew_root_pattern_confusion",
+    "9": "homographic_gender_errors",
+    "10": "idiom_collocation_corruption",
+    "11": "measure_unit_swap",
+    "12": "morphological_connective_confusion",
+    "13": "noun_gender_swap",
+    "14": "number_swap",
+    "15": "pronoun_reference_errors",
+    "16": "sentence_negation",
+    "17": "specificity_shift_errors",
+    "18": "verb_gender_swap",
+    "19": "verb_tense_swap"
+  },
+  "intermediate_size": 3072,
+  "kwargs": {
+    "_commit_hash": "9052b2e47fe3e615931563bb2a74b26df6e028a3",
+    "architectures": [
+      "NeoBERTLMHead"
+    ],
+    "attn_implementation": null,
+    "auto_map": {
+      "AutoConfig": "dicta-il/neodictabert--modeling_neobert.NeoBERTConfig",
+      "AutoModel": "dicta-il/neodictabert--modeling_neobert.NeoBERT",
+      "AutoModelForMaskedLM": "dicta-il/neodictabert--modeling_neobert.NeoBERTLMHead",
+      "AutoModelForQuestionAnswering": "dicta-il/neodictabert--modeling_neobert.NeoBERTForQuestionAnswering",
+      "AutoModelForSequenceClassification": "dicta-il/neodictabert--modeling_neobert.NeoBERTForSequenceClassification",
+      "AutoModelForTokenClassification": "dicta-il/neodictabert--modeling_neobert.NeoBERTForTokenClassification"
+    },
+    "decoder_init_range": 0.02,
+    "dim_head": 64,
+    "kwargs": {
+      "decoder_init_range": 0.02
+    },
+    "model_type": "neobert",
+    "torch_dtype": "bfloat16",
+    "transformers_version": "4.53.0"
+  },
+  "label2id": {
+    "construct_state_confusion": 0,
+    "directional_preposition_swap": 1,
+    "entity_date_swap": 2,
+    "entity_event_swap": 3,
+    "entity_location_swap": 4,
+    "entity_organization_swap": 5,
+    "entity_person_swap": 6,
+    "entity_title_swap": 7,
+    "hebrew_root_pattern_confusion": 8,
+    "homographic_gender_errors": 9,
+    "idiom_collocation_corruption": 10,
+    "measure_unit_swap": 11,
+    "morphological_connective_confusion": 12,
+    "noun_gender_swap": 13,
+    "number_swap": 14,
+    "pronoun_reference_errors": 15,
+    "sentence_negation": 16,
+    "specificity_shift_errors": 17,
+    "verb_gender_swap": 18,
+    "verb_tense_swap": 19
+  },
+  "max_length": 4096,
+  "model_type": "neobert",
+  "norm_eps": 1e-06,
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "pad_token_id": 3,
+  "problem_type": "multi_label_classification",
+  "torch_dtype": "float32",
+  "transformers_version": "4.49.0",
+  "vocab_size": 128000
+}

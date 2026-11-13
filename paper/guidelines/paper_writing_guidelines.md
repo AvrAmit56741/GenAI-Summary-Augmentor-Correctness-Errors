@@ -537,6 +537,20 @@ TRUE and SummaC end with explicit recommendations to the community.
 
 Rule: before citing a quote or number, open the paper in `docs/parsed_papers/docling/` and check it.
 
+## #P037 Formulas only for what we invented
+
+**Rule (set by the authors, 2026-11-13).** Display a formula only for a quantity or procedure that is our own design, such as the number of injected errors or the diversity threshold of the augmentation pipeline. Do not write formulas for standard components we use but did not create:
+- losses: cross-entropy, weighted binary cross-entropy;
+- model heads: softmax, sigmoid;
+- similarity measures: Jaccard;
+- evaluation statistics: Kendall's τ, ROC AUC, balanced accuracy, bootstrap.
+
+Name each one in a sentence and cite it, and state only the settings that matter, for example "the tie-adjusted τ_b variant", "positive weight = negative/positive ratio" or "threshold tuned on dev".
+
+**Evidence:** in the 16 parsed reference papers, docling found no formulas in 9, and the papers that do use formulas mostly spend them on their own method (SummaC's aggregation, AlignScore's alignment function, HeQ's scoring). A displayed textbook formula takes column space and makes the contribution look smaller.
+
+**Draft:** applied. `acl_latex.tex` keeps two equations, both ours: the number of injected errors, m = max(1, ⌊ρT⌋), and the diversity threshold θ(S′).
+
 ---
 
 ## Pre-submission checklist
@@ -556,6 +570,7 @@ Rule: before citing a quote or number, open the paper in `docs/parsed_papers/doc
 - [ ] Every baseline from Setup appears in the table (#P018)
 - [ ] Family-grouped table, conventions in captions, typo "sampels" fixed (#P019–#P021)
 - [ ] Hebrew in script, gloss and translation (#P022)
+- [ ] No displayed formulas for standard losses, metrics or statistics; only our own algorithm (#P037)
 - [ ] Parameters or throughput column (#P023)
 - [ ] One-factor ablations and per-family breakdown (#P024, #P025)
 - [ ] Qualitative disagreement examples with counts (#P026)

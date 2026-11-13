@@ -1,0 +1,24 @@
+
+==================================================
+TRAINING CONFIGURATION
+==================================================
+GPU: NVIDIA RTX 6000 Ada Generation
+Host IP: 132.72.180.129
+Model: dicta-il/neodictabert
+Output dir: /home/avramit/classifier/04122025/classifier/binary/neodictabert-finetuned-binary-041225
+Batch size: 2
+Learning rate: 2e-05
+Epochs: 1.0
+Max seq length: 4096
+Labels: ['contradiction', 'entailment']
+==================================================
+
+✅ Arguments saved to /home/avramit/classifier/04122025/classifier/binary/neodictabert-finetuned-binary-041225/training_info_args.json
+
+Dataset sizes - Train: 18238, Val: 2239, Test: 2918
+Train file: /home/avramit/classifier/04122025/datasets/classifier/mergearticlesummarylevel/train.csv
+Val file: /home/avramit/classifier/01122025/datasets/classifiers/validation.csv
+Test file: /home/avramit/classifier/01122025/datasets/classifiers/test.csv
+
+✅ Predictions saved to /home/avramit/classifier/04122025/classifier/binary/neodictabert-finetuned-binary-041225/predictions.txt
+✅ Predictions CSV saved to /home/avramit/classifier/04122025/classifier/binary/neodictabert-finetuned-binary-041225/predictions.csv

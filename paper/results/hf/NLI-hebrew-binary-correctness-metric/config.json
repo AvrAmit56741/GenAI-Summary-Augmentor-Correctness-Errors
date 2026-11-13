@@ -1,0 +1,53 @@
+{
+  "_name_or_path": "dicta-il/neodictabert",
+  "architectures": [
+    "NeoBERTForSequenceClassification"
+  ],
+  "auto_map": {
+    "AutoConfig": "dicta-il/neodictabert--modeling_neobert.NeoBERTConfig",
+    "AutoModel": "dicta-il/neodictabert--modeling_neobert.NeoBERT",
+    "AutoModelForMaskedLM": "dicta-il/neodictabert--modeling_neobert.NeoBERTLMHead",
+    "AutoModelForQuestionAnswering": "dicta-il/neodictabert--modeling_neobert.NeoBERTForQuestionAnswering",
+    "AutoModelForSequenceClassification": "dicta-il/neodictabert--modeling_neobert.NeoBERTForSequenceClassification",
+    "AutoModelForTokenClassification": "dicta-il/neodictabert--modeling_neobert.NeoBERTForTokenClassification"
+  },
+  "decoder_init_range": 0.02,
+  "dim_head": 64,
+  "embedding_init_range": 0.02,
+  "encoder_init_range": 0.02,
+  "hidden_size": 768,
+  "intermediate_size": 3072,
+  "kwargs": {
+    "_commit_hash": "9052b2e47fe3e615931563bb2a74b26df6e028a3",
+    "architectures": [
+      "NeoBERTLMHead"
+    ],
+    "attn_implementation": null,
+    "auto_map": {
+      "AutoConfig": "dicta-il/neodictabert--modeling_neobert.NeoBERTConfig",
+      "AutoModel": "dicta-il/neodictabert--modeling_neobert.NeoBERT",
+      "AutoModelForMaskedLM": "dicta-il/neodictabert--modeling_neobert.NeoBERTLMHead",
+      "AutoModelForQuestionAnswering": "dicta-il/neodictabert--modeling_neobert.NeoBERTForQuestionAnswering",
+      "AutoModelForSequenceClassification": "dicta-il/neodictabert--modeling_neobert.NeoBERTForSequenceClassification",
+      "AutoModelForTokenClassification": "dicta-il/neodictabert--modeling_neobert.NeoBERTForTokenClassification"
+    },
+    "decoder_init_range": 0.02,
+    "dim_head": 64,
+    "kwargs": {
+      "decoder_init_range": 0.02
+    },
+    "model_type": "neobert",
+    "torch_dtype": "bfloat16",
+    "transformers_version": "4.53.0"
+  },
+  "max_length": 4096,
+  "model_type": "neobert",
+  "norm_eps": 1e-06,
+  "num_attention_heads": 12,
+  "num_hidden_layers": 28,
+  "pad_token_id": 3,
+  "problem_type": "single_label_classification",
+  "torch_dtype": "float32",
+  "transformers_version": "4.49.0",
+  "vocab_size": 128000
+}

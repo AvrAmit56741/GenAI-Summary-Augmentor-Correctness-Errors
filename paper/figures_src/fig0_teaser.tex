@@ -1,0 +1,54 @@
+% Figure 0 (page-1 teaser): one real LLM error that surface/NLI metrics miss.
+% Compile with XeLaTeX (Overleaf: Menu -> Compiler -> XeLaTeX) or `tectonic fig0_teaser.tex`.
+% Natural width = 7.7cm (ACL column): include with \includegraphics[width=\columnwidth]{fig0_teaser.pdf}.
+% DRAFT: the score and verdict cells are placeholders (\tbd). Fill them from real metric runs on this
+% exact article/summary pair, then delete the DRAFT banner.
+\documentclass[10pt,border=1pt]{standalone}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{array,booktabs}
+\usepackage{fontspec}
+\setmainfont{FreeSerif.otf}[BoldFont=FreeSerifBold.otf,ItalicFont=FreeSerifItalic.otf,BoldItalicFont=FreeSerifBoldItalic.otf]
+\usepackage{polyglossia}
+\setdefaultlanguage{english}
+\setotherlanguage{hebrew}
+\newfontfamily\hebrewfont{FreeSerif.otf}[Script=Hebrew,BoldFont=FreeSerifBold.otf]
+\definecolor{srcc}{HTML}{0072B2}
+\definecolor{errc}{HTML}{D55E00}
+\definecolor{ink2}{HTML}{52514E}
+\definecolor{rule}{HTML}{BDBCB6}
+\newcommand{\s}[1]{\textbf{\textcolor{srcc}{#1}}}
+\newcommand{\e}[1]{\textbf{\textcolor{errc}{#1}}}
+\newcommand{\lab}[2]{{\scriptsize\textbf{\textcolor{#1}{#2}}}}
+\newcommand{\gloss}[1]{{\scriptsize\itshape\color{ink2}#1\par}}
+\newcommand{\tbd}{\textcolor{red!70!black}{?}}
+\begin{document}
+\begin{minipage}{7.7cm}
+{\scriptsize\bfseries\color{red!70!black} DRAFT --- scores and verdicts are placeholders\par}\vspace{3pt}
+\lab{srcc}{Source article (excerpt)}\par
+{\footnotesize\setRTL\raggedright
+שר הביטחון אביגדור ליברמן, שאמר במהלך ישיבת ישראל ביתנו בכנסת כי החוק \s{לא~יקודם}…\par}
+\gloss{Defense Minister Avigdor Liberman said the law \textbf{will not be advanced}\ldots}
+\vspace{4pt}
+\lab{errc}{GPT-3.5-turbo summary}\par
+{\footnotesize\setRTL\raggedright
+שר הביטחון אביגדור ליברמן הביע תמיכה \e{בהקדמת} החוק.\par}
+\gloss{Defense Minister Avigdor Liberman expressed support \textbf{for advancing} the law.}
+\vspace{2pt}
+{\scriptsize\color{ink2} Same root (\texthebrew{ק.ד.מ}), opposite meaning: the negated passive verb becomes a nominalized ``advancing''.\par}
+\vspace{5pt}
+{\footnotesize
+\begin{tabular*}{7.7cm}{@{\extracolsep{\fill}}l c c@{}}
+\toprule
+\textbf{Metric} & \textbf{Score} & \textbf{Verdict}\\
+\midrule
+ROUGE-1 & \tbd & \tbd\\
+BERTScore (NeoDictaBERT) & \tbd & \tbd\\
+SummaC-ZS (mDeBERTa) & \tbd & \tbd\\
+GPT-4o-mini judge & \tbd & \tbd\\
+\midrule
+\textbf{MorphEvalHeb} & \tbd & \tbd\\
+\bottomrule
+\end{tabular*}}
+\end{minipage}
+\end{document}
