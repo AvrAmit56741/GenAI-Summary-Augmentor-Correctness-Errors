@@ -1,0 +1,6 @@
+latex/acl_latex.pdf
+*.aux
+*.log
+*.bbl
+*.blg
+*.out

@@ -1,0 +1,91 @@
+% Figure 1 (optimized): errors observed in real LLM-generated Hebrew summaries.
+% Compile with XeLaTeX (Overleaf: Menu -> Compiler -> XeLaTeX) or `tectonic fig1_llm_error_analysis.tex`.
+% Natural width = 16cm (ACL \textwidth): include with \includegraphics[width=\textwidth]{...pdf} -> true-size fonts.
+\documentclass[10pt,border=1pt]{standalone}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{array,booktabs,tabularx}
+\usepackage{fontspec}
+\setmainfont{FreeSerif.otf}[BoldFont=FreeSerifBold.otf,ItalicFont=FreeSerifItalic.otf,BoldItalicFont=FreeSerifBoldItalic.otf]
+\usepackage{polyglossia}
+\setdefaultlanguage{english}
+\setotherlanguage{hebrew}
+\newfontfamily\hebrewfont{FreeSerif.otf}[Script=Hebrew,BoldFont=FreeSerifBold.otf]
+% Okabe-Ito colour-blind-safe pair; bold keeps the contrast in greyscale print
+\definecolor{srcc}{HTML}{0072B2}
+\definecolor{errc}{HTML}{D55E00}
+\newcommand{\s}[1]{\textbf{\textcolor{srcc}{#1}}}
+\newcommand{\e}[1]{\textbf{\textcolor{errc}{#1}}}
+
+\newcolumntype{H}{>{\footnotesize\setRTL\raggedright\arraybackslash}X}
+\newcolumntype{E}[1]{>{\footnotesize\raggedright\arraybackslash}p{#1}}
+\renewcommand{\arraystretch}{1.15}
+\begin{document}
+\begin{minipage}{16cm}
+\begin{tabularx}{16cm}{@{}E{3.0cm}HHE{3.4cm}E{1.55cm}@{}}
+\toprule
+\textbf{Error type} & \multicolumn{1}{l}{\footnotesize\textbf{Source article}} & \multicolumn{1}{l}{\footnotesize\textbf{LLM summary}} & \textbf{What changed} & \textbf{LLM}\\
+\midrule
+Look-alike letter swap &
+פרופסור סיגל סדצקי בחרה בספר ״מוזיאון התמימות״ מאת \s{אורחן} פאמוק &
+״מוזיאון התמימות״ מאת \e{אורהן} פאמוק &
+Author name misspelled (\mbox{\texthebrew{ח}}\,$\rightarrow$\,\mbox{\texthebrew{ה}}) & Gemini\\
+\addlinespace
+Specificity shift &
+מתוך הערך על מסעדת ״דלי אסיאתי״ – הטבה: בכל הזמנה של \s{שתי~מנות~ילדים} (במשלוח או ב״טייק אווי״) – מקבלים את השלישית במתנה. &
+חלק מהמסעדות מציעות גם הטבות, כמו הנחות, צבירה כפולה של נקודות, או ארוחה שלישית בחינם בהזמנת \e{שתי~ארוחות}. &
+``two children's meals'' $\rightarrow$ ``two meals'' & DictaLM~2.0\\
+\addlinespace
+Specificity shift (agent loss) &
+נחמן מחפוד ממשתלות חישתיל, \s{שייבאו} לארץ זן שמותאם לאקלים הישראלי… &
+וצמחי נוי \e{שהובאו} מדרום־מזרח אסיה… &
+``that [the nurseries] imported'' $\rightarrow$ ``that were brought'' & DictaLM~2.0\\
+\addlinespace
+Similar-morphology verb swap &
+עוזי – טוב לב, אוהב ומתמסר… יגאל – פרוותי \s{ומתרפק}… &
+עוזי, כלב טוב לב \e{ומתרפק}; &
+Trait of one dog (Hitpa`el, present) moved to another & DictaLM~2.0\\
+\addlinespace
+Similar-morphology verb swap &
+ישראל התחילה \s{בהרעשה} רגע אחרי הפסקת האש, כשהעבירה מסר מאיים כפול לחמאס. &
+ישראל \e{מתרגשת} להביע את נצחונה… &
+``began shelling'' (\texthebrew{ר.ע.ש}) $\rightarrow$ ``is excited'' (\texthebrew{ר.ג.ש}) & GPT-3.5-turbo\\
+\addlinespace
+Foreign word read as Hebrew &
+בסוף השבוע אני \s{פרפורמר} בליין הפאג (ליין מסיבות טכנו מוכר בתל אביב – ד.ש.). &
+\e{ומפרפר} בליין הפאג בסופי שבוע. &
+``performer'' $\rightarrow$ ``flutters'' & GPT-3.5-turbo\\
+\addlinespace
+Gender misattribution &
+עם הנמר היפהפה הזאת אפשר לשכב על הגב ולהתכרבל… עם עוזי האהבה מגיעה בכמויות כל כך גדולות… \s{בן~6~ומאולף}. בחג הזה הוא רוצה לזכות באימוץ מרגש. &
+עוזי, \e{כלבה~יפהפייה,~מחפשת} בית שיעניק לה אהבה. &
+Male (``6-year-old, trained'') $\rightarrow$ female & DictaLM~2.0\\
+\addlinespace
+Idiom misreading &
+יחד עם זאת, קיים גם פן חיובי לליצנות בהתמודדות עם \s{תחושות~זרות} וחולשות מוסריות. &
+עם זאת, לליצנות מיוחס תפקיד חיובי בהתמודדות מול \e{עבודה~זרה} ושחיתות מוסרית. &
+``strange feelings'' $\rightarrow$ ``idolatry'' & Gemini\\
+\addlinespace
+Connective reversal &
+נראה כי המדינה, העיריות והתושבים יצטרכו למצוא פתרונות יצירתיים, \s{שכן} משרד התיירות נאבק על כל תייר ותיירת. &
+המדינה והעיריות יצטרכו למצוא פתרונות יצירתיים עבור התושבים והמלונות, \e{כך~ש}משרד התיירות נאבק על כל תייר ותיירת. &
+``because'' $\rightarrow$ ``so that'' (cause $\leftrightarrow$ effect) & GPT-3.5-turbo\\
+\addlinespace
+Construct-state split &
+\s{ועדי~העובדים} וההסתדרות יסגרו וינעלו את שערי הברזל במפעל בכפר סבא… &
+\e{העובדים} מתכננים לסגור ולנעול את שערי הברזל במפעל בכפר סבא… &
+``workers' committees'' $\rightarrow$ ``workers'' & GPT-3.5-turbo\\
+\addlinespace
+Conjunct omission &
+שאיפה לחיים׳, בבימויו של מתן גוגנהיים… \s{בוים~ונכתב} על ידי \s{מתן~גוגנהיים~ואסף~אבירי}. &
+שאיפה לחיים׳, בבימויו של \e{מתן~גוגנהיים}… &
+Writer credit and co-author dropped & Gemini\\
+\addlinespace
+Same-root swap + negation &
+שר הביטחון אביגדור ליברמן, שאמר במהלך ישיבת ישראל ביתנו בכנסת כי החוק \s{לא~יקודם} לדברי ליברמן, ״אני יכול להביע רק את עמדתי…״ &
+שר הביטחון אביגדור ליברמן הביע תמיכה \e{בהקדמת} החוק. &
+``will not be advanced'' $\rightarrow$ ``supports advancing'' (\texthebrew{ק.ד.מ}) & GPT-3.5-turbo\\
+\bottomrule
+\end{tabularx}
+\end{minipage}
+\end{document}

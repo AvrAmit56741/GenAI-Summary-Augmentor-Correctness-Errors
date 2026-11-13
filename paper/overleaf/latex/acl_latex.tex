@@ -1,0 +1,288 @@
+\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (sometimes called camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+\usepackage[review]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+% Figures live in ../figures (relative to this file); also try figures/ for root-relative builds
+\graphicspath{{../figures/}{figures/}}
+
+% Hebrew words inline. cjhebrew works with pdfLaTeX, XeLaTeX and LuaLaTeX and handles
+% right-to-left direction itself. Input is transliterated, e.g. \<bnyyn> = bet-nun-yod-yod-nun.
+\usepackage{cjhebrew}
+
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{MorphEvalHeb}
+
+% Author information can be set in various styles:
+% For several authors from the same institution:
+% \author{Author 1 \and ... \and Author n \\
+%         Address line \\ ... \\ Address line}
+% if the names do not fit well on one line use
+%         Author 1 \\ {\bf Author 2} \\ ... \\ {\bf Author n} \\
+% For authors from different institutions:
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \And  ... \And
+%         Author n \\ Address line \\ ... \\ Address line}
+% To start a separate ``row'' of authors use \AND, as in
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \AND
+%         Author 2 \\ Address line \\ ... \\ Address line \And
+%         Author 3 \\ Address line \\ ... \\ Address line}
+
+
+\author{
+Amit Avraham \\
+Ben-Gurion University \\
+\texttt{avramit@post.bgu.ac.il}
+\And
+Eyal Mazuz \\
+Ben-Gurion University \\
+\texttt{mazuze@post.bgu.ac.il}
+\And
+Bracha Shapira \\
+Ben-Gurion University \\
+\texttt{bshapira@bgu.ac.il}
+}
+
+%\author{
+%  \textbf{First Author\textsuperscript{1}},
+%  \textbf{Second Author\textsuperscript{1,2}},
+%  \textbf{Third T. Author\textsuperscript{1}},
+%  \textbf{Fourth Author\textsuperscript{1}},
+%\\
+%  \textbf{Fifth Author\textsuperscript{1,2}},
+%  \textbf{Sixth Author\textsuperscript{1}},
+%  \textbf{Seventh Author\textsuperscript{1}},
+%  \textbf{Eighth Author \textsuperscript{1,2,3,4}},
+%\\
+%  \textbf{Ninth Author\textsuperscript{1}},
+%  \textbf{Tenth Author\textsuperscript{1}},
+%  \textbf{Eleventh E. Author\textsuperscript{1,2,3,4,5}},
+%  \textbf{Twelfth Author\textsuperscript{1}},
+%\\
+%  \textbf{Thirteenth Author\textsuperscript{3}},
+%  \textbf{Fourteenth F. Author\textsuperscript{2,4}},
+%  \textbf{Fifteenth Author\textsuperscript{1}},
+%  \textbf{Sixteenth Author\textsuperscript{1}},
+%\\
+%  \textbf{Seventeenth S. Author\textsuperscript{4,5}},
+%  \textbf{Eighteenth Author\textsuperscript{3,4}},
+%  \textbf{Nineteenth N. Author\textsuperscript{2,5}},
+%  \textbf{Twentieth Author\textsuperscript{1}}
+%\\
+%\\
+%  \textsuperscript{1}Affiliation 1,
+%  \textsuperscript{2}Affiliation 2,
+%  \textsuperscript{3}Affiliation 3,
+%  \textsuperscript{4}Affiliation 4,
+%  \textsuperscript{5}Affiliation 5
+%\\
+%  \small{
+%    \textbf{Correspondence:} \href{mailto:email@domain}{email@domain}
+%  }
+%}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Automatic text summarization is one of the most challenging NLP tasks to evaluate: a good summary must jointly satisfy faithfulness, content coverage, conciseness, and fluency, and LLMs are known to struggle in low-resource languages where evaluation benchmarks are scarce.
+Factuality evaluation is especially complex for morphologically rich languages such as Hebrew, where a single substitution, such as a \textit{binyan} shift, gender-agreement violation, or construct-state corruption, can reverse agency or alter factual content while remaining nearly identical at the surface level.
+Standard metrics (ROUGE, BLEU, BERTScore) exhibit lower human-correlation for such languages, NLI- and QA-based pipelines (SummaC, QAFactEval) rely on English-centric models that degrade under Hebrew morphology, and translation-based adaptation introduces artifacts that obscure authentic error patterns.
+We present \textbf{MorphEvalHeb}, a Hebrew-native framework for evaluating the factual correctness of LLM-generated Hebrew summaries, enabling more reliable factuality assessment for morphologically rich, low-resource languages.
+\end{abstract}
+\section{Introduction}
+
+Automatic text summarization is a central task in natural language processing, yet it remains among the most difficult to evaluate automatically. 
+Unlike classification or translation, where reference outputs are relatively well-defined, a good summary must simultaneously satisfy multiple criteria: faithfulness to the source document, coverage of salient content, conciseness, and fluency. 
+No single automated metric captures all these dimensions reliably. 
+This challenge is amplified in low-resource languages, where large language models (LLMs) trained predominantly on English data exhibit degraded generation quality, while the lack of native-language evaluation benchmarks makes failures difficult to detect or quantify. 
+Moreover, most existing summarization benchmarks and evaluation metrics primarily focus on short abstractive summaries rather than long, information-dense summaries grounded in long source documents, where factual consistency becomes substantially more difficult to maintain and evaluate.
+
+Factuality evaluation, which verifies that a generated summary does not introduce information inconsistent with the source, is particularly challenging for morphologically rich languages such as Hebrew.
+Modern Hebrew combines derivational, inflectional, and concatenative morphology: tri-consonantal roots are realized through verbal and nominal templates (\textit{binyanim} and \textit{mishkalim}), agreement features encode gender, number, and person, and syntactic particles such as conjunctions, prepositions, and articles are attached directly as prefixes, while possessive and pronominal markers appear as suffixes. Consequently, whitespace-delimited tokens often fail to align with semantic units, making surface-level comparison fundamentally unreliable.
+
+Critically, small morphological substitutions can alter factual meaning while remaining nearly identical orthographically. A \textit{binyan} shift may reverse agency, a gender-agreement violation may alter the acting entity, and a construct-state (\textit{smichut}) corruption may change possessive or attributive relations. Although some of these factual inconsistencies also appear cross-linguistically, Hebrew morphology makes generated summaries substantially more vulnerable to such errors, and in many cases the underlying cause originates directly from Hebrew-specific morphological structure. These error types frequently evade standard similarity-based metrics such as ROUGE, BLEU, ChrF, and BERTScore, which are not morphology-aware and exhibit substantially lower human correlation for morphologically rich languages.
+
+We illustrate this with a representative example from our corpus. The source sentence reads \emph{``they will need creative solutions, because the Tourism Ministry is struggling''}, while the generated summary reads \emph{``they will need creative solutions so that the Tourism Ministry struggles''}. Replacing ``because'' with ``so that'' reverses the causal relation between the clauses while leaving most surface tokens unchanged. Despite the complete semantic inversion, similarity metrics remain high (ROUGE-1 F1 $\approx$ 0.94, BERTScore F1 $\approx$ 0.96), illustrating how Hebrew-specific connective morphology can produce factual errors that remain invisible to existing metrics.
+
+Existing factuality evaluation pipelines face additional language-specific limitations. NLI-based approaches such as SummaC rely on multilingual entailment models that are not trained to capture Hebrew morphological contradictions. QA-based methods such as QAFactEval depend on extractive span boundaries that become ambiguous under Hebrew morphology. Translation-based adaptation further introduces artifacts that obscure authentic Hebrew error patterns and erase distinctions that lack direct English equivalents. As a result, practitioners evaluating Hebrew LLM outputs currently lack reliable Hebrew-native factuality metrics.
+
+We address this gap with \textbf{MorphEvalHeb}, a Hebrew-native correctness evaluation framework for LLM-generated summaries. Our framework consists of three components:
+(1) an \textbf{LLM-driven augmentation pipeline} that decomposes faithful Hebrew summaries into atomic claims and injects controlled factual errors through NER-based swaps, deterministic rule-based transformations, and few-shot LLM prompting, producing large-scale labeled contrastive pairs;
+(2) a \textbf{Hebrew-native metric suite} based on two fine-tuned NeoDictaBERT classifiers, including a binary factuality verifier and a multi-label factual error detector benchmarked against existing metrics on Hebrew news summarization;
+and (3) a \textbf{Hebrew Correctness-Error Taxonomy} comprising 24 fine-grained error families derived from real LLM-generated summaries, covering morphological, logical, and entity-level inconsistencies.
+
+Our work is motivated by four central gaps in Hebrew LLM evaluation: limited language coverage in existing metrics, lack of morphology-aware evaluation design, scarcity of long-form correctness-oriented Hebrew benchmarks, and high sensitivity to subtle morphological ambiguities that routinely evade current baselines. By introducing a language-native factuality framework tailored to Hebrew morphology, we aim to provide more reliable evaluation tools for summarization systems in morphologically rich low-resource languages.
+
+\label{sec:Introduction}
+\section{Related Work}\label{sec:related_work}
+Assessing the factual correctness of LLM-generated summaries is typically framed as determining whether the generated text faithfully reflects the source document. Existing work spans six relevant areas.
+
+\textbf{Summarization Factuality Evaluation.}
+NLI-based approaches frame consistency as textual entailment between source sentences and summary claims. \textbf{SummaC} \citep{DBLP:journals/corr/abs-2111-09525} aggregates sentence-pair entailment scores into a document-level consistency score; \textbf{AlignScore} \citep{zha-etal-2023-alignscore} trains a unified RoBERTa model on large-scale alignment data across multiple tasks. The authors note that it ``tends to have difficulty evaluating summaries of long documents in a different domain,'' a limitation likely to be amplified in Hebrew, where comparable alignment training data are unavailable. QA-based methods, exemplified by \textbf{QAFactEval} \citep{fabbri-etal-2022-qafacteval}, verify summary claims via round-trip question answering against the source. \textbf{FactCC} \citep{kryscinskiFactCC2019} showed that rule-based inconsistency injection can produce effective supervised factuality classifiers, an approach that inspired our Hebrew augmentation pipeline. Entity-focused hallucination metrics such as \textbf{ENFS\%} \citep{cao-etal-2022-hallucinated} measure the proportion of generated entities absent from the source document.
+A recent line of work trains small, dedicated verifiers on synthetic data: \textbf{FactCG} \citep{lei-etal-2025-factcg} generates graph-based multi-hop training data for compact fact checkers, \textbf{TrueTeacher} \citep{gekhman-etal-2023-trueteacher} instead labels real model-generated summaries with an LLM, and open groundedness detectors such as \textbf{Granite Guardian} \citep{padhi2024graniteguardian} and span-level detectors such as \textbf{LettuceDetect} \citep{kovacs-etal-2026-beyond} target hallucination detection more broadly. Fine-grained LLM-based evaluation such as \textbf{FineSurE} \citep{song-etal-2024-finesure} and claim-level verification \citep{wanner-etal-2024-closer,hu2025decomposition} further decompose summaries into atomic facts, while benchmarks such as \textbf{FaithBench} \citep{bao2024faithbench} collect hallucinations from modern LLM summarizers. \citet{mujahid-etal-2026-stress} show that current factual-consistency metrics are unstable under meaning-preserving rewrites, motivating the paraphrase and back-translation positives in our pipeline. Nearly all of these resources and models are developed and evaluated on English.
+
+\textbf{Multilingual and Cross-Lingual Evaluation.}
+\textbf{mFACE} \citep{aharoni-etal-2023-multilingual} extends NLI-based evaluation to 45 languages via zero-shot transfer. \textbf{mFACT} \citep{qiu2023detecting} constructs silver-standard datasets by translating English factuality annotations into target languages. \textbf{Multi-FActScore} \citep{shafayat2024multifact} adapts atomic-fact verification to nine languages through GPT-3.5 translation, but reports that ``English consistently maintains an advantage in both factual accuracy and the quantity of generated facts''---a gap particularly acute for Hebrew, whose pre-training tokens constitute only 0.008\% of GPT-3's corpus \citep{mondshine-etal-2025-beyond}. More recently, \textbf{STEMF} \citep{alfano-etal-2026-multilingual} trains multilingual faithfulness evaluators on synthetic data, and multilingual hallucination benchmarks such as \textbf{Mu-SHROOM} \citep{vazquez-etal-2025-semeval}, \textbf{PsiloQA} \citep{rykov2025psiloqa}, and \textbf{Halluverse-M$^3$} \citep{abdaljalil2026halluversem3} extend span-level detection to additional languages, none of which include Hebrew. Notably, \citet{ul-islam-etal-2025-much} estimate that Hebrew has the highest hallucination rate among 30 languages (16.81\%), while their multilingual detector recovers only about a third of Hebrew hallucinations. For other morphologically rich languages, \textbf{AraHalluEval} \citep{alansari-luqman-2025-arahallueval} defines fine-grained hallucination indicators for Arabic, and \textbf{BASSE} \citep{barnes2025basse} finds that factual consistency is the hardest summarization criterion for metrics and LLM judges in Basque. Although these methods substantially improve multilingual coverage, they rely on translation pipelines or multilingual transfer, which can obscure language-specific error patterns, eliminate morphological distinctions lacking direct English equivalents, and introduce translation errors of their own \citep{thellmann2026translation}.
+
+\textbf{Hebrew NLP Evaluation Challenges.}
+Hebrew's fusional morphology creates evaluation challenges that standard metrics cannot handle. \textbf{HeSum} \citep{paz-argaman-etal-2024-hesum} introduced the first large-scale Hebrew abstractive summarization dataset, demonstrating that Hebrew summaries are substantially more abstractive than English counterparts. \textbf{Beyond N-Grams} \citep{mondshine-etal-2025-beyond} evaluated multilingual evaluation metrics and reported negative correlations between traditional overlap metrics and human judgments for Hebrew, highlighting the limitations of surface-based evaluation for morphologically rich languages. The same study further shows that tokenizer choice alone can substantially affect metric reliability for Hebrew evaluation. \textbf{HeQ} \citep{cohen-etal-2025-heq} further shows that ambiguous answer-span boundaries in Hebrew require morphology-aware adaptation of standard QA evaluation metrics, and \textbf{LCHAIM} \citep{malul-etal-2025-lchaim} shows that long-context Hebrew natural language inference remains challenging for current LLMs. Existing Hebrew minimal-pair resources, such as \textbf{HeCLiMP} \citep{gelboim-sulem-2025-tafberta} and the Hebrew portion of \textbf{MultiBLiMP} \citep{jumelet-etal-2026-multiblimp}, probe grammatical agreement rather than factual consistency, and synthetic agreement-error injection has so far been explored for English--Hebrew translation quality estimation \citep{siani2026semisynthetic} rather than summarization.
+
+\textbf{LLM-as-a-Judge.}
+LLM-based evaluation frameworks, including \textbf{G-EVAL} \citep{liu-etal-2023-g}, \textbf{SelfCheckGPT} \citep{manakul2023selfcheckgpt}, and \textbf{MiniCheck} \citep{tang-etal-2024-minicheck}---achieve strong English factuality performance but remain less studied for morphologically rich, lower-resource languages, and typically require large proprietary models that limit reproducibility. Open multilingual judges such as \textbf{M-Prometheus} \citep{pombal2025mprometheus} partially address reproducibility, yet multilingual meta-evaluations show that judge agreement is low across languages and degrades further for lower-resource ones \citep{fu-liu-2025-reliable,son2024mmeval}, and that individual judges are inconsistent even with themselves \citep{haldar-hockenmaier-2025-rating}. A recent survey finds that only a small fraction of LLM-as-a-judge studies address multilingual or low-resource settings \citep{dogruoz2026llmjudge}. To our knowledge, no prior study measures LLM-judge reliability for Hebrew factuality evaluation.
+
+\textbf{Native Hebrew Language Models.}
+Recent Hebrew language models provide stronger foundations for Hebrew-specific evaluation. \textbf{NeoDictaBERT} \citep{BenDavid2025neodictabert} provides long-context contextual representations suitable for document-level factuality evaluation, while \textbf{DictaLM 2.0-Instruct} \citep{shmidman-etal-2024-dictalm} and its successor \textbf{Dicta-LM 3.0} \citep{shmidman2026dictalm3} demonstrate strong Hebrew generation capabilities. Notably, Dicta-LM 3.0 evaluates Hebrew summarization through GPT-4o pairwise preferences rather than factual consistency. \textbf{HalleluBERT} \citep{schmitt-2026-hallelubert} offers an alternative Hebrew RoBERTa-style encoder.
+
+\textbf{Synthetic Error Injection and Error Taxonomies.}
+Perturbation-based training data has long been used to build factuality detectors, from contrastive negatives \citep{cao-wang-2021-cliff} and FRANK-typed error insertion \citep{balachandran-etal-2022-correcting} to AMR-driven perturbations \citep{qiu2024amrfact} and typed LLM-based insertion \citep{mishra2024fava,xu2025had}. Closest to our pipeline, \textbf{LLM-Oasis} \citep{scire-etal-2026-truth} extracts atomic claims, falsifies one, and regenerates both an unfaithful text and a faithful paraphrase. However, synthetic perturbations do not always match the errors of real summarizers \citep{goyal-durrett-2021-annotating,gekhman-etal-2023-trueteacher}, which motivates our taxonomy being derived from errors observed in real LLM-generated Hebrew summaries. Existing error taxonomies, including \textbf{FRANK} \citep{pagnoni-etal-2021-understanding}, the intrinsic/extrinsic typology of \citet{tang-etal-2023-understanding}, and dialogue and RAG annotation schemes \citep{zhu-etal-2023-annotating,niu-etal-2024-ragtruth}, as well as multi-label error-type detectors \citep{chan2023finegrainfact}, contain no category for morphology-driven errors. None of the injection pipelines above uses morphological operators, and all target English or other high-resource languages.
+
+\noindent Taken together, prior work leaves three important gaps: no existing metric explicitly models Hebrew morphological error types; no Hebrew-native correctness benchmark exists; and no prior work constructs a controlled Hebrew factuality training corpus through morphology-aware error injection. MorphEvalHeb addresses these gaps.
+
+\section{Hebrew Correctness Error Taxonomy}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{llm_error_analysis_hebrew.png}
+\caption{Initial empirical analysis of factual errors in LLM-generated Hebrew summaries. Each row describes an error type, the Hebrew-specific features that give rise to it, evidence from the source article and the generated summary, and the LLM that produced it.}
+\label{fig:llm_error_analysis}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig2_error_taxonomy_examples.pdf}
+\caption{Eight of the 24 error families in the taxonomy. Each card gives the transformation rule, a faithful source claim (blue) and the corrupted claim (orange), with an English gloss of the change.}
+\label{fig:taxonomy}
+\end{figure*}
+
+Following an initial empirical analysis of factual errors produced by LLM-generated Hebrew summaries (Figure~\ref{fig:llm_error_analysis}), we established a formal methodology for constructing a taxonomy of Hebrew-specific factual error types. Classification followed a cross-linguistic transfer principle: an error was considered Hebrew-specific only if its underlying mechanism is intrinsically tied to the language's morpho-syntactic structure and occurs substantially more frequently in Hebrew than in morphologically simpler languages such as English.
+
+Three criteria guided the taxonomy construction process: (1) \textbf{Morphological Dependency}, where the error arises from Hebrew's inflectional system (e.g., gender, number, binyan patterns, prefixes, and suffixes); (2) \textbf{Syntactic Uniqueness}, where the error involves Hebrew-specific constructions such as the construct state (\textit{smichut}); and (3) \textbf{Morphological Ambiguity}, where factual errors emerge from unclear word boundaries caused by affixation and morphological attachment.
+
+Each candidate error type was independently evaluated by a Hebrew linguist against these criteria, with disagreements resolved through discussion to ensure robustness and consistency. The resulting taxonomy, illustrated in Figure~\ref{fig:taxonomy}, comprises 24 active error families organized into three groups: (i) 17 Hebrew-specific morpho-syntactic errors (e.g., \textit{verb\_gender\_swap}, \textit{construct\_state\_confusion}, \textit{hebrew\_root\_pattern\_confusion}, \textit{morphological\_connective\_confusion}); (ii) 3 cross-linguistic logical errors (\textit{sentence\_negation}, \textit{number\_swap}, \textit{measure\_unit\_swap}); and (iii) 6 NER-based entity substitutions (\textit{entity\_person\_swap}, \textit{entity\_location\_swap}, \textit{entity\_organization\_swap}, \textit{entity\_date\_swap}, \textit{entity\_title\_swap}, \textit{entity\_event\_swap}). These transformations define the linguistic operations used in our data augmentation pipeline to generate challenging negative examples that reflect authentic Hebrew language-processing difficulties.
+
+The taxonomy contains error families spanning morphological, logical, and entity-level inconsistencies. Examples include gender-agreement violations, verb-template (\textit{binyan}; \<bnyyn>) substitutions, construct-state (\textit{smichut}; \<smykwt>) corruption, pronoun-reference errors, negation errors, connective confusion, and named-entity substitutions. Each error family serves as a blueprint for generating controlled factual inconsistencies from otherwise faithful summary claims.
+
+These taxonomy-driven transformations form the foundation of our augmentation pipeline. By programmatically injecting realistic factual errors into faithful summaries, the pipeline produces diverse and linguistically grounded negative examples that are subsequently used to train and evaluate the MorphEvalHeb correctness classifiers.
+
+\section{Data Augmentation Pipeline}
+Figure~\ref{fig:pipeline} gives an overview of the augmentation pipeline.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{dataset_creation.png}
+\caption{Overview of the data augmentation pipeline: (1) summary claim decomposition; (2) claim--error-type mapping with LLMs and DictaBERT NER; (3) claim correctness error transformations; (4) generating error combinations, recomposing negative summaries, and filtering by transformation-restriction rules and similarity; (5) positive augmentations via back-translation and paraphrasing.}
+\label{fig:pipeline}
+\end{figure*}
+\subsection{Source Documents}
+\subsection{Augmentation and Labeling}
+\subsection{Data Split Strategy}
+
+\section{MorphEvalHeb}
+\subsection{Binary Faithfulness Verifier}
+\subsection{Multi-label Error Detector}
+
+\section{Experimental Setup}
+\subsection{Datasets}
+\subsection{Baseline Metrics}
+
+We compare MorphEvalHeb against a comprehensive set of automatic evaluation metrics spanning five major paradigms.
+
+\paragraph{N-gram and Surface Metrics.}
+We evaluate \textbf{ROUGE-1}, \textbf{ROUGE-2}, and \textbf{ROUGE-L} \cite{lin2004rouge}, which measure unigram, bigram, and longest common subsequence overlap between the summary and the source document. We additionally compute \textbf{BLEU} \cite{papineni2002bleu}, \textbf{ChrF} \cite{popovic2015chrf}, and \textbf{Token F1} following the formulation of \citet{fabbri-etal-2022-qafacteval}. To quantify abstractiveness, we report the percentage of novel unigrams, bigrams, and trigrams not appearing in the source document \cite{aharoni-etal-2023-multilingual}.
+
+\paragraph{Semantic Similarity.}
+We evaluate \textbf{BERTScore} \cite{zhang2020bertscore}, which measures semantic similarity using contextual embeddings. To assess the effect of encoder choice, we report results using three Hebrew language models: \texttt{avichr/heBERT}, \texttt{onlplab/alephbert-base} \cite{seker-etal-2021-alephbert}, and \texttt{dicta-il/neodictabert} \cite{shmidman2023dictabert}.
+
+\paragraph{NLI-Based Factuality.}
+We implement \textbf{SummaC-ZS} \cite{DBLP:journals/corr/abs-2111-09525}, replacing the original English-only NLI backbone with the multilingual model \texttt{MoritzLaurer/mDeBERTa-v3-base-mnli-xnli} \cite{laurer-etal-2022-deberta}. Consistency scores are computed using sentence-level entailment aggregation as proposed by the original framework.
+
+\paragraph{QA-Based Factuality.}
+We implement a Hebrew adaptation of \textbf{QAFactEval} \cite{fabbri-etal-2022-qafacteval}. Since the original pipeline relies on English-only components, we evaluate two Hebrew-capable configurations. The \emph{hybrid} configuration combines DictaBERT dependency parsing \cite{shmidman2023dictabert}, \texttt{GPT-4o-mini} question generation, and \texttt{deepset/xlm-roberta-large-squad2} extractive question answering. The \emph{fully generative} configuration uses \texttt{GPT-4o-mini} for question generation, answer extraction, and answer comparison. Final scores are computed by averaging answer-level consistency scores across generated questions.
+
+\paragraph{LLM-as-Judge Metrics.}
+We evaluate \textbf{G-EVAL} \cite{liu-etal-2023-g}, which uses chain-of-thought prompting to score factuality, and a \textbf{vanilla zero-shot LLM judge} that directly assesses factual consistency without structured evaluation criteria. Both methods employ \texttt{GPT-4o-mini} with deterministic decoding.
+
+\paragraph{Generation Probability Metrics.}
+We evaluate \textbf{BARTScore} \cite{yuan2021bartscore}, which measures the conditional likelihood of a summary given its source document under a pre-trained sequence-to-sequence model.
+
+
+\subsection{Evaluation Protocol}
+
+\section{Results}
+
+\subsection{Meta-Evaluation}
+\label{sec:meta_eval}
+
+We evaluate all metrics by measuring their agreement with human factuality annotations using Kendall's $\tau$ correlation. Higher values indicate stronger agreement with human judgments.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lc}
+\hline
+\textbf{Metric} & \textbf{Kendall $\tau$} \\
+\hline
+MorphEvalHeb & \textbf{0.6996} \\
+Vanilla Model & 0.5989 \\
+mFACT & 0.5290 \\
+G-EVAL & 0.2418 \\
+ROUGE-1 & 0.1391 \\
+BERTScore & 0.0162 \\
+SummaC & 0.0064 \\
+\hline
+\end{tabular}
+\caption{Correlation of factuality judgments on Hebrew summarization for other metrics. Higher values indicate stronger agreement with labeled sampels}
+\label{tab:main_results}
+\end{table}
+
+As shown in Table~\ref{tab:main_results}, MorphEvalHeb achieves the highest correlation with human judgments ($\tau=0.6996$), outperforming all baseline metrics. The strongest competing baseline is the vanilla model ($\tau=0.5989$), followed by mFACT ($\tau=0.5290$). Traditional similarity-based metrics such as ROUGE-1 and BERTScore show substantially weaker correlation, while SummaC exhibits almost no correlation with human annotations. These results suggest that morphology-aware Hebrew-native evaluation is substantially better aligned with human judgments than existing multilingual or similarity-based approaches.
+
+\subsection{Binary Faithfulness Verification Results}
+
+\subsection{Multi-label Error Detection Results}
+
+\subsection{Ablation Study}
+
+\section{Analysis}
+
+\section{Limitations}
+
+\section{Conclusion}
+
+\bibliography{custom}
+
+\end{document}
+
