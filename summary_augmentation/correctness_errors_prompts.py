@@ -1,6 +1,6 @@
-# CLAUDE_KEY="***REMOVED-API-KEY***"
+# CLAUDE_KEY="<redacted - see .env>"
 # curl https://api.anthropic.com/v1/messages \
-#     --header "x-api-key: ***REMOVED-API-KEY***" \
+#     --header "x-api-key: <redacted - see .env>" \
 #     --header "anthropic-version: 2023-06-01" \
 #     --header "content-type: application/json" \
 #     --data \

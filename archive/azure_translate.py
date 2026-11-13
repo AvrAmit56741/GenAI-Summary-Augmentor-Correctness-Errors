@@ -10,7 +10,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 
-AZURE_OPENAI_API_KEY_4o="***REMOVED-API-KEY***"
+import sys; from pathlib import Path; sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from summary_augmentation.api_keys import AZURE_OPENAI_API_KEY_4o  # loaded from .env
 AZURE_OPENAI_ENDPOINT_4o=r"https://lior-openai2.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-01-preview"
 
 ak = AZURE_OPENAI_API_KEY_4o
@@ -140,7 +141,7 @@ def translate_row(row_data: dict) -> dict:
 
 def main():
     # Hardcoded configuration
-    #api_key = "***REMOVED-API-KEY***"
+    #api_key = "<redacted - see .env>"
     input_file = "/home/avramit/mfact-summ/mfact/datasets/en-translated-train.csv"
     output_file = "/home/avramit/mfact-summ/mfact/datasets/heb/he-translated-train-34000-40000.csv"
     num_rows = 6000

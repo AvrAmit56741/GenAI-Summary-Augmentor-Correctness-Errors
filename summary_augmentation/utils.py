@@ -84,10 +84,10 @@ class ClaimDecompositionMethod(str, Enum):
 
 # Define OpenAI API credentials
 # EYAL
-OPENAI_API_KEY = "***REMOVED-API-KEY***"
+from summary_augmentation.api_keys import OPENAI_API_KEY  # loaded from .env
 
 #AMIT
-#OPENAI_API_KEY = "***REMOVED-API-KEY***"
+#OPENAI_API_KEY = "<redacted - see .env>"
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 

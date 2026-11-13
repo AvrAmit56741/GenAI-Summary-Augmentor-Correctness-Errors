@@ -130,7 +130,7 @@ def translate_row(row_data: dict, api_key: str) -> dict:
 
 def main():
     # Hardcoded configuration
-    #api_key = "***REMOVED-API-KEY***"
+    #api_key = "<redacted - see .env>"
     input_file = "/home/avramit/mfact-summ/mfact/datasets/en-translated-train.csv"
     output_file = "/home/avramit/mfact-summ/mfact/datasets/heb/he-translated-train.csv"
     num_rows = 10000

@@ -43,22 +43,20 @@ api_logger = setup_logger(
 # Define the main data structure
 import google.generativeai as genai
 
-# rom email ***REMOVED-API-KEY***
-# uni gmail ***REMOVED-API-KEY***
-# amit56741@gmail.com ***REMOVED-API-KEY***
+# Alternative Gemini keys are kept locally in .env
 
-GEMINI_API_KEY = "***REMOVED-API-KEY***"
+from summary_augmentation.api_keys import GEMINI_API_KEY  # loaded from .env
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-pro')
 #gemini-2.0-flash
 
 # Define OpenAI API credentials
 # EYAL
-OPENAI_API_KEY = "***REMOVED-API-KEY***"
-CLAUDE_API_KEY = "***REMOVED-API-KEY***"
+from summary_augmentation.api_keys import OPENAI_API_KEY  # loaded from .env
+from summary_augmentation.api_keys import CLAUDE_API_KEY  # loaded from .env
 client_claude = Anthropic(api_key=CLAUDE_API_KEY)
 # AMIT
-# OPENAI_API_KEY = "***REMOVED-API-KEY***"
+# OPENAI_API_KEY = "<redacted - see .env>"
 llm = ChatOpenAI(
     #model="gpt-4o",
     model="gpt-5-mini",

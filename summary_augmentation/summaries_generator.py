@@ -18,9 +18,9 @@ import json
 from typing import Dict
 from pathlib import Path
 import google.generativeai as genai
-OPENAI_API_KEY = "***REMOVED-API-KEY***"
-GEMINI_API_KEY = "***REMOVED-API-KEY***"
-CLAUDE_API_KEY = "***REMOVED-API-KEY***"
+from summary_augmentation.api_keys import OPENAI_API_KEY  # loaded from .env
+from summary_augmentation.api_keys import GEMINI_API_KEY  # loaded from .env
+from summary_augmentation.api_keys import CLAUDE_API_KEY  # loaded from .env
 
 genai.configure(api_key=GEMINI_API_KEY)
 client_claude = Anthropic(api_key=CLAUDE_API_KEY)

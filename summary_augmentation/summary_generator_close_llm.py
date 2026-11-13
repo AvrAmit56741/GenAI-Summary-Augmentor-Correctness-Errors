@@ -8,7 +8,7 @@ from openai import OpenAI
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import datetime
 
-OPENAI_API_KEY = "***REMOVED-API-KEY***"  # Replace with your actual API key
+from summary_augmentation.api_keys import OPENAI_API_KEY  # loaded from .env
 
 def llm_query_gpt(system_message, user_message, output_object: Type[BaseModel], openai_model="gpt-3.5-turbo-1106"):
     client = OpenAI(api_key=OPENAI_API_KEY)
