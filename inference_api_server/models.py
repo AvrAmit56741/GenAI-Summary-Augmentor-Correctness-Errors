@@ -223,3 +223,44 @@ def compute_summac(source_doc: str, summary: str, model_name: str = "roberta-lar
         ],
         "model_name": model_name,
     }
+
+
+# ── FactCG (Lei et al., NAACL 2025) ───────────────────────────────────────────
+# English DeBERTa-v3-large fact checker; shared implementation in
+# summary_augmentation/pages/metrics/factcg.py (same code as the paper's evaluation).
+
+_factcg_scorer = None
+
+
+def load_factcg() -> None:
+    global _factcg_scorer
+    import os
+    import sys
+    _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
+    try:
+        from summary_augmentation.pages.metrics.factcg import FactCGScorer
+        _factcg_scorer = FactCGScorer()
+        _factcg_scorer.load()
+        logger.info("✅ FactCG loaded on %s", _factcg_scorer.device)
+    except Exception as exc:
+        _factcg_scorer = None
+        logger.error("❌ Failed to load FactCG: %s", exc)
+
+
+def factcg_is_loaded() -> bool:
+    return _factcg_scorer is not None and _factcg_scorer.is_loaded()
+
+
+def compute_factcg(source_document: str, summary: str) -> dict:
+    """Returns P(supported) maximised over source chunks (higher = more faithful)."""
+    if not factcg_is_loaded():
+        raise RuntimeError("FactCG model not loaded")
+    result = _factcg_scorer.score(source_document, summary)
+    return {
+        "score": result.score,
+        "num_chunks": result.num_chunks,
+        "best_chunk_index": result.best_chunk_index,
+        "model_name": _factcg_scorer.model_name,
+    }

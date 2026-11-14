@@ -183,6 +183,10 @@ class SummacRequest(BaseModel):
     summary: str
     model_name: str = "roberta-large-mnli"
 
+class FactCGRequest(BaseModel):
+    source_document: str
+    summary: str
+
 # ============================================================================
 # FASTAPI APP
 # ============================================================================
@@ -373,6 +377,7 @@ async def load_models():
     _models.load_bartscore()
     _models.load_bertscore()
     _models.load_summac()
+    _models.load_factcg()
 
     # ========================================================================
     # LLM CLASSIFIER - Load separately with unsloth
@@ -527,6 +532,7 @@ async def health():
         "bartscore_loaded": _models.bartscore_is_loaded(),
         "bertscore_ready": _models.bertscore_is_ready(),
         "summac_ready": _models.summac_is_ready(),
+        "factcg_loaded": _models.factcg_is_loaded(),
         # Backward compatibility
         "binary_model_loaded": binary_model is not None,
         "binary_device": str(binary_device) if binary_device else None,
@@ -982,6 +988,20 @@ async def predict_bertscore(request: BertScoreRequest):
         logger.error(f"BERTScore error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ============================================================================
+# FACTCG ENDPOINT
+# ============================================================================
+@app.post("/factcg/predict")
+async def predict_factcg(request: FactCGRequest):
+    """FactCG (NAACL 2025): P(summary supported by source), max over source chunks."""
+    if not _models.factcg_is_loaded():
+        raise HTTPException(status_code=503, detail="FactCG model not loaded")
+    try:
+        return _models.compute_factcg(request.source_document, request.summary)
+    except Exception as e:
+        logger.error(f"FactCG error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
 # SUMMAC ENDPOINT

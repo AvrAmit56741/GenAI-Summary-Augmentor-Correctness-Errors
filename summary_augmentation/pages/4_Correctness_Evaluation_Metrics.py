@@ -42,7 +42,7 @@ Evaluate summary quality using standard text-overlap metrics. Compare a generate
 """)
 
 # Create tabs for single vs batch evaluation
-tab_single, tab_ngram, tab_semantic, tab_classifier, tab_hallucination, tab_compare, tab_qafacteval, tab_summac, tab_geval, tab_vanilla, tab_bartscore, tab_mfact = st.tabs(["Single Evaluation", "N-gram", "Semantic", "Classifier Predictions", "Hallucination Metrics", "Compare Metrics", "QAFactEval", "SummaC", "G-EVAL", "LLM-as-Judge", "BARTScore", "MFact"])
+tab_single, tab_ngram, tab_semantic, tab_classifier, tab_hallucination, tab_compare, tab_qafacteval, tab_summac, tab_geval, tab_vanilla, tab_bartscore, tab_mfact, tab_factcg = st.tabs(["Single Evaluation", "N-gram", "Semantic", "Classifier Predictions", "Hallucination Metrics", "Compare Metrics", "QAFactEval", "SummaC", "G-EVAL", "LLM-as-Judge", "BARTScore", "MFact", "FactCG"])
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ def _render_batch_results(results_df: pd.DataFrame, df_eval: pd.DataFrame, base_
         candidate_cols = {
             'BLEU': 'bleu', 'ROUGE-1 F1': 'rouge1_f1', 'ROUGE-2 F1': 'rouge2_f1',
             'ROUGE-L F1': 'rougel_f1', 'ChrF': 'chrf', 'BERTScore F1': 'bertscore_f1',
-            'Token F1': 'tokenf1_f1',
+            'Token F1': 'tokenf1_f1', 'FactCG': 'factcg_score',
         }
         kendall_results = [
             KendallTauCalculator([results_df.iloc[i][col] for i in valid_indices], clean_labels, name).compute()
@@ -3001,3 +3001,80 @@ with tab_mfact:
         - `hypothesis` — claim to verify
         - `label` — optional; used for accuracy and Kendall τ
         """)
+
+
+with tab_factcg:
+    st.markdown("---")
+    st.subheader("✅ FactCG — Trained Fact Checker (NAACL 2025)")
+    st.markdown(
+        "Scores whether the summary is supported by the source with FactCG "
+        "(`yaxili96/FactCG-DeBERTa-v3-Large`, an English DeBERTa-v3-large checker trained on graph-based "
+        "multi-hop synthetic data). The source is split into ~550-token sentence chunks; the score is "
+        "P(supported) maximised over chunks (higher = more faithful). Same code as the paper's evaluation "
+        "(`pages/metrics/factcg.py`)."
+    )
+    with st.expander("ℹ️ How FactCG works", expanded=False):
+        st.markdown("""
+**Paper:** Lei et al. 2025 — *FactCG: Enhancing Fact Checkers with Graph-Based Multi-Hop Data* (NAACL 2025)
+
+**Input:** `{source chunk}` + *"Choose your answer: based on the paragraph above can we conclude that "{summary}"? OPTIONS: Yes / No"*
+
+**Score:** softmax probability of the *supported* class, maximised over source chunks.
+
+**Note:** FactCG is trained on English. On Hebrew it is a cross-lingual-transfer baseline.
+        """)
+
+    fc_df, fc_start, fc_end = _batch_upload_and_range("factcg")
+    if fc_df is not None:
+        fc_inference_type = st.radio("Inference type:", ["Local", "Remote API"], horizontal=True, key="factcg_inference_type",
+                                     help="Local: loads FactCG on this machine (~1.7GB). Remote API: calls the inference server.")
+        fc_api_url = st.text_input("API URL", value="http://localhost:8080", key="factcg_api_url") if fc_inference_type == "Remote API" else None
+        if fc_inference_type == "Remote API" and st.button("🏥 Check API Health", key="factcg_health"):
+            import requests as _req
+            try:
+                h = _req.get(f"{fc_api_url}/health", timeout=5).json()
+                st.success("✅ FactCG loaded on remote API") if h.get("factcg_loaded") else st.error("❌ FactCG not loaded on remote API")
+            except Exception as _e:
+                st.error(f"❌ Cannot reach API: {_e}")
+
+        if st.button("▶️ Run FactCG", type="primary", use_container_width=True, key="factcg_run"):
+            df_eval = fc_df.iloc[fc_start:fc_end].reset_index(drop=True)
+            rows, errors = [], []
+            progress = st.progress(0, text="Running FactCG...")
+            scorer = None
+            if fc_inference_type == "Local":
+                from summary_augmentation.pages.metrics.factcg import FactCGScorer
+                if "factcg_scorer" not in st.session_state:
+                    with st.spinner("Loading FactCG model..."):
+                        st.session_state["factcg_scorer"] = FactCGScorer()
+                        st.session_state["factcg_scorer"].load()
+                scorer = st.session_state["factcg_scorer"]
+            for i, row in df_eval.iterrows():
+                try:
+                    if scorer is not None:
+                        r = scorer.score(str(row["premise"]), str(row["hypothesis"]))
+                        score_value, n_chunks = r.score, r.num_chunks
+                    else:
+                        import requests as _requests
+                        resp = _requests.post(f"{fc_api_url}/factcg/predict",
+                                              json={"source_document": str(row["premise"]), "summary": str(row["hypothesis"])},
+                                              timeout=120)
+                        resp.raise_for_status()
+                        js = resp.json()
+                        score_value, n_chunks = js["score"], js["num_chunks"]
+                    rows.append({"index": fc_start + i, "factcg_score": round(score_value, 4), "factcg_num_chunks": n_chunks})
+                except Exception as _e:
+                    errors.append({"index": fc_start + i, "error": str(_e)})
+                    rows.append({"index": fc_start + i, "factcg_score": float("nan"), "factcg_num_chunks": 0})
+                progress.progress((i + 1) / len(df_eval), text=f"Scored {i + 1} / {len(df_eval)}")
+            progress.empty()
+            if errors:
+                st.warning(f"⚠️ {len(errors)} samples failed")
+                with st.expander("Errors"):
+                    st.json(errors[:20])
+            st.session_state["factcg_results"] = (pd.DataFrame(rows)[["index", "factcg_score"]], df_eval)
+
+        if st.session_state.get("factcg_results"):
+            _fc_results_df, _fc_df_eval = st.session_state["factcg_results"]
+            _render_batch_results(_fc_results_df, _fc_df_eval, "factcg_results")
+
