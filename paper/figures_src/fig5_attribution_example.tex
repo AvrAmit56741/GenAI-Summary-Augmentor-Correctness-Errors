@@ -1,0 +1,49 @@
+% Figure 5: real example of gradient-attribution error localization (Section 7, Analysis).
+% Compile with XeLaTeX (Overleaf: Menu -> Compiler -> XeLaTeX) or `tectonic fig5_attribution_example.tex`.
+% Natural width = 16cm (ACL \textwidth): include with \includegraphics[width=\textwidth]{...pdf}.
+% Data: paper/results/eval/attribution.csv, uid=3135 (exp_attribution_example.py); real model output, not fabricated.
+\documentclass[10pt,border=1pt]{standalone}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fontspec}
+\setmainfont{FreeSerif.otf}[BoldFont=FreeSerifBold.otf,ItalicFont=FreeSerifItalic.otf,BoldItalicFont=FreeSerifBoldItalic.otf]
+\usepackage{polyglossia}
+\setdefaultlanguage{english}
+\setotherlanguage{hebrew}
+\newfontfamily\hebrewfont{FreeSerif.otf}[Script=Hebrew,BoldFont=FreeSerifBold.otf]
+\definecolor{errc}{HTML}{D55E00}
+\definecolor{frame}{HTML}{6B6B6B}
+\definecolor{titlebg}{HTML}{EDEDED}
+\definecolor{goldc}{HTML}{0072B2}
+\newcommand{\e}[1]{\textbf{\textcolor{errc}{#1}}}
+\newcommand{\g}[1]{\textbf{\textcolor{goldc}{#1}}}
+% \top{rank}{text}: edited word that is ALSO the verifier's rank-k attribution
+\newcommand{\topattr}[2]{\textbf{\textcolor{errc}{\tcbox[on line,boxrule=0.6pt,colframe=errc,colback=errc!8,
+  arc=1pt,left=1pt,right=1pt,top=0.5pt,bottom=0.5pt,boxsep=0pt]{#2}}}\textsuperscript{\textcolor{errc}{(#1)}}}
+\newcommand{\lab}[2]{{\scriptsize\textbf{\textcolor{#1}{#2}}}\par}
+\begin{document}
+\begin{minipage}{16cm}
+\begin{tcolorbox}[enhanced,width=16cm,arc=1.5pt,boxrule=0.5pt,colframe=frame,colback=white,
+  colbacktitle=titlebg,coltitle=black,
+  title={\footnotesize\textbf{Error localization: gradient$\times$input attribution on a real MAFAT-Aug example (uid 3135)}},
+  left=5pt,right=5pt,top=3pt,bottom=3pt,toptitle=1.5pt,bottomtitle=1.5pt]
+
+\lab{goldc}{Gold (faithful) summary}
+{\footnotesize\setRTL\raggedright
+\g{יונקים} וציפורים ... חוק ברגמן וחוק אלן \g{מנסים} להסביר את התופעה [...] המאמר \g{מזכיר} שתמיד יש יוצאים מן הכלל [...] כמו דלדול מקורות \g{מזון}.\par}
+
+\vspace{4pt}
+\lab{errc}{Corrupted summary (4 injected edits; model correctly flags \emph{unfaithful}, margin $+8.5$)}
+{\footnotesize\setRTL\raggedright
+\e{זוחלים} וציפורים ... חוק ברגמן וחוק אלן \topattr{2}{לא מנסים} להסביר את התופעה [...] המאמר \topattr{1}{לא מזכיר} שתמיד יש יוצאים מן הכלל [...] כמו דלדול מקורות \e{מים}.\par}
+
+\vspace{5pt}
+{\scriptsize\raggedright\color{black!70}
+\textbf{Edits (English gloss):} ``mammals''$\to$\e{``reptiles''}; ``try to''$\to$\topattr{2}{``do \emph{not} try to''}; ``mentions''$\to$\topattr{1}{``does \emph{not} mention''}; ``food''$\to$\e{``water''} sources.
+\\[2pt]
+\textbf{Attribution:} of all 82 hypothesis words, the \textbf{two} highest by $|\mathrm{gradient}\times\mathrm{input}|$ on the verifier's contradiction-minus-entailment margin (boxed, ranked) are both injected edits -- the two inserted negations. The other two edits (entity and noun swaps) are not top-ranked but are still correctly localized above chance in aggregate (Section~7: 73.1\% top-1 vs.\ 11.5\% chance, $n{=}171$).
+\par}
+\end{tcolorbox}
+\end{minipage}
+\end{document}
