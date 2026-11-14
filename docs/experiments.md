@@ -134,6 +134,21 @@ Status legend: ✅ positive finding, worth adding to the paper · ⚠️ negativ
 
 ---
 
+## 8. FactCG baseline vs. MorphEvalHeb — ✅ complete (4,024/4,024), added to the paper
+
+**Status:** the FactCG (Lei et al., NAACL 2025) baseline run completed all 4,024 benchmark pairs on 2026-11-14 (paused twice along the way — at 2,371 and again at 3,185 — and resumed each time by request; the ported inference code was independently re-verified against the reference `derenlei/FactCG` repo: same checkpoint, instruction template, label index, and chunking/aggregation logic). Final numbers are from `analyze.py`'s cross-validated balanced accuracy and bootstrap CIs (`meta_eval.json`), not the earlier in-sample best-threshold estimates — **now added to Table 1, Table 4, and the Results prose (§7, after the ENFS/LLM-judge sentence).**
+
+**Result (cross-validated balanced accuracy; AUC with 95% bootstrap CI; Kendall $\tau_b$):**
+| Part | n | FactCG AUC | FactCG BAcc | FactCG $\tau_b$ | MorphEvalHeb AUC | MorphEvalHeb BAcc | MorphEvalHeb $\tau_b$ |
+|---|---|---|---|---|---|---|---|
+| All | 4,024 | 0.562 [0.54,0.59] | 0.638 | 0.087 | 0.992 [0.99,1.00] | 0.969 | 0.689 |
+| MAFAT-Aug | 1,889 | 0.534 | 0.505 | 0.045 | 0.995 | 0.980 | — |
+| mFACT-He | 2,135 | 0.893 | 0.825 | 0.555 | 0.995 | 0.968 | — |
+
+**Conclusion:** confirms the partial-run reads (both the 2,371- and 3,185-pair snapshots): FactCG transfers reasonably to mFACT-He's naturally occurring, English-adjacent errors (AUC 0.893) but collapses to near chance on MAFAT-Aug's injected Hebrew morphological/entity error taxonomy (AUC 0.534) — a 36-point gap that doesn't appear for MorphEvalHeb (0.995 on both parts). Note the pooled "All" AUC (0.562) is much closer to the MAFAT-Aug figure than a naive average of the two parts would suggest — pooling a benchmark with heterogeneous parts can drag a baseline's apparent overall AUC toward its weaker part's level even when weighted by size, which MorphEvalHeb does not suffer from since it is uniformly strong on both parts. This is a clean, direct demonstration of the paper's core cross-lingual-transfer argument and is now the strongest baseline-failure evidence in the paper (stronger than SummaC's, since FactCG is purpose-built for the same source-grounded factuality task MorphEvalHeb targets, not a generic NLI aggregator).
+
+---
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)
 
 ### 5. Severity calibration on real LLM output (`thesisdatasets/error_finder/*.csv`)
