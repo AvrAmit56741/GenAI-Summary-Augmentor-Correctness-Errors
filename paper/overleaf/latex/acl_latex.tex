@@ -45,7 +45,7 @@
 %
 % and set <dim> to something 5cm or larger.
 
-\title{MorphEvalHeb: Morphology-Aware Factual Consistency Evaluation\\for Hebrew Summarization}
+\title{MorphEvalHeb: Morphology-Aware Factual Consistency Evaluation\\for LLM-Generated Hebrew Summaries}
 
 % Author information can be set in various styles:
 % For several authors from the same institution:
@@ -65,9 +65,9 @@
 
 
 \author{
-Amit Avraham \quad Eyal Mazuz \quad Bracha Shapira \quad Lior Rokach \\
+Eyal Mazuz \quad Amit Avraham \quad Bracha Shapira \quad Lior Rokach \\
 Ben-Gurion University of the Negev, Israel \\
-\texttt{\{avramit,mazuze\}@post.bgu.ac.il}, \texttt{bshapira@bgu.ac.il}, \texttt{liorrk@post.bgu.ac.il}
+\texttt{\{mazuze,avramit\}@post.bgu.ac.il}, \texttt{bshapira@bgu.ac.il}, \texttt{liorrk@post.bgu.ac.il}
 }
 
 %\author{
@@ -309,7 +309,7 @@ We evaluate \textbf{G-EVAL} \cite{liu-etal-2023-g}, which uses chain-of-thought 
 \textbf{ENFS} \citep{cao-etal-2022-hallucinated} is the share of named entities in the summary, detected with DictaBERT-NER \citep{shmidman2023dictabert}, that do not appear among the source's entities; we negate it so that higher means more faithful.
 
 \paragraph{Trained Fact Checker.}
-\textbf{FactCG} \citep{lei-etal-2025-factcg} is a DeBERTa-v3-large fact checker trained on graph-based multi-hop synthetic data, among the strongest small checkers on English grounding benchmarks. We apply the released English model to Hebrew as a cross-lingual baseline, following its reference inference: the source is split into sentence-aligned chunks of up to 550 tokens, and the score is the probability that the summary is supported, maximized over chunks.
+\textbf{FactCG} \citep{lei-etal-2025-factcg} is a DeBERTa-v3-large fact checker trained on graph-based multi-hop synthetic data, among the strongest small checkers on English grounding benchmarks. We apply the released English model to Hebrew as a cross-lingual baseline, following its reference inference: the source is split into sentence-aligned chunks of up to 550 tokens, and the score is the probability that the summary is supported, maximized over chunks. Its SentencePiece tokenizer has no Hebrew-specific vocabulary but, unlike a word-piece tokenizer with a fixed vocabulary, falls back to small Unicode-level pieces rather than failing outright, so it still runs on Hebrew text (0.001\% unknown-token rate on a 300-document sample) but fragments it heavily: 4.30 subword tokens per word, versus 1.00--1.24 for our NeoDictaBERT-based verifier (Appendix~\ref{app:enfs}).
 
 \paragraph{Trained Hebrew Classifier.}
 \textbf{mFACT-He} follows the mFACT recipe \citep{qiu2023detecting}: NeoDictaBERT, the same encoder as ours, fine-tuned only on the Hebrew translation of the mFACT training data. It therefore isolates the effect of our training data. MorphEvalHeb's binary verifier is trained on the training splits of both MAFAT-Aug and mFACT-He.

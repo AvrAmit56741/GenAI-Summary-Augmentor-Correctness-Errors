@@ -149,6 +149,24 @@ Status legend: ✅ positive finding, worth adding to the paper · ⚠️ negativ
 
 ---
 
+## 9. FactCG's tokenizer on Hebrew: mechanism check — ✅ positive, added to the paper
+
+**Question (raised by the author):** FactCG's backbone (DeBERTa-v3-large) is an English-only model — mechanically, how does scoring it on Hebrew even work, and is the comparison valid?
+
+**Method:** loaded the FactCG tokenizer (`yaxili96/FactCG-DeBERTa-v3-Large`, SentencePiece, 128K vocab) directly and measured its UNK rate and subword-fragmentation rate on a 300-document sample of benchmark source articles (whitespace words vs. subword token count), the same methodology as the entity-fragmentation experiment (§5/#8).
+
+**Result:**
+| | FactCG tokenizer | NeoDictaBERT (ours) |
+|---|---|---|
+| UNK rate | 0.001% (5 / 758,941 tokens) | — |
+| Subwords per word | **4.30** | 1.00–1.24 |
+
+**Conclusion:** SentencePiece never hard-fails on unseen scripts — it falls back to small Unicode-level pieces instead of `[UNK]`, which is *why* FactCG can be run on Hebrew at all without crashing or requiring any adaptation. But it has essentially no learned Hebrew subword vocabulary: Hebrew text fragments into 4.30 subwords/word, 3.5–4.3× more than our Hebrew-native tokenizer. This is a credible mechanistic explanation (not proof, but a strong, concrete, checkable one) for why FactCG collapses to near-chance specifically on MAFAT-Aug's word-level morphological/entity errors (experiment 8): the signal of a single swapped suffix or entity gets diluted across many near-meaningless character fragments the model was never trained to interpret, while MorphEvalHeb's tokenizer sees the same edit as a small, meaningful subword change.
+
+**Recommendation:** added as a clarifying sentence directly after FactCG's method description in the paper (§6.2/baselines), pre-empting the "is a cross-lingual English-model baseline even a fair/valid comparison" reviewer question.
+
+---
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)
 
 ### 5. Severity calibration on real LLM output (`thesisdatasets/error_finder/*.csv`)
