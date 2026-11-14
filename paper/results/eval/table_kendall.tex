@@ -1,0 +1,29 @@
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{Kendall $\tau$} & \textbf{Kendall $\tau_b$ (re-run)} \\
+ & \textit{original run} & \textit{[95\% CI]} \\
+\midrule
+\textbf{MorphEvalHeb} (ours) & \textbf{0.6996} & \textbf{0.689\,{\scriptsize[0.68,0.70]}} \\
+\midrule
+Vanilla Model (zero-shot judge) & 0.5989 & pending \\
+mFACT & 0.5290 & pending \\
+G-EVAL & 0.2418 & pending \\
+ENFS & -- & 0.265\,{\scriptsize[0.23,0.30]} \\
+ROUGE-2 & -- & 0.009\,{\scriptsize[-0.02,0.05]} \\
+BERTScore (AlephBERT) & -- & -0.013\,{\scriptsize[-0.04,0.02]} \\
+SummaC & 0.0064 & pending \\
+BERTScore (heBERT) & 0.0162 & -0.061\,{\scriptsize[-0.09,-0.03]} \\
+Token F1 & -- & -0.071\,{\scriptsize[-0.10,-0.04]} \\
+ROUGE-1 & 0.1391 & -0.093\,{\scriptsize[-0.12,-0.06]} \\
+ROUGE-L & -- & -0.094\,{\scriptsize[-0.12,-0.06]} \\
+BLEU & -- & -0.105\,{\scriptsize[-0.14,-0.07]} \\
+chrF & -- & -0.209\,{\scriptsize[-0.23,-0.18]} \\
+\bottomrule
+\end{tabular}
+\caption{Kendall's $\tau$ between metric scores and the reference faithfulness labels on the Hebrew benchmark ($n{=}4{,}024$). Higher values indicate stronger agreement with the labels. The first column reports our original run; the second re-computes the tie-adjusted $\tau_b$ with the protocol of Section~\ref{sec:protocol}, with 95\% bootstrap confidence intervals over articles (``pending'': not yet re-run). Appendix~\ref{app:full_results} gives AUC and balanced accuracy for each benchmark part.}
+\label{tab:main_results}
+\end{table}

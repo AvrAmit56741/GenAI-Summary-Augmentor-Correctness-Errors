@@ -93,7 +93,7 @@ def evaluate(df, metrics):
 
 
 def main():
-    df = pd.read_csv(os.path.join(HERE, "scores.csv"))
+    df = pd.read_csv(os.path.join(HERE, os.environ.get("SCORES", "scores.csv")))
     df["group"] = np.where(df.doc_id.notna(), df.doc_id.astype(str), "u" + df.uid.astype(str))
     metrics = [c for c in df.columns if c not in META | {"group"} and not c.startswith(("setup2:", "setup3:"))]
     res = {"all": evaluate(df, metrics)}

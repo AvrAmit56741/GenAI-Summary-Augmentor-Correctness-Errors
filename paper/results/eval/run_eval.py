@@ -117,13 +117,16 @@ def run_ngram():
 # ------------------------------------------------------------------ BERTScore (server settings)
 def run_bertscore():
     from bert_score import score
+    from transformers import AutoTokenizer
     d = load_bench()
-    trunc = lambda t: " ".join(t.split()[:350])
     for name, col in [("avichr/heBERT", "BERTScore (heBERT)"), ("onlplab/alephbert-base", "BERTScore (AlephBERT)")]:
         done, path = cached("bertscore_" + col.split("(")[1][:-1])
         todo = d[~d.uid.isin(done.uid)]
         if todo.empty:
             continue
+        tk = AutoTokenizer.from_pretrained(name)
+        # BERT limit is 512 positions incl. [CLS]/[SEP]: cut by tokens, not words (Hebrew words split into many pieces)
+        trunc = lambda t: tk.convert_tokens_to_string(tk.tokenize(t)[:500])
         for i in range(0, len(todo), 64):
             b = todo.iloc[i:i + 64]
             _, _, f1 = score([trunc(h) for h in b.hypothesis], [trunc(p) for p in b.premise], model_type=name,
@@ -141,11 +144,8 @@ def run_summac():
     pipe = SummacFactory.zero_shot("MoritzLaurer/mDeBERTa-v3-base-mnli-xnli")
     t0 = time.time()
     for k, r in enumerate(todo.itertuples()):
-        res = pipe.evaluate(r.premise, r.hypothesis) if hasattr(pipe, "evaluate") else pipe(r.premise, r.hypothesis)
-        sc = getattr(res, "score", None)
-        if sc is None and isinstance(res, dict):
-            sc = res.get("score")
-        append(path, [{"uid": r.uid, "SummaC-ZS": float(sc)}])
+        res = pipe.score(r.premise, r.hypothesis)
+        append(path, [{"uid": r.uid, "SummaC-ZS": float(res.summary_score)}])
         if k % 100 == 0:
             print(f"  summac {k}/{len(todo)} {(time.time()-t0)/(k+1):.2f}s/pair", flush=True)
 
@@ -194,9 +194,26 @@ def run_multilabel(bs=8):
                 print(f"  {col} {k}/{len(todo)} {(time.time()-t0)/(k+1):.2f}s/summary", flush=True)
 
 
+def run_factcg():
+    """FactCG (Lei et al., 2025) via the shared module used by the server and GUI."""
+    from summary_augmentation.pages.metrics.factcg import FactCGScorer
+    d = load_bench()
+    done, path = cached("factcg")
+    todo = d[~d.uid.isin(done.uid)]
+    if todo.empty:
+        print("factcg: cached"); return
+    scorer = FactCGScorer(device=device())
+    t0 = time.time()
+    for k, r in enumerate(todo.itertuples()):
+        res = scorer.score(r.premise, r.hypothesis)
+        append(path, [{"uid": r.uid, "FactCG": res.score}])
+        if k % 200 == 0:
+            print(f"  factcg {k}/{len(todo)} {(time.time()-t0)/(k+1):.2f}s/pair", flush=True)
+
+
 def merge():
     d = load_bench()[["uid", "part", "source", "label", "y", "error_types", "method", "doc_id"]]
-    for f in sorted(os.listdir(CACHE)):
+    for f in sorted(x for x in os.listdir(CACHE) if x.endswith(".csv")):
         c = pd.read_csv(os.path.join(CACHE, f)).drop_duplicates("uid", keep="last")
         d = d.merge(c, on="uid", how="left")
     d.to_csv(os.path.join(HERE, "scores.csv"), index=False)
@@ -205,4 +222,4 @@ def merge():
 
 if __name__ == "__main__":
     {"binary": run_binary, "ngram": run_ngram, "bertscore": run_bertscore, "summac": run_summac,
-     "multilabel": run_multilabel, "merge": merge}[sys.argv[1]]()
+     "multilabel": run_multilabel, "factcg": run_factcg, "merge": merge}[sys.argv[1]]()

@@ -25,6 +25,8 @@ Everything related to writing the MorphEvalHeb paper (ACL format). This folder i
 
 ## Known open items
 
+- **QAFactEval: on hold until the author gives instructions.** The description is in §6.2 and Table 1 shows a "pending" row. The `% TODO` above `\paragraph{QA-Based Factuality.}` in `acl_latex.tex` lists how to run it: hybrid config, `gpt-4o-mini` passed explicitly, an OpenAI key, about $3–5.
+
 - **Results:** `results/analyze_hf_results.py` computes them from the Hugging Face prediction files and writes `results/hf_results.json`.
   - **Binary verifier test set:** AUC 0.990, balanced accuracy 96.7, τ_b 0.684, with bootstrap 95% CIs. This is now in §7.2.
   - **Setup 3:** micro-F1 0.787 (P 0.674 / R 0.945). Now in §7.3.

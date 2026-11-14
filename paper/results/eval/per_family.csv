@@ -1,0 +1,241 @@
+metric,family,n,detection_rate
+BERTScore (AlephBERT),construct_state_confusion,838,0.30071599045346065
+BERTScore (AlephBERT),directional_preposition_swap,45,0.13333333333333333
+BERTScore (AlephBERT),entity_date_swap,345,0.11884057971014493
+BERTScore (AlephBERT),entity_event_swap,322,0.2732919254658385
+BERTScore (AlephBERT),entity_location_swap,415,0.20722891566265061
+BERTScore (AlephBERT),entity_organization_swap,419,0.18854415274463007
+BERTScore (AlephBERT),entity_person_swap,575,0.31478260869565217
+BERTScore (AlephBERT),entity_title_swap,280,0.3392857142857143
+BERTScore (AlephBERT),hebrew_root_pattern_confusion,786,0.26463104325699743
+BERTScore (AlephBERT),homographic_gender_errors,28,0.21428571428571427
+BERTScore (AlephBERT),idiom_collocation_corruption,415,0.25301204819277107
+BERTScore (AlephBERT),measure_unit_swap,363,0.21763085399449036
+BERTScore (AlephBERT),morphological_connective_confusion,303,0.28052805280528054
+BERTScore (AlephBERT),noun_gender_swap,300,0.30666666666666664
+BERTScore (AlephBERT),number_swap,683,0.14055636896046853
+BERTScore (AlephBERT),pronoun_reference_errors,711,0.2630098452883263
+BERTScore (AlephBERT),sentence_negation,666,0.25975975975975973
+BERTScore (AlephBERT),specificity_shift_errors,568,0.30809859154929575
+BERTScore (AlephBERT),verb_gender_swap,334,0.3023952095808383
+BERTScore (AlephBERT),verb_tense_swap,492,0.23983739837398374
+BERTScore (heBERT),construct_state_confusion,838,0.4224343675417661
+BERTScore (heBERT),directional_preposition_swap,45,0.37777777777777777
+BERTScore (heBERT),entity_date_swap,345,0.20869565217391303
+BERTScore (heBERT),entity_event_swap,322,0.35093167701863354
+BERTScore (heBERT),entity_location_swap,415,0.3204819277108434
+BERTScore (heBERT),entity_organization_swap,419,0.3317422434367542
+BERTScore (heBERT),entity_person_swap,575,0.3826086956521739
+BERTScore (heBERT),entity_title_swap,280,0.30357142857142855
+BERTScore (heBERT),hebrew_root_pattern_confusion,786,0.3753180661577608
+BERTScore (heBERT),homographic_gender_errors,28,0.39285714285714285
+BERTScore (heBERT),idiom_collocation_corruption,415,0.41927710843373495
+BERTScore (heBERT),measure_unit_swap,363,0.29476584022038566
+BERTScore (heBERT),morphological_connective_confusion,303,0.36633663366336633
+BERTScore (heBERT),noun_gender_swap,300,0.3433333333333333
+BERTScore (heBERT),number_swap,683,0.2342606149341142
+BERTScore (heBERT),pronoun_reference_errors,711,0.37834036568213786
+BERTScore (heBERT),sentence_negation,666,0.3708708708708709
+BERTScore (heBERT),specificity_shift_errors,568,0.3926056338028169
+BERTScore (heBERT),verb_gender_swap,334,0.3772455089820359
+BERTScore (heBERT),verb_tense_swap,492,0.4247967479674797
+MorphEvalHeb,construct_state_confusion,838,0.9713603818615751
+MorphEvalHeb,directional_preposition_swap,45,0.9555555555555556
+MorphEvalHeb,entity_date_swap,345,0.9449275362318841
+MorphEvalHeb,entity_event_swap,322,0.9440993788819876
+MorphEvalHeb,entity_location_swap,415,0.980722891566265
+MorphEvalHeb,entity_organization_swap,419,0.9761336515513126
+MorphEvalHeb,entity_person_swap,575,0.9826086956521739
+MorphEvalHeb,entity_title_swap,280,1.0
+MorphEvalHeb,hebrew_root_pattern_confusion,786,0.9770992366412213
+MorphEvalHeb,homographic_gender_errors,28,1.0
+MorphEvalHeb,idiom_collocation_corruption,415,0.9879518072289156
+MorphEvalHeb,measure_unit_swap,363,0.9696969696969697
+MorphEvalHeb,morphological_connective_confusion,303,0.9603960396039604
+MorphEvalHeb,noun_gender_swap,300,0.9833333333333333
+MorphEvalHeb,number_swap,683,0.9751098096632503
+MorphEvalHeb,pronoun_reference_errors,711,0.9760900140646976
+MorphEvalHeb,sentence_negation,666,0.984984984984985
+MorphEvalHeb,specificity_shift_errors,568,0.9753521126760564
+MorphEvalHeb,verb_gender_swap,334,0.9820359281437125
+MorphEvalHeb,verb_tense_swap,492,0.9654471544715447
+ENFS,construct_state_confusion,838,0.5668257756563246
+ENFS,directional_preposition_swap,45,0.5777777777777777
+ENFS,entity_date_swap,345,0.7159420289855073
+ENFS,entity_event_swap,322,0.6335403726708074
+ENFS,entity_location_swap,415,0.6433734939759036
+ENFS,entity_organization_swap,419,0.684964200477327
+ENFS,entity_person_swap,575,0.6869565217391305
+ENFS,entity_title_swap,280,0.7142857142857143
+ENFS,hebrew_root_pattern_confusion,786,0.5521628498727735
+ENFS,homographic_gender_errors,28,0.75
+ENFS,idiom_collocation_corruption,415,0.5759036144578313
+ENFS,measure_unit_swap,363,0.5950413223140496
+ENFS,morphological_connective_confusion,303,0.5115511551155115
+ENFS,noun_gender_swap,300,0.6
+ENFS,number_swap,683,0.6691068814055637
+ENFS,pronoun_reference_errors,711,0.5372714486638537
+ENFS,sentence_negation,666,0.581081081081081
+ENFS,specificity_shift_errors,568,0.5651408450704225
+ENFS,verb_gender_swap,334,0.5838323353293413
+ENFS,verb_tense_swap,492,0.5020325203252033
+FactCG,construct_state_confusion,838,0.0
+FactCG,directional_preposition_swap,45,0.0
+FactCG,entity_date_swap,345,0.0
+FactCG,entity_event_swap,322,0.0
+FactCG,entity_location_swap,415,0.0
+FactCG,entity_organization_swap,419,0.0
+FactCG,entity_person_swap,575,0.0
+FactCG,entity_title_swap,280,0.0
+FactCG,hebrew_root_pattern_confusion,786,0.0
+FactCG,homographic_gender_errors,28,0.0
+FactCG,idiom_collocation_corruption,415,0.0
+FactCG,measure_unit_swap,363,0.0
+FactCG,morphological_connective_confusion,303,0.0
+FactCG,noun_gender_swap,300,0.0
+FactCG,number_swap,683,0.0
+FactCG,pronoun_reference_errors,711,0.0
+FactCG,sentence_negation,666,0.0
+FactCG,specificity_shift_errors,568,0.0
+FactCG,verb_gender_swap,334,0.0
+FactCG,verb_tense_swap,492,0.0
+ROUGE-1,construct_state_confusion,838,0.13842482100238662
+ROUGE-1,directional_preposition_swap,45,0.022222222222222223
+ROUGE-1,entity_date_swap,345,0.06666666666666667
+ROUGE-1,entity_event_swap,322,0.07453416149068323
+ROUGE-1,entity_location_swap,415,0.10843373493975904
+ROUGE-1,entity_organization_swap,419,0.09307875894988067
+ROUGE-1,entity_person_swap,575,0.15130434782608695
+ROUGE-1,entity_title_swap,280,0.1
+ROUGE-1,hebrew_root_pattern_confusion,786,0.12340966921119594
+ROUGE-1,homographic_gender_errors,28,0.0
+ROUGE-1,idiom_collocation_corruption,415,0.13253012048192772
+ROUGE-1,measure_unit_swap,363,0.0743801652892562
+ROUGE-1,morphological_connective_confusion,303,0.0627062706270627
+ROUGE-1,noun_gender_swap,300,0.11666666666666667
+ROUGE-1,number_swap,683,0.02635431918008785
+ROUGE-1,pronoun_reference_errors,711,0.1111111111111111
+ROUGE-1,sentence_negation,666,0.12462462462462462
+ROUGE-1,specificity_shift_errors,568,0.14788732394366197
+ROUGE-1,verb_gender_swap,334,0.11077844311377245
+ROUGE-1,verb_tense_swap,492,0.09349593495934959
+ROUGE-2,construct_state_confusion,838,0.3448687350835322
+ROUGE-2,directional_preposition_swap,45,0.28888888888888886
+ROUGE-2,entity_date_swap,345,0.20869565217391303
+ROUGE-2,entity_event_swap,322,0.2919254658385093
+ROUGE-2,entity_location_swap,415,0.2963855421686747
+ROUGE-2,entity_organization_swap,419,0.2529832935560859
+ROUGE-2,entity_person_swap,575,0.35478260869565215
+ROUGE-2,entity_title_swap,280,0.2571428571428571
+ROUGE-2,hebrew_root_pattern_confusion,786,0.30661577608142493
+ROUGE-2,homographic_gender_errors,28,0.0
+ROUGE-2,idiom_collocation_corruption,415,0.3325301204819277
+ROUGE-2,measure_unit_swap,363,0.21487603305785125
+ROUGE-2,morphological_connective_confusion,303,0.3234323432343234
+ROUGE-2,noun_gender_swap,300,0.25666666666666665
+ROUGE-2,number_swap,683,0.2020497803806735
+ROUGE-2,pronoun_reference_errors,711,0.29254571026722925
+ROUGE-2,sentence_negation,666,0.25375375375375375
+ROUGE-2,specificity_shift_errors,568,0.3257042253521127
+ROUGE-2,verb_gender_swap,334,0.30538922155688625
+ROUGE-2,verb_tense_swap,492,0.30284552845528456
+ROUGE-L,construct_state_confusion,838,0.38902147971360385
+ROUGE-L,directional_preposition_swap,45,0.4222222222222222
+ROUGE-L,entity_date_swap,345,0.2956521739130435
+ROUGE-L,entity_event_swap,322,0.42857142857142855
+ROUGE-L,entity_location_swap,415,0.30843373493975906
+ROUGE-L,entity_organization_swap,419,0.31742243436754175
+ROUGE-L,entity_person_swap,575,0.4017391304347826
+ROUGE-L,entity_title_swap,280,0.32142857142857145
+ROUGE-L,hebrew_root_pattern_confusion,786,0.36005089058524176
+ROUGE-L,homographic_gender_errors,28,0.0
+ROUGE-L,idiom_collocation_corruption,415,0.3710843373493976
+ROUGE-L,measure_unit_swap,363,0.3305785123966942
+ROUGE-L,morphological_connective_confusion,303,0.41254125412541254
+ROUGE-L,noun_gender_swap,300,0.3433333333333333
+ROUGE-L,number_swap,683,0.2547584187408492
+ROUGE-L,pronoun_reference_errors,711,0.3459915611814346
+ROUGE-L,sentence_negation,666,0.34384384384384387
+ROUGE-L,specificity_shift_errors,568,0.39436619718309857
+ROUGE-L,verb_gender_swap,334,0.2844311377245509
+ROUGE-L,verb_tense_swap,492,0.34959349593495936
+BLEU,construct_state_confusion,838,0.5656324582338902
+BLEU,directional_preposition_swap,45,0.4222222222222222
+BLEU,entity_date_swap,345,0.45217391304347826
+BLEU,entity_event_swap,322,0.639751552795031
+BLEU,entity_location_swap,415,0.5084337349397591
+BLEU,entity_organization_swap,419,0.5393794749403341
+BLEU,entity_person_swap,575,0.568695652173913
+BLEU,entity_title_swap,280,0.5
+BLEU,hebrew_root_pattern_confusion,786,0.5343511450381679
+BLEU,homographic_gender_errors,28,0.25
+BLEU,idiom_collocation_corruption,415,0.5590361445783133
+BLEU,measure_unit_swap,363,0.5399449035812672
+BLEU,morphological_connective_confusion,303,0.5247524752475248
+BLEU,noun_gender_swap,300,0.5733333333333334
+BLEU,number_swap,683,0.4773060029282577
+BLEU,pronoun_reference_errors,711,0.5147679324894515
+BLEU,sentence_negation,666,0.521021021021021
+BLEU,specificity_shift_errors,568,0.5651408450704225
+BLEU,verb_gender_swap,334,0.5179640718562875
+BLEU,verb_tense_swap,492,0.5386178861788617
+chrF,construct_state_confusion,838,0.20763723150357996
+chrF,directional_preposition_swap,45,0.13333333333333333
+chrF,entity_date_swap,345,0.10434782608695652
+chrF,entity_event_swap,322,0.17701863354037267
+chrF,entity_location_swap,415,0.12530120481927712
+chrF,entity_organization_swap,419,0.12649164677804295
+chrF,entity_person_swap,575,0.21913043478260869
+chrF,entity_title_swap,280,0.125
+chrF,hebrew_root_pattern_confusion,786,0.19338422391857507
+chrF,homographic_gender_errors,28,0.0
+chrF,idiom_collocation_corruption,415,0.17590361445783131
+chrF,measure_unit_swap,363,0.14600550964187328
+chrF,morphological_connective_confusion,303,0.13861386138613863
+chrF,noun_gender_swap,300,0.16666666666666666
+chrF,number_swap,683,0.06442166910688141
+chrF,pronoun_reference_errors,711,0.16736990154711673
+chrF,sentence_negation,666,0.18768768768768768
+chrF,specificity_shift_errors,568,0.20422535211267606
+chrF,verb_gender_swap,334,0.18562874251497005
+chrF,verb_tense_swap,492,0.18089430894308944
+Token F1,construct_state_confusion,838,0.15513126491646778
+Token F1,directional_preposition_swap,45,0.28888888888888886
+Token F1,entity_date_swap,345,0.1072463768115942
+Token F1,entity_event_swap,322,0.12111801242236025
+Token F1,entity_location_swap,415,0.12530120481927712
+Token F1,entity_organization_swap,419,0.09785202863961814
+Token F1,entity_person_swap,575,0.17043478260869566
+Token F1,entity_title_swap,280,0.08214285714285714
+Token F1,hebrew_root_pattern_confusion,786,0.14376590330788805
+Token F1,homographic_gender_errors,28,0.0
+Token F1,idiom_collocation_corruption,415,0.14457831325301204
+Token F1,measure_unit_swap,363,0.06060606060606061
+Token F1,morphological_connective_confusion,303,0.06930693069306931
+Token F1,noun_gender_swap,300,0.13666666666666666
+Token F1,number_swap,683,0.03953147877013177
+Token F1,pronoun_reference_errors,711,0.13361462728551335
+Token F1,sentence_negation,666,0.14264264264264265
+Token F1,specificity_shift_errors,568,0.16901408450704225
+Token F1,verb_gender_swap,334,0.16467065868263472
+Token F1,verb_tense_swap,492,0.13821138211382114
+SummaC-ZS,construct_state_confusion,838,0.5525059665871122
+SummaC-ZS,directional_preposition_swap,45,0.4666666666666667
+SummaC-ZS,entity_date_swap,345,0.7217391304347827
+SummaC-ZS,entity_event_swap,322,0.6583850931677019
+SummaC-ZS,entity_location_swap,415,0.6626506024096386
+SummaC-ZS,entity_organization_swap,419,0.6420047732696897
+SummaC-ZS,entity_person_swap,575,0.6660869565217391
+SummaC-ZS,entity_title_swap,280,0.7071428571428572
+SummaC-ZS,hebrew_root_pattern_confusion,786,0.5292620865139949
+SummaC-ZS,homographic_gender_errors,28,0.5
+SummaC-ZS,idiom_collocation_corruption,415,0.5542168674698795
+SummaC-ZS,measure_unit_swap,363,0.6033057851239669
+SummaC-ZS,morphological_connective_confusion,303,0.5247524752475248
+SummaC-ZS,noun_gender_swap,300,0.44333333333333336
+SummaC-ZS,number_swap,683,0.6281112737920937
+SummaC-ZS,pronoun_reference_errors,711,0.559774964838256
+SummaC-ZS,sentence_negation,666,0.5990990990990991
+SummaC-ZS,specificity_shift_errors,568,0.5387323943661971
+SummaC-ZS,verb_gender_swap,334,0.5808383233532934
+SummaC-ZS,verb_tense_swap,492,0.5304878048780488

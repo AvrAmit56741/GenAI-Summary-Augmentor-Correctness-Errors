@@ -1,0 +1,35 @@
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lccc|cc|cc}
+\toprule
+ & \multicolumn{3}{c|}{\textbf{All} ($n{=}4{,}024$)} & \multicolumn{2}{c|}{\textbf{MAFAT-Aug} ($n{=}1{,}889$)} & \multicolumn{2}{c}{\textbf{mFACT-He} ($n{=}2{,}135$)} \\
+\textbf{Metric} & AUC [95\% CI] & BAcc & $\tau_b$ & AUC & BAcc & AUC & BAcc \\
+\midrule
+\multicolumn{8}{l}{\textit{Surface overlap}} \\
+ROUGE-1 & 0.434\,{\scriptsize[0.41,0.46]} & 0.522 & -0.093 & 0.508 & 0.505 & 0.527 & 0.562 \\
+ROUGE-2 & 0.506\,{\scriptsize[0.48,0.53]} & 0.579 & 0.009 & 0.514 & 0.532 & 0.696 & 0.713 \\
+ROUGE-L & 0.433\,{\scriptsize[0.41,0.46]} & 0.517 & -0.094 & 0.505 & 0.530 & 0.504 & 0.547 \\
+BLEU & 0.447\,{\scriptsize[0.43,0.47]} & 0.499 & -0.105 & 0.495 & 0.499 & 0.501 & 0.497 \\
+chrF & 0.350\,{\scriptsize[0.33,0.37]} & 0.497 & -0.209 & 0.515 & 0.500 & 0.301 & 0.504 \\
+Token F1 & 0.449\,{\scriptsize[0.43,0.47]} & 0.525 & -0.071 & 0.502 & 0.514 & 0.571 & 0.585 \\
+\multicolumn{8}{l}{\textit{Embedding similarity}} \\
+BERTScore (heBERT) & 0.456\,{\scriptsize[0.44,0.48]} & 0.533 & -0.061 & 0.517 & 0.513 & 0.598 & 0.599 \\
+BERTScore (AlephBERT) & 0.491\,{\scriptsize[0.47,0.52]} & 0.551 & -0.013 & 0.547 & 0.541 & 0.678 & 0.631 \\
+\multicolumn{8}{l}{\textit{Entity hallucination}} \\
+ENFS (entity overlap) & 0.677\,{\scriptsize[0.65,0.70]} & 0.639 & 0.265 & 0.652 & 0.605 & 0.739 & 0.745 \\
+\multicolumn{8}{l}{\textit{NLI}} \\
+SummaC-ZS (mDeBERTa)$^{\ddagger}$ & -- & -- & 0.006 & -- & -- & -- & -- \\
+\multicolumn{8}{l}{\textit{Trained classifier}} \\
+mFACT-He$^{\ddagger}$ & -- & -- & 0.529 & -- & -- & -- & -- \\
+\multicolumn{8}{l}{\textit{LLM judge (GPT-4o-mini)}} \\
+Zero-shot judge$^{\ddagger}$ & -- & -- & 0.599 & -- & -- & -- & -- \\
+G-EVAL$^{\ddagger}$ & -- & -- & 0.242 & -- & -- & -- & -- \\
+\midrule
+\textbf{MorphEvalHeb} (ours) & \textbf{0.992\,{\scriptsize[0.99,1.00]}} & \textbf{0.969} & \textbf{0.689} & \textbf{0.995} & \textbf{0.980} & \textbf{0.995} & \textbf{0.968} \\
+\bottomrule
+\end{tabular}
+\caption{Meta-evaluation on the Hebrew benchmark. AUC and Kendall's $\tau_b$ are threshold-free; balanced accuracy (BAcc) uses a decision threshold tuned on held-out folds (Section~\ref{sec:protocol}). Brackets give 95\% bootstrap confidence intervals over articles. MorphEvalHeb outperforms every recomputed baseline ($p<0.001$, paired bootstrap on AUC, Holm-corrected). $^{\ddagger}$Not yet recomputed: $\tau$ from our earlier run; the remaining columns are pending.}
+\label{tab:main_results}
+\end{table*}
