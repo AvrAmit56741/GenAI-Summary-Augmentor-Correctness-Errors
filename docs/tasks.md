@@ -103,7 +103,7 @@ Evidence for each is in `paper/research/claims_audit.md`.
 - [ ] **Is `combined.csv` disjoint from the binary verifier's 18,238 training pairs?** (Training file is on the server.)
 - [ ] **Which script translated `test_mfact.csv`:** `mfact_translate.py` (gpt-4o-mini) or `azure_translate.py` (gpt-4o)?
 - [ ] **Introduction example:** which texts and settings gave ROUGE ≈ 0.94 / BERTScore ≈ 0.96? Repo code on the sentence pair gives 0.53 / 0.81.
-- [ ] **Original ROUGE-1 τ = 0.1391** does not reproduce (re-run: −0.093). How was it computed?
+- [x] **Original ROUGE-1 τ = 0.1391 vs. re-run −0.093 — resolved, not a bug (2026-11-14).** Simpson's paradox from pooling the two benchmark parts: ROUGE-1 correlates *positively* with faithfulness within each part alone (MAFAT-Aug τ=+0.011, mFACT-He τ=+0.039), but MAFAT-Aug is both more extractive (mean ROUGE-1 0.153) and majority-unfaithful (33.8% faithful) while mFACT-He is less extractive (mean 0.046) and majority-faithful (50.4%); pooling the two flips the sign to −0.093 purely from this between-part confound, with no code bug in either run. Same exact mechanism confirmed for BERTScore (heBERT): within-part τ=+0.023/+0.138, pooled τ=−0.061. The original τ=0.1391 was very likely computed on an earlier, single-part (MAFAT-Aug-only, pre-mFACT-He-merge) version of the dataset, consistent in sign though not exact magnitude. See `docs/experiments.md` §14 for the full check.
 - [ ] **Setup 1 model:** not on HF. Upload it so Setup 1 can be evaluated.
 
 ---

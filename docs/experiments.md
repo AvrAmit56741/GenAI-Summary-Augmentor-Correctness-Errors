@@ -276,4 +276,27 @@ Bootstrap 95% CIs (2,000 resamples): `abs_auc` [0.710, 0.738], `abs_top1_hit` [0
 
 ---
 
+## 14. Resolving the ROUGE-1/BERTScore sign discrepancy (docs/tasks.md §3) — ✅ resolved, Simpson's paradox, not a bug
+
+**Question:** Table 1 reports two numbers for ROUGE-1 that disagree in *sign* — the original paper run gives τ=0.1391 (positive), the re-run on `combined.csv` gives τ=−0.093 (negative). Same pattern for BERTScore (heBERT): original 0.0162 (positive) vs. re-run −0.061 (negative). A sign flip (not just a magnitude difference) could indicate a real bug in one of the two runs, so this needed investigating before submission. Run entirely on CPU, zero model load (safe while the peer session's 12B translation model was using most of system memory).
+
+**Method:** (1) read the live Streamlit evaluation app's n-gram tab (`summary_augmentation/pages/4_Correctness_Evaluation_Metrics.py`) to check whether it computes ROUGE-1 differently from `run_eval.py`'s re-run — found it uses the identical `RougeCalculator` class in the identical `(premise, hypothesis)` direction, ruling out a formula/direction bug in the metric itself. (2) Tested whether the original number instead compared the hypothesis to its gold reference summary (the standard summarization-eval convention) rather than to the source article — on MAFAT-Aug alone this gives τ=+0.017 (still not close to +0.1391, and still much smaller magnitude). (3) Split the *current* re-run methodology by benchmark part instead of changing what's compared.
+
+**Result — ROUGE-1, by part (current `premise` vs. `hypothesis` methodology, unchanged):**
+| Part | n | Faithful rate | Mean ROUGE-1 | Kendall τ (within part) |
+|---|---|---|---|---|
+| MAFAT-Aug | 1,889 | 33.8% | 0.153 | **+0.011** |
+| mFACT-He | 2,135 | 50.4% | 0.046 | **+0.039** |
+| **Pooled (both parts)** | **4,024** | — | — | **−0.093** |
+
+Same mechanism confirmed for BERTScore (heBERT): MAFAT-Aug τ=+0.023 (mean score 0.641), mFACT-He τ=+0.138 (mean score 0.439), pooled τ=−0.061.
+
+**Conclusion:** this is Simpson's paradox, not a bug in either run. ROUGE-1 and BERTScore both correlate *positively* with faithfulness within each benchmark part on its own — weakly, but in the expected direction. The two parts, however, differ systematically on both axes at once: MAFAT-Aug summaries are more extractive (higher ROUGE-1/BERTScore, since the augmentation pipeline edits an otherwise-intact summary) **and** majority-unfaithful by construction (only 33.8% faithful, since most of MAFAT-Aug exists specifically to be corrupted); mFACT-He summaries are less extractive **and** majority-faithful (50.4%). Pooling the two parts means "high ROUGE-1" partly just means "probably MAFAT-Aug," and MAFAT-Aug pairs are disproportionately unfaithful regardless of their actual ROUGE-1 score — that between-part confound is strong enough to flip the weak within-part signal's sign once pooled. The original τ=0.1391 was most likely computed on an earlier, single-part (MAFAT-Aug only, pre-merge) version of the benchmark, which is consistent with this explanation in sign (positive) if not exact in magnitude (the current MAFAT-Aug-only re-run of +0.011 is much weaker, likely reflecting a smaller/differently-sampled MAFAT-Aug at the time of the original run, or a slightly different metric variant).
+
+This is the same general phenomenon already noted separately for FactCG (§8): a weak baseline's *pooled* statistic on this benchmark can be driven more by which part a pair comes from than by the baseline's actual signal, something MorphEvalHeb does not suffer from since it is strong and consistent on both parts.
+
+**Recommendation:** resolved — marked done in `docs/tasks.md` §3 with the full explanation. Optional for the paper: a one-sentence footnote on Table 1 or Table 4 noting that per-part and pooled signs can differ for weak baselines due to this between-part confound would pre-empt a sharp reviewer's "why is ROUGE-1's pooled correlation negative, shouldn't more overlap mean more faithful?" question — author's call on whether it's worth the space.
+
+---
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)
