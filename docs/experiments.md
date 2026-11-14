@@ -1,6 +1,8 @@
 # MorphEvalHeb: experiment log
 
-Quick-win micro-experiments run while the main metric evaluation (SummaC-ZS, FactCG) was busy on the GPU. All of these reuse already-cached scores (`paper/results/eval/cache/*.csv`) — no new model inference, no GPU contention. Scripts were throwaway (`_quickwin*.py` in `paper/results/eval/`, deleted after the numbers were captured); this file is the permanent record.
+Quick-win micro-experiments run while the main metric evaluation (SummaC-ZS, FactCG) was busy on the GPU. Experiments 1–7 reuse already-cached scores (`paper/results/eval/cache/*.csv`) — no new model inference, no GPU contention; their throwaway scripts (`_quickwin*.py`) were deleted after the numbers were captured, per the recording policy in effect at the time.
+
+**Recording policy (binding from 2026-11-14 on):** every experiment run for this project must be recorded here in full, with its raw data and raw result files kept on disk and referenced by path — not just the final numbers or conclusion, and not only the ones that make it into the paper. This is for the author's later thesis, which needs the complete experimental record (including failed, negative, and null results), not only what is publication-worthy. Concretely: (1) write experiment scripts to a real file in `paper/results/eval/` (`exp_*.py`), never an ephemeral `python -c` one-liner, so the method is reproducible later; (2) have the script save its raw per-row output to a CSV/JSON file in `paper/results/eval/`, not just print a summary; (3) log the method, raw-file path, full result, and conclusion here, even when the result is negative, null, or too weak/underpowered for the paper. Experiments 1–7 above predate this policy and have no surviving raw files beyond what's noted inline; everything from experiment 8 onward follows it.
 
 Status legend: ✅ positive finding, worth adding to the paper · ⚠️ negative/null result, worth knowing but not a paper addition (some are worth a one-line mention as a considered-and-rejected lead, matching the ENFS-He appendix) · 🔜 queued, needs a model load (GPU), not yet run.
 
@@ -167,10 +169,69 @@ Status legend: ✅ positive finding, worth adding to the paper · ⚠️ negativ
 
 ---
 
+## 10. Severity calibration on real LLM output — ⚠️ negative, important limitation finding (not a paper win)
+
+**Idea:** test whether MorphEvalHeb's unfaithfulness probability — trained almost entirely on *injected* errors — tracks the *severity* of *naturally occurring* LLM errors, using the LLM-generated summaries and Gemini-identified errors (severity 1–5) in `thesisdatasets/error_finder/*.csv`. Answers the "synthetic vs. real error generalization" reviewer objection (#P009) and completes research lead #3/#6 in `docs/tasks.md`.
+
+**Method:** script `paper/results/eval/exp_severity.py`. Loaded all 15 `error_finder/*.csv` files (450 raw error rows), used `generative_summary` (the real LLM output) paired with `premise` — **not** `ai_summary`, which is a different, misaligned text in these files (verified: only 3.3% of rows have `ai_summary == generative_summary`). Deduplicated to 265 unique (premise, generative_summary) pairs, taking the worst (max) severity per pair when a summary had multiple identified errors. Scored each pair with the existing binary verifier (`NLI-hebrew-binary-correctness-metric`), same preprocessing as `run_eval.py`'s `run_binary`. Raw per-pair output saved to `paper/results/eval/severity.csv` (premise, generative_summary, doc_id, source, max_severity, n_errors, error_names, unfaithful_prob).
+
+**Result (n=265, all Gemini-confirmed real factual errors):**
+| Statistic | Value |
+|---|---|
+| Spearman ρ(severity, unfaithful_prob) | −0.040 (p=0.52, not significant) |
+| Mean unfaithful_prob | 0.084 |
+| Median unfaithful_prob | 0.0016 |
+| Overall flagged rate (prob > 0.5) | **9.1%** |
+| Severity distribution (1/2/3/4/5) | 1 / 3 / 47 / 120 / 94 |
+| Flagged rate by severity (3/4/5) | 2.1% / 9.2% / 11.7% |
+
+**Conclusion:** no severity calibration at all (ρ≈0, not significant), and more importantly, a real generalization gap: the verifier flags only 9% of real, Gemini-confirmed LLM errors as unfaithful, versus ~93%+ detection on the injected MAFAT-Aug benchmark it was trained on. Training almost entirely on injected errors does not transfer well to naturally occurring LLM errors in this sample. Severity classes are also heavily imbalanced (severity ≤2: n=4), which limits how far the null correlation result can be trusted on its own, but the low overall flag rate does not depend on that imbalance.
+
+**Recommendation:** do not present this as a paper result as-is — it cuts against the paper's own detection claims and needs care before being stated. It does, however, directly and concretely support the existing Limitations paragraph ("injected errors need not match those of real summarizers"); consider citing the 9% figure there if the author wants to quantify that limitation rather than leave it qualitative. Raw data: `paper/results/eval/severity.csv` (265 rows, all columns preserved for later inspection/thesis use).
+
+---
+
+## 11. Contrastive-embedding feasibility probe — ✅ positive, recommend keeping as the answer (do not pursue a contrastive retrain)
+
+**Idea:** before considering a contrastive-loss retrain (expensive, needs the GPU server, can't be verified locally per the existing "rejected" note in `docs/tasks.md`), a cheap feasibility check: do faithful/unfaithful pairs already separate in the *existing* cross-entropy-trained binary verifier's own embedding space?
+
+**Method:** script `paper/results/eval/exp_contrastive.py`. Stratified sample of 1,200 pairs (300 each of MAFAT-Aug/mFACT-He × faithful/unfaithful) from the benchmark. For each pair, ran the binary verifier with `output_hidden_states=True` and mean-pooled the final hidden layer (not the classification head) to get a frozen, task-head-independent embedding. Measured: (1) 5-fold cross-validated AUC of a fresh linear logistic-regression probe trained on these frozen embeddings; (2) silhouette score of the two label clusters; (3) mean within-class vs. between-class cosine similarity. Raw result saved to `paper/results/eval/contrastive_probe.json`.
+
+**Result (n=1,200):**
+| Statistic | Value |
+|---|---|
+| 5-fold CV logistic-regression AUC (frozen embeddings) | 0.983 |
+| Silhouette score | 0.243 |
+| Within-class cosine similarity | 0.871 |
+| Between-class cosine similarity | 0.719 |
+| Gap (within − between) | 0.151 |
+
+**Conclusion:** a simple linear probe on frozen embeddings recovers 0.983 AUC, almost all of the full fine-tuned model's 0.992 AUC, with a clear positive silhouette score and a real within/between-class similarity gap. Faithful/unfaithful pairs are already well-separated under plain cross-entropy training; a contrastive objective is very unlikely to add meaningful separation that isn't already there.
+
+**Recommendation:** treat this as the answer to "should we try contrastive learning" — no, the embedding space already separates the classes well, so a contrastive-loss retrain is not worth the GPU-server time it would need. Worth one sentence in the paper pre-empting the "why not contrastive learning" reviewer question, similar to the existing ensemble/late-fusion pre-emptive sentences. Raw data: `paper/results/eval/contrastive_probe.json`.
+
+**Visual companion (thesis only, not the ACL paper — author's explicit decision):** script `paper/results/eval/exp_contrastive_viz.py` re-embeds the identical 1,200-pair sample (same `random_state=0`) and projects it to 2D with t-SNE. Output: `paper/results/eval/thesis_figures/contrastive_embedding_tsne.png` (plot) and `contrastive_embedding_tsne.npz` (raw embeddings + labels + part, for later re-plotting). The plot shows four clusters, dominated by benchmark part (MAFAT-Aug vs. mFACT-He) rather than label, but faithful/unfaithful split cleanly *within* each part — consistent with the 0.983 probe AUC. Kept separate from `paper/figures/` (the ACL LaTeX source's figure directory) so it is never accidentally pulled into the paper.
+
+---
+
+## 12. Error localization via gradient attribution (lead #1) — ✅ positive, stopped early by request at n=171 (MAFAT-Aug only)
+
+**Idea:** do gradient attributions of the binary verifier point at the actual injected edit, per error family, without span supervision? Fills the gap vs. FAVA/RAGTruth/FineSurE, which localize errors with span supervision in English.
+
+**Method:** script `paper/results/eval/exp_attribution.py` (pre-existing, resumed with `RESUME=1 python exp_attribution.py 500`). Restricted to MAFAT-Aug only (needs each negative's matching gold summary, same `doc_id`, to diff against and find the exact edited words — mFACT-He has no such gold/corrupted pair structure). For each negative: word-level diff against its gold summary to get the edited-word indices; gradient×input (`gxi`, signed) and its absolute value (`abs`) attributed to the verifier's contradiction-vs-entailment logit margin, aggregated to word level via token offsets. Raw per-row output: `paper/results/eval/attribution.csv` (171 rows: 22 from the original 2026-11-13 run, resumed to 171 on 2026-11-14, then stopped early by request — checked for a stable signal first, see below — rather than continuing to the original n=500 target).
+
+**Result (n=171, MAFAT-Aug only):**
+| Method | Top-1 hit rate | Chance | Mean AUC (edited vs. other words) |
+|---|---|---|---|
+| Gradient×input (signed, `gxi`) | 55.0% | 11.5% | 0.523 (weak) |
+| **Gradient×input, absolute value (`abs`)** | **73.1%** | 11.5% | **0.724** |
+
+Bootstrap 95% CIs (2,000 resamples): `abs_auc` [0.710, 0.738], `abs_top1_hit` [0.661, 0.795]. Split-half stability check (first 85 vs. last 85 rows) showed `gxi_auc` moving only 0.520→0.528 and `gxi_top1_hit` only 0.541→0.565 — the estimate was not drifting as more rows came in, which is why the run was stopped early rather than continued to n=500: the remaining ~330 rows would have mainly tightened the CI, not changed the conclusion, for ~90 more minutes of compute.
+
+**Conclusion:** the model's top-attributed word (by gradient magnitude, not sign) is the actual injected edit 73% of the time versus an 11.5% chance baseline (6.3×), with a stable AUC of 0.724 — a real, unsupervised localization signal, stronger than the original n=10 pilot note in `docs/tasks.md` ("60% vs. 10% chance"). Scoped to MAFAT-Aug's injected morphological/entity errors only; not tested on mFACT-He's naturally occurring errors (no gold/corrupted pair exists there to diff against).
+
+**Recommendation:** worth adding to the paper as an analysis paragraph (as originally scoped in `docs/tasks.md` lead #1), citing n=171, the `abs` method's 73.1% top-1 hit rate / 0.724 AUC, and the CI. Also directly feeds lead #11(A) (morphology-aware correction agent), which needs attributed spans as its feedback signal. A qualitative figure with highlighted Hebrew examples (as originally scoped) is a separate, small follow-up — not done here.
+
+---
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)
-
-### 5. Severity calibration on real LLM output (`thesisdatasets/error_finder/*.csv`)
-Score the ~290 native-Hebrew LLM summaries (already carrying LLM-assigned, partly human-verified severity 1–5 ratings) with the existing binary verifier and multi-label detector. Test whether MorphEvalHeb's unfaithfulness probability — trained almost entirely on *injected* errors — tracks the *severity* of *naturally occurring* LLM errors. This both answers the "synthetic vs. real error generalization" reviewer objection (#P009) and reuses/completes research lead #3 already in `docs/tasks.md` (native Hebrew LLM summaries), using `metadata.generative_summaries` as corrected, not the MAFAT reference. Needs the binary verifier loaded once — run after SummaC (and FactCG, if still pending) finish.
-
-### 6. Contrastive-embedding feasibility probe
-Before considering a contrastive-loss retrain (expensive, needs the GPU server, can't be verified locally per the existing "rejected" note in `docs/tasks.md`), a cheap feasibility check: extract the *already fine-tuned* binary verifier's embeddings for faithful vs. unfaithful pairs and measure the separation (e.g. mean cosine-distance gap, or a silhouette score) in the existing embedding space. If faithful/unfaithful pairs are already well-separated under cross-entropy training, a contrastive objective is unlikely to add much; if they're not, that's a concrete, cheap argument *for* trying it. Needs one model load (the binary verifier, already cached) — run after SummaC/FactCG finish; no retraining required for this probe.
