@@ -234,4 +234,38 @@ Bootstrap 95% CIs (2,000 resamples): `abs_auc` [0.710, 0.738], `abs_top1_hit` [0
 
 ---
 
+## 13. Detection vs. edit size, with a faithful-rewrite control — ✅ positive, added to the paper (run by a peer session, independently verified)
+
+**Provenance:** this experiment's script and raw output (`paper/results/eval/exp_edit_size.py`, `edit_size.csv`, `edit_size_bins.csv`, `edit_size_control.csv`) were produced by a separate, concurrently running Claude Code session working in this same repo (`genai-summary-augmentor-correctness-erro-bd`), not by this session. Before using it, this session independently re-ran the script end to end and reproduced every number exactly, and checked for the main failure mode that would invalidate it (negatives with no matching gold summary via `doc_id` — found zero such rows out of 1,250). Recorded here per the project's recording policy once verified.
+
+**Idea:** two questions neither raw AUC nor the existing robustness check (§7.4, SD-based) directly answers: (1) do metrics keep detecting corruptions as the edit gets smaller and more subtle? (2) can a metric actually tell a real factual error apart from a harmless, meaning-preserving rewrite of the same article, not just notice that the text changed?
+
+**Method:** for each MAFAT-Aug negative, aligned its gold summary (same `doc_id`) and computed character similarity + word-level diff size; paired detection = P(metric scores the corruption below the gold, ties=0.5), binned by similarity, with a 1,000-resample bootstrap CI per bin. Control: the same paired statistic computed on (a) faithful rewrites vs. gold (false-alarm rate) and (b) corrupted vs. faithful rewrite of the same article (`P_corr_below_rewrite` — the real test, since a metric that merely penalizes *any* wording change would score ~0.5 here even while looking good on raw detection).
+
+**Result — detection by edit size (paired detection rate, 0.5 = chance):**
+| Similarity bin | n | Median words changed | MorphEvalHeb | FactCG | ENFS | BERTScore (heBERT) | ROUGE-2 |
+|---|---|---|---|---|---|---|---|
+| 0.80–0.90 | 74 | 36.5 | 1.00 | 0.50 | 0.92 | 0.55 | 1.00 |
+| 0.90–0.95 | 445 | 24.0 | 1.00 | 0.53 | 0.92 | 0.73 | 0.97 |
+| 0.95–0.98 | 514 | 15.0 | 1.00 | 0.56 | 0.79 | 0.61 | 0.94 |
+| **≥0.98** | **217** | **7.0** | **1.00** | **0.63** | **0.58** | **0.44** | **0.91** |
+
+**Result — faithful-rewrite control (n=208 rewrites, 1,330 corrupted-vs-rewrite pairs, 93 articles):**
+| Metric | Detects real corruption vs. gold | False-alarms on faithful rewrite vs. gold | Corruption vs. rewrite (0.5 = can't tell) |
+|---|---|---|---|
+| **MorphEvalHeb** | 1.00 | 0.53 | **1.00** |
+| ROUGE-2 | 0.95 | 0.88 | **0.50** |
+| ROUGE-L | 0.92 | 0.84 | **0.48** |
+| Token F1 | 0.87 | 0.81 | **0.45** |
+| BLEU | 0.72 | 0.73 | **0.42** |
+| FactCG | 0.56 | 0.48 | 0.55 |
+| SummaC-ZS | 0.83 | 0.51 | 0.79 |
+| ENFS | 0.81 | 0.54 | 0.83 |
+
+**Conclusion:** the surface-overlap metrics' apparent detection ability is largely an artifact of penalizing *any* wording change, not actual error detection — ROUGE-2/ROUGE-L/Token F1/BLEU false-alarm on faithful rewrites almost as often as they detect real corruptions, and are at or below chance when asked to directly rank a real corruption below a faithful rewrite of the same article. MorphEvalHeb is the only metric that both detects corruptions (1.00) and almost never false-alarms (0.53), holding up even at the smallest, most subtle edit bin (median 7 words, 3 error families) where FactCG/ENFS/BERTScore collapse to 44–63%. This is a stricter, more direct version of the existing §7.4 robustness claim (paired same-article comparison vs. a standard-deviation shift) and a genuinely strong result.
+
+**Recommendation:** added to the paper — extended the existing "Robustness to meaning-preserving rewrites" paragraph with the `P_corr_below_rewrite` and false-alarm numbers, and added a new short "Detection vs. edit size" paragraph with the smallest-bin numbers (§7, Analysis). Raw data: `paper/results/eval/edit_size.csv` (per-pair), `edit_size_bins.csv` (per bin × metric), `edit_size_control.csv` (the rewrite control).
+
+---
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)
