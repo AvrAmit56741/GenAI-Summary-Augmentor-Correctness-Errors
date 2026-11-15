@@ -299,4 +299,53 @@ This is the same general phenomenon already noted separately for FactCG (§8): a
 
 ---
 
+## 15. Translation erasure (lead #2) — ✅ positive, run by a peer session, independently verified
+
+**Question:** if a Hebrew MAFAT-Aug negative is machine-translated to English, does the injected error survive, or does translation erase the very signal the paper argues is Hebrew-specific? Answers the paper's own rhetorical "why not translate and use an English checker" question with a number instead of an assertion, and directly extends the FactCG cross-lingual-transfer finding (§8–9).
+
+**Provenance:** produced by the concurrently running peer Claude Code session (`genai-summary-augmentor-correctness-erro-bd`), not this session — `exp_translation.py`, cached translations (`cache/translations_translategemma-12b-it.jsonl`, 1,192 negatives' edited sentences, via `google/translategemma-12b-it`), and `translation_erasure_translategemma-12b-it.csv`. Per the established practice for peer-session output (§13), independently reproduced before using: deleted the peer's output file, reran `python exp_translation.py erasure` from scratch against the same translation cache (no model reload — this step is pure CPU/pandas), and got an identical result (10,298 edited sentences, 9.448% exact-erased, byte-identical to the peer's file).
+
+**Result (per injected family, by the pipeline's own 26-family taxonomy — a more granular breakdown than the peer's own summary, which used a 6-bucket rule-based re-labeling instead):**
+| Family | n edited sentences | exact-erased | near-erased (chrF≥95) |
+|---|---|---|---|
+| verb_gender_swap | 2,754 | 12.3% | 21.6% |
+| sentence_negation | 5,728 | 11.8% | 19.8% |
+| pronoun_reference_errors | 6,223 | 11.8% | 18.4% |
+| hebrew_root_pattern_confusion | 6,950 | 10.7% | 17.4% |
+| noun_gender_swap | 2,574 | 10.0% | 17.8% |
+| number_swap | 6,095 | 8.1% | 16.1% |
+| entity_person_swap / entity_organization_swap / entity_title_swap | 4,882 / 3,755 / 2,751 | 5.6% / 4.0% / 3.7% | 11.5% / 11.5% / 10.2% |
+| homographic_gender_errors | 196 | 3.6% | 7.1% | (n small)
+
+Overall: 9.4% of edited sentences translate to an *identical* English string despite differing in Hebrew; 16.9% are near-identical (chrF≥95). Morpho-syntactic families (gender/negation/root-pattern/pronoun) erase roughly 2–3× more often than entity-identity families (person/org/title swaps), consistent with the paper's core claim that these specific error types are harder to express or even survive in English.
+
+**Conclusion:** translation is a real, non-trivial confound for the exact error types this paper targets. This is the strongest evidence yet, beyond the FactCG tokenizer-fragmentation finding, that translate-to-English pipelines specifically underserve Hebrew morphological errors (not just Hebrew in general).
+
+**Recommendation:** add to the paper as a new short analysis point (not yet in `acl_latex.tex` as of this entry) — pairs naturally with the FactCG baseline discussion (§6). Raw data: `paper/results/eval/translation_erasure_translategemma-12b-it.csv`; script: `paper/results/eval/exp_translation.py` (`erasure` mode).
+
+---
+
+## 16. Label-fidelity audit of injected negatives — ✅ positive-ish, quick win from the 2026-11-15 deep-research pass
+
+**Motivation:** a 2026-07 arXiv paper on the "test oracle problem" in synthetic LLM-judge corpora (status: arXiv-only, no confirmed peer review — flagged as such, not cited as settled) argues LLM-*generated* negatives are "oracle-less," unlike deterministic string-level perturbation, which carries a free mechanical oracle. On inspection, that framing does **not** transfer cleanly to this pipeline: `correctness_errors_augmentation_v2.py` is LLM-prompted (an LLM is given a family label and free-text-generates the corrupted claim), not a deterministic string operator, so there is no free oracle here either — the honest question is how often the self-reported family label actually matches what changed in the text, and that is checkable rather than assumable.
+
+**Method:** reused `exp_translation.py`'s independent, rule-based `edit_kind()` classifier (built for a different purpose — pre-labeling sentence pairs before a manual translation check) as an *unrelated* ground-truth signal for what changed between a MAFAT-Aug negative and its gold reference, then checked whether this independent signal matches the pipeline's self-reported family label, for the subset of families with an unambiguous lexical signature: `sentence_negation` (negation particles), `number_swap`/`entity_date_swap`/`measure_unit_swap` (digit strings), `noun_gender_swap`/`verb_gender_swap` (suffix-only agreement change or definiteness). Scope limitation stated up front: only 6 of the ~26 injected families have a cheap, unambiguous lexical signature this way; entity-identity swaps, construct-state confusion, idiom corruption, and others have no cheap mechanical check and are excluded, not claimed to be fine. Zero model load, CPU/pandas only. Script: `paper/results/eval/exp_label_fidelity.py`; raw output: `paper/results/eval/label_fidelity.csv` (2,691 claimed-family instances, n=1,158 negatives).
+
+**Result:**
+| Family | n | independent-signal hit rate |
+|---|---|---|
+| noun_gender_swap | 300 | 71.0% |
+| measure_unit_swap | 363 | 74.4% |
+| verb_gender_swap | 334 | 77.5% |
+| entity_date_swap | 345 | 80.9% |
+| number_swap | 683 | 91.7% |
+| sentence_negation | 666 | 95.2% |
+| **overall** | **2,691** | **84.8%** |
+
+**Conclusion:** for the families checkable this way, the pipeline's self-reported label matches an independent lexical signal 71–95% of the time (84.8% overall). This is a **lower bound**, not an error rate: a "miss" can mean the claimed error fired but through a lexical realization `edit_kind()` doesn't pattern-match (e.g. a gender change expressed via a different word choice rather than a bare suffix swap), or the matching sentence pair was filtered out by the strict 1:1 sentence-substitution restriction in `edited_pairs()`. The gender-agreement families show the most misses, plausibly because Hebrew gender agreement is often realized through word choice, not just a suffix, which this particular checker is blind to by design — a real limitation of the check, not necessarily of the injection pipeline.
+
+**Recommendation:** worth one sentence in the paper (Limitations or the augmentation-methodology section) stating that an independent lexical audit of the checkable subset of injected families confirms 71–95% (84.8% overall, n=2,691) label fidelity, framed honestly as a lower bound under a strict context-free check covering 6 of ~26 families — a genuine, citable answer to a "are your injected negatives mislabeled" reviewer objection, but should **not** be dressed up with the oracle paper's "deterministic perturbation = free oracle" framing, since this pipeline isn't deterministic. Author's call on whether it's worth the space; not a load-bearing result on its own.
+
+---
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)
