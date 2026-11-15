@@ -490,7 +490,7 @@ Named entities themselves fragment less under the NeoDictaBERT tokenizer than th
 
 \section{Translation Experiments}
 \label{app:translation}
-\paragraph{Translate-then-check.} Table~\ref{tab:translate_test} reports AUC with 95\% bootstrap confidence intervals (2,000 resamples) on a stratified sample of 250 pairs: 125 Injected pairs (all four MAFAT sources with reference summaries, balanced faithful/unfaithful, including faithful rewrites) and 125 Natural pairs (stratified by article and summary length). Each full article and summary is translated in a single request with a neutral prompt (``Translate the following Hebrew text into English''). Natural was itself machine-translated from English, so back-translation largely recovers the English source; this explains the higher translate-test scores on that part.
+\paragraph{Translate-then-check.} Table~\ref{tab:translate_test} reports AUC with 95\% bootstrap confidence intervals (2,000 resamples) on a stratified sample of 250 pairs: 125 Injected pairs (four of the five MAFAT sources with reference summaries -- no High Court rulings in this subset --, balanced faithful/unfaithful, including faithful rewrites) and 125 Natural pairs (stratified by article and summary length). Each full article and summary is translated in a single request with a neutral prompt (``Translate the following Hebrew text into English''). Natural was itself machine-translated from English, so back-translation largely recovers the English source; this explains the higher translate-test scores on that part.
 
 \begin{table*}[t]
 \centering\footnotesize
