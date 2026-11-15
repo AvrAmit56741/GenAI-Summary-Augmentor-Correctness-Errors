@@ -372,4 +372,28 @@ This claim (in both the peer session's report to the author and its draft paper 
 
 ---
 
+## 17b. The "impossible year" claim, redone properly — neither session's framing was quite right, but a real finding survives
+
+**Context:** following up on §17's dropped "impossible values repaired from world knowledge" claim. The peer session (a different Claude Code session) pushed back, correctly pointing out that my §17 precision check (3/10 real) had actually checked a different, mixed bag of cases (impossible days, a physics constant, decade-format artifacts), not specifically impossible *years*, and that it had separately hand-read 8/8 real impossible-year cases without saving the labels. Rather than trust either side, I went back to the already-saved raw data (`translation_erasure_doclevel.csv` — no new API calls) and built a reproducible check.
+
+**Key realization:** the augmentation pipeline's number-injection rule is deterministic doubling (`acl_latex.tex` §4.2). Applied to a year (1900–2024), doubling *always* produces an obviously-impossible 4-digit value (3800–4048) — this isn't a separate "impossible value" injection mechanism, it's a predictable side effect of doubling applied to years specifically. That makes "true original year" directly recoverable for most cases (corrupted ≈ 2 × gold), which lets us check not just *whether* translation masks the impossible year, but *what it replaces it with*.
+
+**Method:** script `exp_translation_impossible_year.py`, output `impossible_year.csv`. Found 208 edited sentences (115 pairs) with an implausible 4-digit number in the corrupted text; 70.2% are exactly explained by the doubling rule (corrupted = 2×gold ±1).
+
+**Result:**
+| Model | Masked/changed in English | Of masked cases: recovered the TRUE original year | Of masked cases: explained by a bare leading-digit swap (e.g. 4034→2034) |
+|---|---|---|---|
+| Nova Micro | 43.4% of 106 | **0.0%** of 27 | 60.0% of 40 |
+| Haiku 4.5 | 56.9% of 102 | **10.0%** of 40 | 68.6% of 51 |
+
+**Conclusion — both sessions were partly wrong about the mechanism, both right that something real is happening:**
+- The rate (~43–57%, close to but not identical to the original 44%/63%, reflecting a more precise, reproducible definition) is real and reproducible from already-saved data.
+- The **"repaired from world knowledge" framing is wrong**: the translator recovers the actual true original year only 0–10% of the time. It is essentially never doing real fact-checking.
+- What's actually happening, most of the time (60–69%): the translator does a superficial, context-free fix — swap the implausible leading digit (3→1, 4→2) to produce a different, still-fabricated-but-plausible-looking year. E.g. corrupted "3970" (the true year 1985, doubled) becomes English "1970" — not because anyone knew the true year was 1985, just because "3970" doesn't look like a year and "1970" does.
+- This is, if anything, a **stronger and more precise point for the paper** than either session's original framing: translate-then-check doesn't just occasionally miss an error, it can actively launder an obviously-corrupted value into a confident, plausible-looking (but still wrong) one, with no connection to the actual fact — exactly the silent-failure-mode critique the paper is making about cross-lingual transfer.
+
+**Recommendation:** this is now a real, reproducible, saved finding (unlike the original claim) and can go in the paper with careful wording. Suggested sentence for the appendix "Translation erasure" paragraph: *"Of the subset where the pipeline's deterministic number-doubling rule lands on an implausible year (e.g. 3970), translation masks the implausible value 43--57\% of the time -- but almost never (0--10\%) by recovering the true original year; instead it typically swaps only the leading digit to produce a different, equally fabricated but plausible-looking year (e.g. 3970 $\to$ 1970, not the true 1985), masking the corruption without correcting it."* Author's/peer session's call on whether to add this to the paper now that it's properly verified.
+
+---
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)
