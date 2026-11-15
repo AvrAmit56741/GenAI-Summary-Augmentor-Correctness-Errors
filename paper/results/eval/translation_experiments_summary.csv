@@ -1,0 +1,18 @@
+test,subset,n,measure,value,ci_low,ci_high,note
+translate-test (AUC),All,250,FactCG on Hebrew,0.576,0.503,0.646,
+translate-test (AUC),All,250,FactCG after Claude Haiku 4.5 translation,0.804,0.745,0.854,
+translate-test (AUC),All,250,FactCG after Nova Micro translation,0.814,0.761,0.864,
+translate-test (AUC),All,250,MorphEvalHeb,0.986,0.97,0.998,
+translate-test (AUC),MAFAT-Aug,125,FactCG on Hebrew,0.527,0.427,0.629,
+translate-test (AUC),MAFAT-Aug,125,FactCG after Claude Haiku 4.5 translation,0.683,0.584,0.778,
+translate-test (AUC),MAFAT-Aug,125,FactCG after Nova Micro translation,0.686,0.59,0.778,
+translate-test (AUC),MAFAT-Aug,125,MorphEvalHeb,0.988,0.965,1.0,
+translate-test (AUC),mFACT-He,125,FactCG on Hebrew,0.768,0.679,0.846,
+translate-test (AUC),mFACT-He,125,FactCG after Claude Haiku 4.5 translation,0.899,0.839,0.952,
+translate-test (AUC),mFACT-He,125,FactCG after Nova Micro translation,0.908,0.853,0.955,
+translate-test (AUC),mFACT-He,125,MorphEvalHeb,0.987,0.971,0.998,
+erasure doc-level,MAFAT 260 pairs,206,negation lost (amazon),0.194,0.146,0.254,flag precision 0.89 (manual check)
+erasure doc-level,MAFAT 260 pairs,95,impossible year repaired (amazon),0.442,0.346,0.542,
+erasure doc-level,MAFAT 260 pairs,208,negation lost (anthropic),0.274,0.218,0.338,flag precision 1.00 (manual check)
+erasure doc-level,MAFAT 260 pairs,91,impossible year repaired (anthropic),0.626,0.524,0.719,
+erasure sentence-level,same 260 pairs,212,"negation lost (TranslateGemma-12B, sentence by sentence)",0.373,0.31,0.439,

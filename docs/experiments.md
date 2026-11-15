@@ -348,4 +348,28 @@ Overall: 9.4% of edited sentences translate to an *identical* English string des
 
 ---
 
+## 17. Translate-then-check with real commercial LLM translators (lead #2 follow-up) — run by a peer session, independently verified, partially retracted
+
+**Context:** extends §15 (translation erasure via the open-weight `translategemma-12b-it`) with two commercial LLM translators (Claude Haiku 4.5, Amazon Nova Micro via AWS Bedrock) on a larger, stratified 250/260-pair sample, with document-level (not sentence-level) translation, sentence-anchoring to re-align edits after translation, and an LLM-judge calibration step. Produced by the peer session `genai-summary-augmentor-correctness-erro-bd`; API cost reported as ~$2. Scripts: `paper/results/eval/exp_translation_api.py`; raw data: `translate_test_api_results.csv` (250 pairs), `translation_erasure_doclevel.csv` (4,604 edited-sentence rows, 260 pairs × 2 models), `translation_experiments_summary.csv` (final numbers), `cache/api_translations.jsonl` (6MB, every raw translation).
+
+**Verification method:** independently reproduced every headline number directly from the raw CSVs (not trusting the summary file), reading the actual script to check methodology, and inspecting the one file documenting a "manual check."
+
+### What reproduces cleanly and is solid
+
+**Translate-then-check AUC** (`translate_test_api_results.csv`, 250 pairs, re-derived with `roc_auc_score` directly): FactCG natively on Hebrew scores 0.576 [overall], 0.527 [MAFAT-Aug], 0.768 [mFACT-He]; translating first with Haiku 4.5 raises these to 0.804/0.683/0.899, and with Nova Micro to 0.814/0.686/0.908 — exact match to the reported numbers. MorphEvalHeb stays at 0.986/0.988/0.987 throughout, i.e. translation narrows the gap to FactCG but MorphEvalHeb remains far ahead, especially on native-Hebrew text (MAFAT-Aug: 0.98 vs 0.68–0.69). A handful (7/500) of translated texts tripped a Hebrew-leftover QC heuristic; inspected one (uid 2163) and it's benign — the translator kept a parenthetical Hebrew gloss of an English game title, not an actual translation failure.
+
+**Negation-lost-in-translation** (`translation_erasure_doclevel.csv`, deduplicated by (model, gold sentence, corrupted sentence) to match the reported denominators): Nova Micro loses the negation in 19.9% of 206 pairs (reported: 19.4%), Haiku 4.5 in 27.4% of 208 pairs (reported: 27.4%, exact match). The one manual-verification file available (`translation_erasure_doclevel_manual_verification.csv`, 49 hand-read cases) confirms the automated negation-lost flag's precision: 17/19 real for Nova (0.89, matches the reported figure exactly) and 20/20 real for Haiku (1.00, exact match). **Caveat on provenance:** this file's `labeled_by` column reads "Claude (read in session), 2026-11-15" for every row — the "manual check" was the peer Claude session reading the examples itself, not an independent human verification. The actual judgments on inspection look correct, but this should not be described as human-verified in the paper or thesis without saying so.
+
+### What does NOT hold up: "impossible year repaired in 44–63% of cases"
+
+This claim (in both the peer session's report to the author and its draft paper snippet) could not be independently reproduced, for two reasons:
+1. **No script on disk defines "impossible."** `grep -rl "impossible" paper/*.py` finds nothing; the 44%/63% figures in `translation_experiments_summary.csv` were computed by an unsaved, ad-hoc analysis, not one of the recorded `exp_*.py` scripts — a direct violation of this project's own recording policy (line 5 above).
+2. **The one manual check of the underlying detector shows it mostly fires on non-errors.** Of the 10 manually-read `number_plausible` cases for Haiku (the same `translation_erasure_doclevel_manual_verification.csv`), only 3 are real (`manual_label` starting with `real:`); the other 7 are `false_alarm:` cases — the automated "number erased" check is a literal substring match on digit strings, and it misfires whenever the translator reasonably expands a bare decade/day into a conventional English form ("40"→"1940s", "6"→"June", "4"→"fourth", "90"→"1990s", etc.) that still correctly conveys the (possibly corrupted) value. That is 30% precision on the one sample checked — the true "world-knowledge repair" rate is very likely far below the headline 44–63%, most of which is a formatting-convention artifact of the detector, not the phenomenon it claims to measure.
+
+**Conclusion:** two of the three findings from this follow-up are real and strengthen the paper's existing translation discussion with a larger, better-controlled, two-commercial-translator result; the third ("impossible values get silently repaired from world knowledge") is not supported by the data as currently reported and should not go into the paper without either a real, defined, reproducible detector or being dropped.
+
+**Recommendation:** replace the simpler single-translator paragraph already in §6 (added from §15, TranslateGemma-only) with the translate-then-check AUC table and the manually-verified negation-lost finding from this experiment — it is strictly stronger evidence (two real commercial translators, 250–260 pairs vs. a smaller informal sample, bootstrap CIs, a calibrated precision check). Do not include the "impossible year" claim in its current form. Author's call on whether to invest in properly re-deriving an "impossible value" detector as a follow-up, given the manual check suggests it's mostly noise.
+
+---
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)

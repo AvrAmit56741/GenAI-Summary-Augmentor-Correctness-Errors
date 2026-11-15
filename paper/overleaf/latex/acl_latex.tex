@@ -309,7 +309,7 @@ We evaluate \textbf{G-EVAL} \cite{liu-etal-2023-g}, which uses chain-of-thought 
 \textbf{ENFS} \citep{cao-etal-2022-hallucinated} is the share of named entities in the summary, detected with DictaBERT-NER \citep{shmidman2023dictabert}, that do not appear among the source's entities; we negate it so that higher means more faithful.
 
 \paragraph{Trained Fact Checker.}
-\textbf{FactCG} \citep{lei-etal-2025-factcg} is a DeBERTa-v3-large fact checker trained on graph-based multi-hop synthetic data, among the strongest small checkers on English grounding benchmarks. We apply the released English model to Hebrew as a cross-lingual baseline, following its reference inference: the source is split into sentence-aligned chunks of up to 550 tokens, and the score is the probability that the summary is supported, maximized over chunks. Its SentencePiece tokenizer has no Hebrew-specific vocabulary but, unlike a word-piece tokenizer with a fixed vocabulary, falls back to small Unicode-level pieces rather than failing outright, so it still runs on Hebrew text (0.001\% unknown-token rate on a 300-document sample) but fragments it heavily: 4.30 subword tokens per word, versus 1.00--1.24 for our NeoDictaBERT-based verifier (Appendix~\ref{app:enfs}). Running FactCG natively on Hebrew sidesteps a second, more direct problem with the translate-then-check alternative: translating the gold and corrupted summaries of our benchmark to English with a machine translation model (\texttt{translategemma-12b-it}) erases 9.4\% of injected edits outright (the two English translations become character-identical despite differing in Hebrew) and makes a further 7.5\% nearly indistinguishable (chrF $\geq$ 95), so even a strong English checker could not have seen the error. The erasure rate is highest for the morphosyntactic error families central to our taxonomy, such as verb and noun gender agreement (10--12\%), and lowest for entity-identity swaps (4--6\%), confirming that translation specifically loses the kind of signal this benchmark targets rather than errors in general.
+\textbf{FactCG} \citep{lei-etal-2025-factcg} is a DeBERTa-v3-large fact checker trained on graph-based multi-hop synthetic data, among the strongest small checkers on English grounding benchmarks. We apply the released English model to Hebrew as a cross-lingual baseline, following its reference inference: the source is split into sentence-aligned chunks of up to 550 tokens, and the score is the probability that the summary is supported, maximized over chunks. Its SentencePiece tokenizer has no Hebrew-specific vocabulary but, unlike a word-piece tokenizer with a fixed vocabulary, falls back to small Unicode-level pieces rather than failing outright, so it still runs on Hebrew text (0.001\% unknown-token rate on a 300-document sample) but fragments it heavily: 4.30 subword tokens per word, versus 1.00--1.24 for our NeoDictaBERT-based verifier (Appendix~\ref{app:enfs}). \S\ref{sec:analysis} tests the natural alternative to this cross-lingual transfer problem: translating to English before checking.
 
 \paragraph{Trained Hebrew Classifier.}
 \textbf{mFACT-He} follows the mFACT recipe \citep{qiu2023detecting}: NeoDictaBERT, the same encoder as ours, fine-tuned only on the Hebrew translation of the mFACT training data. It therefore isolates the effect of our training data. MorphEvalHeb's binary verifier is trained on the training splits of both the Injected and Natural parts.
@@ -411,6 +411,8 @@ The released Setup~3 checkpoint, trained and tested on pairs of a summary claim 
 
 \paragraph{Error localization.} The binary verifier is trained only on a pair-level faithfulness label, with no span supervision, unlike FAVA \citep{mishra2024fava}, RAGTruth \citep{niu-etal-2024-ragtruth}, and FineSurE \citep{song-etal-2024-finesure}, which localize errors with span-level supervision in English. We test whether it nonetheless localizes errors as a byproduct of training: for 171 Injected negatives with a matching gold summary, we attribute its contradiction-minus-entailment logit margin to each hypothesis token via gradient-times-input and aggregate to word level, then diff against the gold summary to find the actual edited words. The word with the largest attribution \emph{magnitude} is an edited word 73.1\% of the time (11.5\% chance; AUC 0.724, 95\% CI [0.710,0.738]), while the signed attribution alone is far weaker (55.0\% top-1, AUC 0.523) -- magnitude, not direction, carries the localization signal. Figure~\ref{fig:attribution_example} shows a real example.
 
+\paragraph{Why not translate and use an English checker?} A common alternative to a Hebrew-native metric is to translate the article and summary into English and apply an English fact checker. On a stratified sample of 250 pairs (125 Injected, 125 Natural; half faithful), we translated each full article and summary in one request with two commercial LLM translators (Claude Haiku~4.5 and Amazon Nova Micro) and scored the English with FactCG. Translation raises FactCG from near chance (AUC 0.58) to 0.80--0.81, but it stays well below MorphEvalHeb (0.99), and the gap is largest on native Hebrew text (Injected: 0.68--0.69 vs.\ 0.99). Part of the reason is that translation silently removes the error itself: 19--27\% of injected negations disappear in the English translation (Appendix~\ref{app:translation}).
+
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{fig5_attribution_example.pdf}
@@ -485,5 +487,30 @@ G-EVAL$^{\ddagger}$ & -- & -- & 0.242 & -- & -- & -- & -- \\
 \section{Hebrew Morphology and Entity Matching}
 \label{app:enfs}
 Named entities themselves fragment less under the NeoDictaBERT tokenizer than the Hebrew tokens around them (1.00 vs.\ 1.24 subword tokens per word on average, $n{=}2{,}875$ documents, Wilcoxon $p<0.001$), so ENFS's failures do not come from entities being heavily subworded. ENFS flags at least one unsupported entity in 86\% of faithful Injected summaries. Stripping Hebrew proclitic prefixes before matching lowers this to 74\% but does not improve discrimination (AUC 0.660), so prefix handling alone does not make entity overlap a reliable Hebrew metric.
+
+\section{Translation Experiments}
+\label{app:translation}
+\paragraph{Translate-then-check.} Table~\ref{tab:translate_test} reports AUC with 95\% bootstrap confidence intervals (2,000 resamples) on a stratified sample of 250 pairs: 125 Injected pairs (all four MAFAT sources with reference summaries, balanced faithful/unfaithful, including faithful rewrites) and 125 Natural pairs (stratified by article and summary length). Each full article and summary is translated in a single request with a neutral prompt (``Translate the following Hebrew text into English''). Natural was itself machine-translated from English, so back-translation largely recovers the English source; this explains the higher translate-test scores on that part.
+
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{8pt}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lccc}
+\toprule
+Metric & All (250) & Injected (125) & Natural (125) \\
+\midrule
+FactCG, Hebrew input & \shortstack{0.58\\{\scriptsize[0.50,0.65]}} & \shortstack{0.53\\{\scriptsize[0.43,0.63]}} & \shortstack{0.77\\{\scriptsize[0.68,0.85]}} \\
+FactCG, Haiku~4.5 MT & \shortstack{0.80\\{\scriptsize[0.75,0.85]}} & \shortstack{0.68\\{\scriptsize[0.58,0.78]}} & \shortstack{0.90\\{\scriptsize[0.84,0.95]}} \\
+FactCG, Nova Micro MT & \shortstack{0.81\\{\scriptsize[0.76,0.86]}} & \shortstack{0.69\\{\scriptsize[0.59,0.78]}} & \shortstack{0.91\\{\scriptsize[0.85,0.96]}} \\
+\textbf{MorphEvalHeb} & \shortstack{\textbf{0.99}\\{\scriptsize[0.97,1.00]}} & \shortstack{\textbf{0.99}\\{\scriptsize[0.97,1.00]}} & \shortstack{\textbf{0.99}\\{\scriptsize[0.97,1.00]}} \\
+\bottomrule
+\end{tabular}
+\renewcommand{\arraystretch}{1}
+\caption{Translate-then-check vs.\ MorphEvalHeb (AUC, 95\% CI).}
+\label{tab:translate_test}
+\end{table*}
+
+\paragraph{Translation erasure.} On 260 Injected unfaithful summaries (stratified by source, summary length, edit size, and number of injected error families, with all 20 families covered), we translated each unfaithful summary and its faithful reference and tested, for every edited sentence, whether the injected error survives in English. A negation is lost in 27\% [22, 34] of negation edits with Haiku~4.5 and 19\% [15, 25] with Nova Micro when whole summaries are translated (flag precision 1.00 and 0.89 on a sample spot-checked by hand), and in 37\% [31, 44] when translating sentence by sentence (TranslateGemma-12B). Exact string comparison is unreliable for whole-document translation (only about 25\% of \emph{unchanged} sentences are translated identically in the two documents), so we report only this content-based check rather than raw edit distance.
 
 \end{document}

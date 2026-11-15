@@ -25,7 +25,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 if not logger.handlers:
     _handler = logging.StreamHandler()
     _handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
@@ -63,6 +63,12 @@ def split_sentences(input_text: str) -> List[str]:
     """Split text into non-empty sentences on punctuation boundaries."""
     parts = _SENTENCE_BOUNDARY.split(input_text.strip())
     return [s.strip() for s in parts if s.strip()]
+
+
+def _auto_device() -> str:
+    """mps if available (Apple Silicon), else cpu. Mirrors paper/results/eval/run_eval.py's device()."""
+    import torch
+    return "mps" if torch.backends.mps.is_available() else "cpu"
 
 
 # ── NLI Scorer ────────────────────────────────────────────────────────────────
@@ -104,9 +110,10 @@ class HfNliScorer(NliScorer):
         "typeform/distilbert-base-uncased-mnli",
     ]
 
-    def __init__(self, model_name: str, batch_size: int = 16):
+    def __init__(self, model_name: str, batch_size: int = 16, device: Optional[str] = None):
         self._model_name = model_name
         self._batch_size = batch_size
+        self._device = device if device is not None else _auto_device()
         self._pipeline = None
 
     def score_pairs(
@@ -140,13 +147,14 @@ class HfNliScorer(NliScorer):
         if self._pipeline is not None:
             return
         from transformers import pipeline as hf_pipeline
-        logger.info("[NLI] Loading model: %s", self._model_name)
+        logger.info("[NLI] Loading model: %s (device=%s)", self._model_name, self._device)
         self._pipeline = hf_pipeline(
             "text-classification",
             model=self._model_name,
             top_k=None,          # return all label scores
             truncation=True,
             max_length=512,
+            device=self._device,
         )
         logger.info("[NLI] Model ready: %s", self._model_name)
 
@@ -454,10 +462,11 @@ class SummacFactory:
     def zero_shot(
         model_name: str = _DEFAULT_NLI_MODEL,
         decision_threshold: float = 0.5,
+        device: Optional[str] = None,
     ) -> SummacPipeline:
-        """SummaC-ZS: no training required."""
+        """SummaC-ZS: no training required. device: "mps"/"cpu"/etc., auto-detected if None."""
         config = PipelineConfig(
-            nli_scorer=HfNliScorer(model_name),
+            nli_scorer=HfNliScorer(model_name, device=device),
             score_aggregator=ZeroShotAggregator(),
             decision_threshold=decision_threshold,
         )
@@ -468,13 +477,14 @@ class SummacFactory:
         model_name: str = _DEFAULT_NLI_MODEL,
         conv_weights: Optional[np.ndarray] = None,
         decision_threshold: float = 0.5,
+        device: Optional[str] = None,
     ) -> SummacPipeline:
         """SummaC-Conv: requires trained weights or call .train() on the aggregator."""
         aggregator = ConvAggregator()
         if conv_weights is not None:
             aggregator.load_weights(conv_weights)
         config = PipelineConfig(
-            nli_scorer=HfNliScorer(model_name),
+            nli_scorer=HfNliScorer(model_name, device=device),
             score_aggregator=aggregator,
             decision_threshold=decision_threshold,
         )

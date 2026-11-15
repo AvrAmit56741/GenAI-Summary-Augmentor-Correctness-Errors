@@ -70,12 +70,19 @@ ENTITY_LABELS: dict = {
 _PIPELINE_CACHE: dict = {}
 
 
-def load_ner_pipeline(model_name: str):
-    """Load and cache a HuggingFace NER pipeline by model name."""
+def _auto_device() -> str:
+    """mps if available (Apple Silicon), else cpu."""
+    import torch
+    return "mps" if torch.backends.mps.is_available() else "cpu"
+
+
+def load_ner_pipeline(model_name: str, device: Optional[str] = None):
+    """Load and cache a HuggingFace NER pipeline by model name. device: auto-detected if None."""
     if model_name not in _PIPELINE_CACHE:
         from transformers import pipeline
         _PIPELINE_CACHE[model_name] = pipeline(
-            "ner", model=model_name, aggregation_strategy="simple"
+            "ner", model=model_name, aggregation_strategy="simple",
+            device=device if device is not None else _auto_device(),
         )
     return _PIPELINE_CACHE[model_name]
 
