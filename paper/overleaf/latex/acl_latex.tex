@@ -365,7 +365,7 @@ chrF & -- & \shortstack{-0.209\\{\scriptsize[-0.23,-0.18]}} \\
 \bottomrule
 \end{tabular}
 \renewcommand{\arraystretch}{1}
-\caption{Kendall's $\tau$ between metric scores and the reference faithfulness labels on the Hebrew benchmark ($n{=}4{,}024$). Higher values indicate stronger agreement with the labels. Bold marks our method. The first column reports our original run; the second re-computes the tie-adjusted $\tau_b$ with the protocol of Section~\ref{sec:protocol}, with 95\% bootstrap confidence intervals over articles (``pending'': not yet re-run). Appendix~\ref{app:full_results} gives AUC and balanced accuracy for each benchmark part.}
+\caption{Kendall's $\tau$ between metric scores and the reference faithfulness labels on the Hebrew benchmark ($n{=}4{,}024$). Higher values indicate stronger agreement with the labels. Bold marks our method. The first column reports our original run; the second re-computes the tie-adjusted $\tau_b$ with the protocol of Section~\ref{sec:protocol}, with 95\% bootstrap confidence intervals over articles (``pending'': not yet re-run). Appendix~\ref{app:full_results} gives AUC and balanced accuracy for each benchmark part. For the weakest lexical-overlap baselines (ROUGE-1, BERTScore), the pooled $\tau_b$ is negative even though both correlate positively with faithfulness within each benchmark part taken separately; the two parts differ systematically in both overlap level and faithful rate, so pooling them flips the sign (Simpson's paradox), not a scoring error.}
 \label{tab:main_results}
 \end{table}
 
