@@ -1,0 +1,156 @@
+{
+  "metadata": {
+    "review_date": "2026-11-16",
+    "model_scope": "GLM-4.7-Flash only",
+    "judgment_status": "New manual findings for author review; not independent human-confirmed ground truth",
+    "scope": "Targeted second pass: inventoried all 198 GLM records and ran lexical candidate screens across them; selectively read summaries and source passages, then fully reread the three retained source articles. Not an exhaustive adjudication of all 198 pairs. Unreported pairs have no new negative verdict.",
+    "input_files": [
+      {
+        "path": "paper/results/eval/current_model_summaries_zai_glm-4_7-flash_targeted.csv",
+        "sha256": "2e45cae5b06935c97b2ec3a919e4d41cedc8a4a0587449db3ed3846d35779c9f"
+      },
+      {
+        "path": "paper/results/eval/current_model_summaries_zai_glm-4_7-flash_targeted_offset100.csv",
+        "sha256": "90e66f6c63b319a762c967cb68c6b8a4b0e7dd0d9e65f92d868346831ae53420"
+      },
+      {
+        "path": "paper/results/eval/current_model_summaries_zai_glm-4_7-flash_targeted_offset150.csv",
+        "sha256": "37cbf757cce936ca44b8f2c37cebdab741eec76bd93b0171b2265cc110bf095b"
+      },
+      {
+        "path": "paper/results/eval/current_model_summaries_zai_glm-4_7-flash_targeted_round2.csv",
+        "sha256": "3610f331cb0ef6a53c350082eb139e2c09a86b57126c2d165fd6c81911fcd304"
+      }
+    ],
+    "retained_findings": 3,
+    "distinct_documents": 3,
+    "previously_unreported_positive_documents": 2,
+    "truncation_note": "culture-10230151 ends mid-word. The retained finding is in a complete preceding sentence; truncation itself is not an error.",
+    "calibration_notes": [
+      "Read the production finder prompt, helper schema, driver, supplemental categories, handoff, experiments, and slide anchors business-6667074 / culture-4533684 / food-917568.",
+      "Severity is stored as a string to match the actual CorrectnessError schema.",
+      "Do not use historical orig_max_severity as the new-summary severity.",
+      "English contrast is operationalized as the Hebrew morphological mechanism being absent in English, consistently with project anchors; it cannot mean that no English model could ever hallucinate the translated proposition.",
+      "The handoff says GLM batch findings total 2+2+3+0=7, but its worked-example table names eight distinct GLM documents including culture-10266649. No revised overall error rate is claimed."
+    ],
+    "excluded_candidates": [
+      {
+        "doc_id": "news-3418430",
+        "change": "עורך דינו -> עורכו",
+        "reason": "Real role distortion, but compound truncation alone does not establish the required Hebrew-only mechanism under a strict English-contrast filter."
+      },
+      {
+        "doc_id": "culture-5008424",
+        "change": "Encountered the poet’s granddaughter -> discovered she herself was the granddaughter",
+        "reason": "Real invented relationship; antecedent/plot confusion is possible in English and a specifically morphological cause is not established."
+      },
+      {
+        "doc_id": "culture-3665096",
+        "change": "משפחתה של דני",
+        "reason": "Possible additional local possessive-gender slip, but occurs inside a broadly fabricated family-attribution clause; left out to avoid treating generic entity confusion as proven morphology causation."
+      },
+      {
+        "doc_id": "animals-7318578",
+        "change": "פנטרה ... יפהפיה",
+        "reason": "The summary still explicitly says חתול ... בן ... גור; isolated adjective agreement provides insufficient evidence of a changed identity fact."
+      },
+      {
+        "doc_id": "culture-10266649",
+        "change": "תירֶה בו marked as a faulty form",
+        "reason": "Potential metalinguistic reversal; unpointed contrast is ambiguous. Not promoted beyond the already recorded numeral issue."
+      }
+    ]
+  },
+  "records": [
+    {
+      "doc_id": "celebrities-8902699",
+      "input_file": "paper/results/eval/current_model_summaries_zai_glm-4_7-flash_targeted.csv",
+      "csv_record_1_based_excluding_header": 18,
+      "model": "zai.glm-4.7-flash",
+      "source": "Israel_Hayom",
+      "premise_sha256": "11b304569f8f4749f5fd043df72a77e338b7e626dbb2aeb7d2d6fa36cfa4fb4f",
+      "summary_sha256": "84845cc4be0f26b91171ea44064ae41acb90c1a093f96f7c8f75e7126a5c2c40",
+      "summary_quote_character_offset": 2336,
+      "source_quote_character_offset": 3985,
+      "summary_article_heb_correctness_errors": [
+        {
+          "correctness_error_name": "הפיכת ילדי הקהל לילדיה של הזמרת",
+          "correctness_error_reasoning": "במקור לילדים היא ל־ + ילדים, ללא בעלים. בסיכום לילדיה כוללת כינוי קניין חבור לנקבה יחידה: הילדים שלה. הסיומת מייחסת לקייטי פרי הורות לילדים, במקום לתאר ילדים הנהנים מעבודתה. זו הוספת יחס משפחתי באמצעות מורפולוגיית קניין, ולא רק ניסוח אחר.",
+          "mrl_unique_hebrew_features": "כינוי קניין מוצמד; ל־ + ילד + יה (רבים, בעלת הקניין נקבה יחידה)",
+          "why_its_factual_error": "המקור מדבר על האושר שהזמרת מביאה לילדים; הסיכום טוען שהילדים הם שלה. ההורות אינה נתמכת במקור.",
+          "evidence_from_summary": "והתעלם מהמעשים כדי להגן על התדמית של הזמרת ועל האושר שהיא מביאה לילדיה.",
+          "evidence_from_source_article": "אתה לומד להתעלם ולחסום את זה כי אתה רואה את האושר שהיא מביאה לילדים",
+          "severity": "2"
+        }
+      ],
+      "review": {
+        "category": "3 — attached possessive clitic",
+        "confidence": "high",
+        "english_contrast": "The local mechanism is replacement of an unsuffixed Hebrew plural by its bound possessive form. English children and her children require adding a separate possessor word. A generic English model could also invent parenthood; the qualifying feature here is the directly observable bound-suffix change, using the same operational contrast as the project’s possessive-clitic anchors.",
+        "caveat": "The text establishes an unsupported parenthood attribution relative to the source, not a researched claim about Perry’s family in the real world.",
+        "looks_truncated": "no",
+        "previously_reported_doc": "no"
+      }
+    },
+    {
+      "doc_id": "culture-8232575",
+      "input_file": "paper/results/eval/current_model_summaries_zai_glm-4_7-flash_targeted_offset150.csv",
+      "csv_record_1_based_excluding_header": 2,
+      "model": "zai.glm-4.7-flash",
+      "source": "Israel_Hayom",
+      "premise_sha256": "3b9deda9d4cf39330c834b82a15772944e868e908607a46c113b6545162d04d5",
+      "summary_sha256": "c1aa833da7f22e90b7a93c3134c44504bd07e042703502bb971d6b255028b576",
+      "summary_quote_character_offset": 1472,
+      "source_quote_character_offset": 6181,
+      "summary_article_heb_correctness_errors": [
+        {
+          "correctness_error_name": "בת בכורה הופכת לבן בתוך שרשרת נקבית",
+          "correctness_error_reasoning": "המקור מציין במפורש בתו הבכורה. הסיכום מחליף את צורת הקרבה הנקבית בתו בצורה הזכרית בנו, אך משאיר הבכורה הייתה תינוקת בנקבה. התוצאה היא היפוך מקומי של עובדת המגדר של הילדה בתוך שרשרת התאמה סותרת. כינוי הקניין ־ו ממשיך לציין את האב; אין כאן שינוי במגדר בעל הקניין.",
+          "mrl_unique_hebrew_features": "מגדר בצורת הקרבה בן/בת עם כינוי קניין חבור ־ו; שרשרת התאמה: בכורה / הייתה / תינוקת",
+          "why_its_factual_error": "לפי המקור הילדה שהייתה תינוקת בעלייה הייתה בתו הבכורה; בנו מציג אותה כבן. ההקשר הנקבי שנותר אינו מבטל את ההיפוך המקומי לפי כיול הפרויקט.",
+          "evidence_from_summary": "בשנת 1974, כשבנו הבכורה הייתה תינוקת, עלה עם משפחתו לישראל.",
+          "evidence_from_source_article": "בתו הבכורה נולדה ברומניה, ובשנת 1974, כשהיתה תינוקת בת שנה ושמונה חודשים, הם עלו ארצה.",
+          "severity": "2"
+        }
+      ],
+      "review": {
+        "category": "2 — gender mismatch in a referential agreement chain",
+        "confidence": "high under project calibration",
+        "english_contrast": "Hebrew preserves feminine agreement on three adjacent forms while switching the possessed kinship form to masculine. English lacks that distributed gender-agreement chain. A bare English son/daughter substitution is possible, so this finding is accepted specifically under the project’s explicit calibration that local factual gender reversals count even when the referent remains identifiable.",
+        "caveat": "An isolated local gender reversal, not a sustained male biography. Its eligibility depends on the project calibration; a narrower standard excluding contradictory local gender forms would downgrade it.",
+        "looks_truncated": "no",
+        "previously_reported_doc": "no"
+      }
+    },
+    {
+      "doc_id": "culture-10230151",
+      "input_file": "paper/results/eval/current_model_summaries_zai_glm-4_7-flash_targeted_round2.csv",
+      "csv_record_1_based_excluding_header": 1,
+      "model": "zai.glm-4.7-flash",
+      "source": "Israel_Hayom",
+      "premise_sha256": "d2d729f43235371d39fc175e2bd9140b64471b17adf96ba3f5e6696f16de466b",
+      "summary_sha256": "f9550046931a3ed23fb35a1d7eb7ed0050d972bf36b9deea52b9407f862fb655",
+      "summary_quote_character_offset": 4018,
+      "source_quote_character_offset": 6622,
+      "summary_article_heb_correctness_errors": [
+        {
+          "correctness_error_name": "ונקה: מפעולת ניקוי לזכות עצמית של האל",
+          "correctness_error_reasoning": "המקור מביא את הצורה המנוקדת וְנַקֵּה בתוך ציטוט ובדיון בי״ג מידות הרחמים. הסיכום מוסיף פירוש מפורש והוא נקי: קריאה של ו־ + התואר נקי במקום הצורה הפועלית בבניין פיעל של נ־ק־ה. כך מוחלפת פעולה כלפי אחרים בתכונה של נושא המשפט. ההבחנה בין הצורות מיטשטשת בכתיב הלא מנוקד ונקה.",
+          "mrl_unique_hebrew_features": "בניין פיעל; שורש נ־ק־ה; עמימות בכתיב חסר ניקוד; ו־ החיבור; פועל לעומת תואר",
+          "why_its_factual_error": "הסיכום מייחס למילה משמעות מפורשת של טוהר האל עצמו, במקום פעולת הניקוי/הזיכוי הנידונה בציטוט ובמידות הרחמים. זוהי טעות במשמעות הציטוט, נפרדת מהשמטת השם וליד שכבר תועדה לאותה כתבה.",
+          "evidence_from_summary": "הפסוק מסתיים במילה \"ונקה\" (והוא נקי), ואחריה מופיעה מידת הדין.",
+          "evidence_from_source_article": "נֹצֵר חֶסֶד לָאֲלָפִים נֹשֵׂא עָוֹן וָפֶשַׁע וְחַטָּאָה וְנַקֵּה לֹא יְנַקֶּה",
+          "severity": "2"
+        }
+      ],
+      "review": {
+        "category": "1 + 10 — binyan/word-class reading of an unpointed form",
+        "confidence": "medium-high",
+        "english_contrast": "The Hebrew נקה root and missing pointing permit a verbal pi’el form to be recast as a clean-state adjective. In an English rendering, absolving/clearing guilt and being clean are expressed with different constructions; the shared unpointed Hebrew root-pattern reading is absent.",
+        "caveat": "The source does not give a prose dictionary gloss; the diagnosis uses its explicitly pointed verbal form and the immediately following mercy-versus-judgment explanation. Do not count the separately generic claim that the verse ends here. Expert review of the gloss is appropriate before ground-truth promotion.",
+        "looks_truncated": "yes",
+        "previously_reported_doc": "yes — different error (Walid omission)"
+      }
+    }
+  ]
+}

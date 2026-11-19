@@ -1,0 +1,35 @@
+% Translation experiments: draft text for the paper (numbers from translation_experiments_summary.csv).
+% Not yet inserted into acl_latex.tex. Main-text paragraph + appendix table/paragraph.
+
+% ---------------------------------------------------------------- MAIN TEXT (Results / Analysis)
+\paragraph{Why not translate and use an English checker?}
+A common alternative to a Hebrew-native metric is to translate the source and summary into English and apply an English fact checker.
+We tested this on a stratified sample of 250 article--summary pairs (125 MAFAT-Aug, 125 mFACT-He; balanced faithful/unfaithful), translating each full article and summary in one request with two commercial LLM translators (Claude Haiku~4.5, Amazon Nova Micro).
+Translation raises FactCG from near chance (AUC 0.58 [0.50, 0.65]) to 0.80--0.81 [0.75, 0.86], but remains well below MorphEvalHeb (0.99 [0.97, 1.00]); on native Hebrew text (MAFAT-Aug) the gap is larger (0.68--0.69 vs.\ 0.99).
+Part of the gap is that translation silently removes errors: 19--27\% of injected negations disappear in the English output, and translators ``repair'' implausible values from world knowledge (e.g., a year of 3970 becomes 1970) in 44--63\% of cases (Appendix~\ref{app:translation}).
+
+% ---------------------------------------------------------------- APPENDIX
+\section{Translation Experiments}\label{app:translation}
+
+\paragraph{Translate-then-check.} Table~\ref{tab:translate_test} reports AUC with 95\% bootstrap CIs (2{,}000 resamples) on the stratified 250-pair sample. mFACT-He was originally machine-translated from English, so back-translation largely recovers the English source; this explains the higher translate-test scores on that part.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{lccc}
+\toprule
+Metric & All (250) & MAFAT-Aug (125) & mFACT-He (125) \\
+\midrule
+FactCG (Hebrew input) & 0.58 {\scriptsize[0.50,0.65]} & 0.53 {\scriptsize[0.43,0.63]} & 0.77 {\scriptsize[0.68,0.85]} \\
+FactCG after Haiku~4.5 MT & 0.80 {\scriptsize[0.75,0.85]} & 0.68 {\scriptsize[0.58,0.78]} & 0.90 {\scriptsize[0.84,0.95]} \\
+FactCG after Nova Micro MT & 0.81 {\scriptsize[0.76,0.86]} & 0.69 {\scriptsize[0.59,0.78]} & 0.91 {\scriptsize[0.85,0.96]} \\
+MorphEvalHeb & \textbf{0.99} {\scriptsize[0.97,1.00]} & \textbf{0.99} {\scriptsize[0.97,1.00]} & \textbf{0.99} {\scriptsize[0.97,1.00]} \\
+\bottomrule
+\end{tabular}
+\caption{Translate-then-check vs.\ MorphEvalHeb (AUC, 95\% CI).}
+\label{tab:translate_test}
+\end{table}
+
+\paragraph{Translation erasure.} On 260 MAFAT-Aug corrupted summaries (stratified by source, length, edit size, number of injected errors; all 20 error families covered), we translated the corrupted summary and its faithful original and tested, per edited sentence, whether the injected error survives in English.
+Negation is lost in 27\% [22, 34] of edits with Haiku~4.5 and 19\% [15, 25] with Nova Micro (document-level translation; flag precision 1.00 and 0.89 on a manually checked sample), and in 37\% [31, 44] with sentence-by-sentence translation (TranslateGemma-12B).
+Plausible numeric changes survive translation, but impossible values are silently corrected: 63\% [52, 72] (Haiku) and 44\% [35, 54] (Nova) of impossible years are rewritten to plausible ones.
+Exact-match comparison is unreliable at document level (only ${\sim}25\%$ of unchanged sentences are translated identically in the two documents), so we report only these two content-based checks; a sentence-level analysis of all edit types is in the released results.

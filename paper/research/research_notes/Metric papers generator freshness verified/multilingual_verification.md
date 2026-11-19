@@ -1,0 +1,142 @@
+# Verification of generator freshness in multilingual / non-English evaluation papers
+
+Written 2026-11-18. This checks `paper/research/model_freshness_multilingual.md` (the "first pass") against primary sources.
+- Age gap = paper year minus the release year of the newest model whose OUTPUTS are evaluated.
+- Judge / metric LLMs are tracked separately.
+- About 16 tool calls were used. Anything not re-fetched in this session is labelled "carried over from first pass" or UNCONFIRMED.
+
+## Q1. Rows tagged (mem) / (unverified): venue, year, generators
+
+### Takeaway
+- Most open items now resolve:
+  - FRANK systems are confirmed: 2017–2019 models, with no LLMs.
+  - STEMF is confirmed as EACL Findings 2026.
+  - Kang 2024 and HalluQA have no peer-reviewed venue (arXiv only).
+  - M-RewardBench is confirmed as ACL 2025.
+  - MM-Eval now appears at ICLR 2026, which is a venue update.
+  - LitEval systems are identified from search snippets, not the full text.
+- Still UNCONFIRMED: BLOOMZ-mt size in Kang, the Hercule/RECON venue, and the origin of RewardBench responses.
+
+### Cited Findings
+- **FRANK (Pagnoni et al., NAACL 2021).**
+  - CNN/DM outputs annotated from 5 systems: LSTM S2S, Pointer-Generator (PGN), Bottom-Up (BUS), BertSum, BART.
+  - XSum outputs annotated from 4 systems: topic-aware CNN (TConvS2S), PGN, randomly initialised transformer (TranS2S), BERT-initialised transformer (BertS2S).
+  - Newest generator is BART (2019).
+  - — [ar5iv 2104.13346](https://ar5iv.labs.arxiv.org/html/2104.13346); venue "Accepted at NAACL 2021" — [arXiv abs](https://arxiv.org/abs/2104.13346)
+  - Consequence: the machine-translated FRANK used in STEMF (2025/2026) consists of 2017–2019 outputs, so the gap is about 6–7 years.
+- **LitEval-Corpus (Zhang, Zhao & Eger, arXiv 2410.18697, NAACL 2025).**
+  - Human translations plus outputs from 9 MT systems: Google Translate, DeepL, NLLB-3.3B, M2M-100-1.3B, GPT-4o, and smaller open LLMs (Llama 3, Qwen 2, Gemma 1.1, TowerInstruct). GPT-4o ranked second after humans.
+  - Source is search-result summaries of the paper, NOT a full-text check, so the exact model versions are UNCONFIRMED.
+  - — [emergentmind 2410.18697](https://www.emergentmind.com/papers/2410.18697), [arXiv PDF](https://arxiv.org/pdf/2410.18697v2.pdf), [hyper.ai NAACL 2025.naacl-long.548](https://hyper.ai/de/papers/naacl__2025__2025.naacl-long.548)
+  - Implied gap: GPT-4o (May 2024) against an Oct 2024 preprint, about 0.4 years. The frontier is included.
+- **Kang, Blevins & Zettlemoyer, "Comparing Hallucination Detection Metrics for Multilingual Generation" (arXiv 2402.10496).**
+  - v1 is dated 16 Feb 2024 and v2 16 Jun 2024. No peer-reviewed venue was found; it is listed only as an arXiv / CoRR working paper.
+  - — [arXiv](https://arxiv.org/abs/2402.10496), [CAS catalog](https://katalog.lib.cas.cz/KNAV/EdsRecord/edsarx,edsarx.2402.10496)
+- **HalluQA (Cheng et al., "Evaluating Hallucinations in Chinese Large Language Models", arXiv 2310.03368).**
+  - No accepted venue was found. The arXiv listing says "Work in progress" and the repo BibTeX is CoRR.
+  - 24 models were evaluated. 18 of the 24 have non-hallucination rates below 50%. The benchmark has 450 adversarial questions.
+  - — [arXiv v4](https://arxiv.org/abs/2310.03368v4), [GitHub OpenMOSS/HalluQA](https://www.github.com/OpenMOSS/HalluQA)
+- **M-RewardBench (Gureja et al.)** is confirmed as ACL 2025 long, pp. 43–58, 2025.acl-long.3. It has 2.87k preference instances in 23 languages. — [ACL Anthology](https://aclanthology.org/2025.acl-long.3)
+- **MM-Eval (Son et al.)** is listed at ICLR 2026. The first pass called it "arXiv 2024". — [ICLR 2026 virtual page](https://iclr.cc/virtual/2026/10012639)
+- **Mondshine et al., "Beyond N-Grams" (arXiv 2507.08342).**
+  - Generators confirmed: "produced by GPT-3.5-Turbo (0125)" and Gemini 1.0 Pro (Sec. 4.1).
+  - 8 languages: zh, ja, ar, es, yo, tr, he, uk.
+  - The arXiv page states no venue.
+  - There is no per-generator breakdown of metric correlation. The only per-generator result is an Elo ranking of human preference between Gemini and GPT summaries.
+  - — [arXiv HTML](https://arxiv.org/html/2507.08342)
+
+### Inferences
+- In Kang 2024, BLOOMZ-mt is called the "largest open-source, multilingual LM" (first pass, v). The BLOOMZ family tops out at 176B, so 176B is very likely, but no explicit statement was fetched. Treat it as UNCONFIRMED (likely 176B).
+- The first-pass venue entry for Mondshine ("arXiv 2025") stands.
+
+### Gaps
+- Hercule / RECON (Doddapaneni et al., 2410.13394) as ACL 2025: no search hit. UNCONFIRMED.
+- RewardBench chosen/rejected response sources (mixture of 2023-era chat models plus human data) were not fetched. UNCONFIRMED.
+- LitEval exact system versions are UNCONFIRMED (no full-text read).
+
+## Q2. Headline claims verified with quotes
+
+### Takeaway
+- Most headline claims hold.
+- Correction: STEMF's text does not name mT5-XXL. It says the mFACE summary "is generated by an LLM". The mT5-XXL identification comes from the mFACE paper itself (first pass, verified there). Translated FRANK is confirmed.
+- Doğruöz 2026 (79%, 26/33) is confirmed verbatim, and it is now listed as to appear at EMNLP Findings 2026.
+- HeSum, Mondshine and Dicta-LM 3.0 are confirmed.
+
+### Cited Findings
+- **STEMF (Alfano, Al Marjani, Jonke, Mantrach, Mansour, Federico).**
+  - Venue: Findings of EACL 2026, pp. 5035–5051 (2026.findings-eacl.266); arXiv 2507.20752 from 28 Jul 2025. — [ACL Anthology](https://aclanthology.org/2026.findings-eacl.266)
+  - Test-set wording:
+    - For mFACE the summary "is generated by an LLM", with XL-Sum articles. No generator is named.
+    - "We machine translate FRANK to all the other languages we are considering, apart from Hindi" (ar, de, es, fr, it, per Table 10). No MT system is named.
+    - For MEMERAG, "the answer is generated by an LLM using supporting wiki articles".
+  - Results are broken down by starting model, training-language mix and test language, NOT by generator.
+  - Claim on language proficiency: including a test language in training "is beneficial only if the starting model is proficient enough on that test language".
+  - — [arXiv HTML 2507.20752](https://arxiv.org/html/2507.20752)
+  - Net effect: the 2026 metric is validated on 2017–2019 English systems (translated FRANK) and 2020 mT5-XXL summaries (mFACE). The summarisation age gap is about 5.5 years (mFACE) and about 6–7 years (FRANK) relative to the 2026 venue.
+- **Doğruöz, Liao, Blaschke, Prange, Li, Adelani, "Challenges and Recommendations for LLM-as-a-Judge in Multilingual Settings and for Low-Resource Languages" (arXiv 2607.02235).**
+  - v1 is dated 2 Jul 2026 and v2 7 Sep 2026; to appear at EMNLP Findings 2026.
+  - Quotes:
+    - "GPT-family models are used in 26/33 papers (79%)"
+    - "15/33 papers (45%) rely on a single judge model family, and 10/33 (30%) use GPT as their sole judge"
+    - "23/33 papers (70%) report some form of human/gold-label comparison"
+  - The 33 papers were selected from 650 that mention LLM-as-a-judge.
+  - It does not report generator age.
+  - — [arXiv abs](https://arxiv.org/abs/2607.02235), [arXiv HTML](https://arxiv.org/html/2607.02235)
+- **HeSum (Paz-Argaman et al., ACL Findings 2024; arXiv 2406.03897).**
+  - Generators: "GPT-4 model with 32K context window (version 0613)", "GPT-3.5-turbo with 16K context (version 0613)", and fine-tuned mLongT5 base/large.
+  - ROUGE-1/2/L: GPT-4 scores 13.59/3.70/10.39; mLongT5 scores 17.47/7.56/14.68.
+  - "While mLongT5 consistently achieved higher ROUGE scores…"
+  - Human coherence/completeness: GPT-4 4.48/4.14, GPT-3.5 4.38/3.98, mLongT5 3.46/2.10.
+  - "we found a negative correlation of human evaluation with ROUGE scores", with Pearson about −0.16 and p < 2.39×10⁻⁵.
+  - — [arXiv HTML 2406.03897](https://arxiv.org/html/2406.03897)
+- **Dicta-LM 3.0 (arXiv 2602.02104).**
+  - Method: "compares the test model's generated summary with a summary generated via Gemini-2.5-Pro, and check the win rate"; "We use GPT4o as the LLM as a Judge".
+  - The test set is 1,000 documents (news, wiki, etc.).
+  - Models in Table 8: DictaLM-3.0 24B-Thinking (56.86), Nemotron-12B-Instruct (33.27) and 1.7B variants; gemma3-27B (44.54), gemma-3-12b (39.48), gemma-3-1b (0.35); Llama-3.3-70B (37.83); aya-expanse-32B (29.46); Qwen3-14B think (15.83) and Qwen3-1.7B think (0.4).
+  - No validation of the judge against humans is reported.
+  - — [arXiv HTML 2602.02104](https://arxiv.org/html/2602.02104)
+- **Mondshine:** GPT-3.5-Turbo-0125 and Gemini 1.0 Pro are confirmed (see Q1). — [arXiv HTML](https://arxiv.org/html/2507.08342)
+- **MSumBench (Lee et al., ACL 2025, 2025.acl-long.702).**
+  - Venue confirmed. It covers en and zh, and finds proprietary models more faithful than open and non-LLM systems.
+  - — [ACL PDF](https://aclanthology.org/2025.acl-long.702.pdf), [arXiv HTML](https://arxiv.org/html/2506.00549)
+  - The self-preference quote ("Llama-3.1-70B rates its own summaries less favorably… Claude-3.5-Sonnet favors its own") was not re-fetched this session and is carried over from the first pass (v).
+- **mFACE / mFACT / SEAHORSE:** generator details were not re-fetched this session and are carried over from the first pass, which marked them (v). The mFACE paper is ACL Findings 2023 (2023.findings-acl.220). — [ACL PDF](https://aclanthology.org/2023.findings-acl.220.pdf)
+
+### Inferences
+- In the STEMF row, "Gen" should read "mFACE: mT5-XXL (per the mFACE paper; STEMF only says 'an LLM')". STEMF's own wording understates how old the outputs are.
+- The FRANK part of STEMF should be stated as 2017–2019 English CNN/DM and XSum systems (S2S, PGN, BUS, BertSum, BART, TConvS2S, TranS2S, BertS2S), machine-translated.
+
+### Gaps
+- The MSumBench self-preference quote and the SEAHORSE, mFACE and mFACT generator lists were not independently re-fetched this session.
+
+## Q3. Gap search: a multilingual counterpart of Tang et al. 2023 (one fixed metric on older vs newer generators), and 2025–26 benchmarks the first pass missed
+
+### Takeaway
+- No multilingual study was found that holds one metric or judge fixed and compares its accuracy on outputs from older and newer (or weaker and stronger) generators.
+- The closest evidence is HeSum: ROUGE ranks fine-tuned mLongT5 above GPT-4, and ROUGE is negatively correlated with human judgments. That is a system ranking, not metric accuracy stratified by generator.
+- 2026 additions with fresh multilingual summarisation evaluation exist (OmniScore-Bench, BanSum, BabelJudge, a Bengali/English study). None performs the Tang-style analysis.
+
+### Cited Findings
+- A search for multilingual faithfulness metrics on older vs newer generators returned only English-side statements. An EMNLP 2025 Findings paper ("Real-World Summarization") repeats Tang et al.: "most trainable summarization metrics work more reliably on older model outputs compared to the new ones". — [ACL PDF 2025.findings-emnlp.1363](https://aclanthology.org/2025.findings-emnlp.1363.pdf) (snippet only)
+- STEMF breaks results down by language and starting model, not by generator. — [arXiv HTML](https://arxiv.org/html/2507.20752)
+- Mondshine reports metric correlation by language family and resource level, not by generator. — [arXiv HTML](https://arxiv.org/html/2507.08342)
+- **OmniScore-Bench / "Beyond LLM-as-a-Judge: Deterministic Metrics for Multilingual Generative Text Evaluation"** (Alam, Bhatia, Laskar, Chowdhury; arXiv 2604.05083, 6 Apr 2026). — [arXiv HTML](https://arxiv.org/html/2604.05083v1)
+  - Coverage: 6 languages (ar, as, bn, en, hi, ne) and 5 tasks, including XL-Sum summarisation with 2,037 test items.
+  - Labels: the human-annotated test set has 2 annotators per item. GPT-4.1 labels the train/dev splits, and its agreement with humans is about 0.90.
+  - The paper does NOT name which systems produced the annotated outputs, and it has no per-generator breakdown.
+  - Generator freshness is therefore UNCONFIRMED.
+- Search-snippet-level 2026 items, NOT full-text verified:
+  - **BanSum** (arXiv 2604.03192): GPT-5.2 and Claude Sonnet 4.6 judges disagreed sharply on hallucination (0% vs 25.5%) in Bengali summaries, with human validation on 200 items. — [arXiv PDF](https://arxiv.org/pdf/2604.03192)
+  - **Bengali vs English LLM summarisation study** (arXiv 2610.19003). — [arXiv HTML](https://arxiv.org/html/2610.19003v1)
+  - **BabelJudge** (Jun 2026): judge reliability falls from 0.714 (Hindi) to 0.550 (Swahili). — [ResearchGate](https://www.researchgate.net/publication/407506888_BabelJudge_Measuring_LLM-as-a-Judge_Reliability_Across_Languages_and_Agent_Trajectories)
+  - All three are UNCONFIRMED in their generator details.
+- No 2025 meta-evaluation of factual-consistency metrics for Japanese or Korean LLM summaries was found. MSumBench (en, zh) remains the only CJK one. — [ACL PDF](https://aclanthology.org/2025.acl-long.702.pdf)
+
+### Inferences
+- The first pass's claim stands: there is no multilingual analogue of Tang et al. 2023 AggreFact.
+- For Hebrew, HeSum is the strongest precedent showing that a metric misranks generator classes: ROUGE favours older fine-tuned seq2seq, humans favour the LLM.
+- MorphEvalHeb testing one fixed metric or judge across older vs current generators would appear to be novel in the multilingual literature. This rests on the searches here, not on proof of absence.
+
+### Gaps
+- Only two broad gap searches were run. Language-specific searches were not exhaustive: Arabic venues (ArabicNLP), Indic, Japanese (NLP-ja / ANLP), Korean (HCLT) and European.
+- BanSum, BabelJudge and 2610.19003 need full-text checks of generator lists before they are cited.

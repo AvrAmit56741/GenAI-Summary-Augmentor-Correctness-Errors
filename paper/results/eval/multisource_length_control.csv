@@ -1,0 +1,7 @@
+len_bin,group,fa:MorphEvalHeb,fa:FactCG,fa:SummaC-ZS,det:MorphEvalHeb,det:FactCG,det:SummaC-ZS,n
+short,multi,0.02,0.0,0.784,0.843,0.039,0.627,51
+short,single,0.046,0.0,0.379,0.897,0.115,0.713,87
+mid,multi,0.044,0.0,0.756,0.867,0.067,0.644,45
+mid,single,0.047,0.0,0.453,0.938,0.031,0.703,64
+long,multi,0.045,0.0,0.886,0.909,0.023,0.477,44
+long,single,0.0,0.0,0.489,0.956,0.044,0.8,45
