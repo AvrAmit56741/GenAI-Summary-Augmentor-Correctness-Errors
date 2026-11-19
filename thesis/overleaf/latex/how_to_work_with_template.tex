@@ -1,0 +1,90 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\title{How to Work With This Thesis Template}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\href{https://www.overleaf.com/read/fxhpwgkznxdx#ca782c}{Link to this project}
+
+\section{Overview}
+This project is a thesis template built around \texttt{main.tex}. The main file pulls in the cover pages, the front matter, the chapter list, the bibliography, and the Hebrew table of contents. The files you will edit most often are:
+\begin{itemize}[leftmargin=*]
+    \item \texttt{thesis\_metadata.tex} for title, author, advisors, and date.
+    \item \texttt{thesis\_chapters.tex} for chapter order and appendix order.
+    \item \texttt{content/.../*.tex} for the actual chapter text.
+\end{itemize}
+
+\section{Fill In Metadata}
+Open \texttt{thesis\_metadata.tex} and replace the placeholder values with your thesis details.
+
+\begin{itemize}[leftmargin=*]
+    \item Update the English and Hebrew thesis titles.
+    \item Update the faculty name if needed.
+    \item Update the thesis program name.
+    \item Replace the author's name with your own name in both languages.
+    \item Replace the advisor fields. If you have more than one advisor, separate the English names with \texttt{\string\and}.
+    \item Set the submission month and year.
+\end{itemize}
+
+These values are reused across the cover and abstract pages, so changing them in one place updates the entire document.
+
+\section{Fill In Chapter Names and Order}
+Open \texttt{thesis\_chapters.tex} to control the thesis structure.
+
+Each chapter is declared with:
+\begin{verbatim}
+\thesischapter{English Title}{chapter:label}
+              {Hebrew Title}{content/path/file}
+\end{verbatim}
+
+Each appendix is declared with:
+\begin{verbatim}
+\thesisappendix{English Title}{appendix:label}
+               {Hebrew Title}{content/path/file}
+\end{verbatim}
+
+\begin{itemize}[leftmargin=*]
+    \item Keep the chapter order in the order you want it to appear in the thesis.
+    \item Add new chapters by creating a new file under \texttt{content/} and adding a matching \texttt{\string\thesischapter} line.
+    \item Remove chapters you do not need by deleting or commenting out their lines.
+    \item If you do not need appendices, remove the \texttt{appendices} block.
+\end{itemize}
+
+The provided chapter files are already wired into \texttt{main.tex}, so the thesis will include whatever you list here.
+
+\section{Add Content}
+\begin{itemize}[leftmargin=*]
+    \item Update the English and Hebrew abstract files in \path{Main_pages/abstract.tex} and \path{Main_pages/abstract_heb.tex}.
+    \item Update the acknowledgements file in \path{Main_pages/acknowledgements.tex}.
+    \item Add content to the chapter files under \texttt{content/}.
+    \item Add appendices in \path{content/appendices/} if needed.
+\end{itemize}
+
+A few practical tips:
+\begin{itemize}[leftmargin=*]
+    \item Use \texttt{\string\label} and \texttt{\string\ref} for cross-references.
+    \item Add citations with \texttt{\string\citep} or \texttt{\string\citet} and keep references in the bibliography file.
+    \item Keep figures in the chapter folders or in \path{content/images/} and reference them with \texttt{\string\includegraphics}.
+    \item Compile \texttt{main.tex} after major edits to keep the table of contents, bibliography, and Hebrew TOC in sync.
+\end{itemize}
+
+\section{Build Flow}
+The usual workflow is:
+\begin{enumerate}[leftmargin=*]
+    \item Edit \texttt{thesis\_metadata.tex}.
+    \item Edit \texttt{thesis\_chapters.tex}.
+    \item Fill in the chapter files under \texttt{content/}.
+    \item Compile \texttt{main.tex} until the references and tables of contents settle.
+\end{enumerate}
+
+If you see old table-of-contents or Hebrew TOC entries after structural changes, delete the auxiliary build files and compile again.
+
+\end{document}
