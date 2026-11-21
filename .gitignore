@@ -4,3 +4,7 @@ __pycache__/
 .env
 .idea/
 .DS_Store
+
+# per-layer embedding caches (>100MB, regenerate with exp_layers.py / exp_layers_words.py embed)
+paper/results/eval/cache/layers_emb_*.npz
+paper/results/eval/cache/layers_words_*.npz

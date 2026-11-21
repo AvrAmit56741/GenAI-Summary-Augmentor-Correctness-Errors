@@ -1,0 +1,195 @@
+[
+  {
+    "id": "dicta2.0_uzi",
+    "model": "DictaLM-2.0-Instruct",
+    "error_type": "noun_gender_swap",
+    "faithful": "...בן 6 ומאולף. בחג הזה הוא רוצה לזכות באימוץ מרגש.",
+    "erroneous": "עוזי, כלבה יפהפייה, מחפשת בית שיעניק לה אהבה."
+  },
+  {
+    "id": "gpt35_shelling",
+    "model": "GPT-3.5-Turbo",
+    "error_type": "hebrew_root_pattern_confusion",
+    "faithful": "ישראל התחילה בהרעשה רגע אחרי הפסקת האש, כשהעבירה מסר מאיים כפול לחמאס:",
+    "erroneous": "ישראל מתרגשת להביע את נצחונה, אך חמאס ממשיך להיות מאיים."
+  },
+  {
+    "id": "gemma3_minister",
+    "model": "Gemma3-12B",
+    "error_type": "noun_gender_swap",
+    "faithful": "...שר התקשורת איוב קרא הפציר ש\"צריך לחשוב פעמים למה זה נחוץ\", אבל תסמכו על השרה רגב להנפיק את המשפט...",
+    "erroneous": "...כאשר שרת התקשורת אף הצהיר על הצורך בשליטה בתאגיד."
+  },
+  {
+    "id": "gptoss_wing",
+    "model": "gpt-oss-20B",
+    "error_type": "noun_gender_swap",
+    "faithful": "לימים הגישה בעלת הזכויות באגף הדרומי בקשה למתן היתר בנייה, לצורך הריסת האגף שבבעלותה...",
+    "erroneous": "בעל האגף הדרומי ביקש היתר בנייה להריסת האגף שלו ולבנות בניין חדש תחתיו..."
+  },
+  {
+    "id": "qwen14b_singers",
+    "model": "Qwen3-14B",
+    "error_type": "verb_template_agency_reversal",
+    "faithful": "פרגנתי לכל הזמרים שהיו שם, השמעתי להם את השירים שלהם.",
+    "erroneous": "...שפילמן פרגן עם הזמרים, שמע את השירים שלהם..."
+  },
+  {
+    "id": "dicta3.0_gvarin",
+    "model": "DictaLM-3.0-1.7B-Instruct",
+    "error_type": "morphological_connective_confusion",
+    "faithful": "בעקבות פסק דין ג'בארין זוכו ארבעה יהודים מהימין שהואשמו בהסתה ועניינם היה תלוי ועומד לפני בית המשפט העליון...",
+    "erroneous": "בעקבות פסק דין ג'בארין, זוכו ארבעה יהודים מהימין והואשמו בהסתה, ועניינם היה תלוי ועומד לפני בית המשפט העליון."
+  },
+  {
+    "id": "glm_shoham_fig6",
+    "model": "GLM-4.7-Flash",
+    "error_type": "homographic_gender_errors",
+    "faithful": "אות בבאר שהם סמיט, איורים: ולי מינצי (כנרת)",
+    "erroneous": "...כגון \"אות בבאר\" של הם סמיט, שמספר את סיפורו של רבי עקיבא..."
+  },
+  {
+    "id": "ministral_yehudit",
+    "model": "Ministral-3-14B",
+    "error_type": "construct_state_confusion",
+    "faithful": "\"מסכנה אמא\", אומרת לי יהודית דקל, הצעירה מבין שני ילדיהם...",
+    "erroneous": "...כשבנה, יהודית, משמרת אותם עד היום."
+  },
+  {
+    "id": "qwen32b_goldstein_fig6",
+    "model": "Qwen3-32B",
+    "error_type": "verb_gender_swap",
+    "faithful": "ישראל גולדשטיין הפיל לבדו, כשהוא חשוף להפגזות, ארבעה מטוסי קרב סוריים",
+    "erroneous": "גולדשטיין, מפקד פלגה בנ\"מ, הפעילה לבדה את העמדה תחת אש קלה והפיל ארבעה מטוסי קרב סוריים..."
+  },
+  {
+    "id": "nova_shoshana",
+    "model": "Amazon Nova Lite",
+    "error_type": "verb_gender_swap",
+    "faithful": "שושנה דמארי (31 במרץ 1923 -- 14 בפברואר 2006) הייתה זמרת ושחקנית ישראלית - ילידת תימן...",
+    "erroneous": "שושנה דמארי, שנולדה בתימן ועלה לישראל בגיל צעיר, הייתה זמרת ושחקנית מפורסמת..."
+  },
+  {
+    "id": "glm_moamedet_new50",
+    "model": "GLM-4.7-Flash",
+    "error_type": "homographic_gender_errors",
+    "faithful": "...בשל כך נפסלה מועמדתו של בן העדה הדרוזית.",
+    "erroneous": "...נפסלה מועמדת דרוזית עקב טעות בייעוד המכרז לערבים במקום לדרוזים."
+  },
+  {
+    "id": "qwen32b_sane_new50",
+    "model": "Qwen3-32B",
+    "error_type": "verb_gender_swap",
+    "faithful": "אני מתכבד להביא לאישור הכנסת... אני מוכן לגשת מייד להצבעה.",
+    "erroneous": "סגן שר הביטחון, א' סנה, הציג את ההצעה, והציעה להחיל את התיקון..."
+  },
+  {
+    "id": "qwen32b_ginzburg_new50",
+    "model": "Qwen3-32B",
+    "error_type": "verb_gender_swap",
+    "faithful": "איתן גינזבורג דיבר על חשיבות העברת סמכויות לרשויות מקומיות.",
+    "erroneous": "איתן גינזבורג דיברה על חשיבות העברת סמכויות לרשויות מקומיות."
+  },
+  {
+    "id": "qwen32b_popov_master14",
+    "model": "Qwen3-32B",
+    "error_type": "verb_gender_swap",
+    "faithful": "וובה פופוב... נולד במקור באי קרים.",
+    "erroneous": "וובה פופוב... נולדה במקור באי קרים.",
+    "reconstructed": true
+  },
+  {
+    "id": "glm_ash_master44",
+    "model": "Qwen3-32B",
+    "error_type": "verb_gender_swap",
+    "faithful": "גם פרופ' אש דרש לחגוג את חג פורים בהדרגה.",
+    "erroneous": "גם פרופ' אש דרשה לחגוג את חג פורים בהדרגה.",
+    "reconstructed": true
+  },
+  {
+    "id": "glm_author_master27",
+    "model": "GLM-4.7-Flash",
+    "error_type": "noun_gender_swap",
+    "faithful": "המחברת החליטה.",
+    "erroneous": "המחבר החליטה.",
+    "reconstructed": true
+  },
+  {
+    "id": "ministral_host_master32",
+    "model": "Ministral-3-14B",
+    "error_type": "noun_gender_swap",
+    "faithful": "המארחת, המתארת... המארחת יכולה להרשים את אורחיה.",
+    "erroneous": "המארחת, המתארת... המארח יכול להרשים את אורחיו.",
+    "reconstructed": true
+  },
+  {
+    "id": "dicta2.0_watson_finder",
+    "model": "DictaLM-2.0-Instruct",
+    "error_type": "verb_gender_swap",
+    "faithful": "מאז שהוּדָה ווטסון בפשע הנתעב שביצע, קסינג'ר מחקה את כל החשבונות החברתיים שלה...",
+    "erroneous": "למרות שהיא הודתה בחקירותיה שהיא לא אהבה את ווטס, היא נמנעה מלהזכיר את שמות אשתו ובנותיו..."
+  },
+  {
+    "id": "qwen14b_juan_finder",
+    "model": "Qwen3-14B",
+    "error_type": "verb_gender_swap",
+    "faithful": "חואן - כלב מקסים, עדין, טוב לב -יליד מאי 2019. חואן היפה כלב מתמסר ואוהב...",
+    "erroneous": "חואן, כלב מקסים שנולד במאי 2019, מתאפיין בדימוי נבון, רגיש ומעורר שמחה, ומחפשת בית שיבטח לו."
+  },
+  {
+    "id": "qwen14b_chupi_finder",
+    "model": "Qwen3-14B",
+    "error_type": "verb_gender_swap",
+    "faithful": "צ'ופי - גור בן כ-4 חודשים שנמצא משוטט לבדו כשהיה גור קטן והגיע להסגר עירוני.",
+    "erroneous": "צ'ופי, גור בן ארבע החודשים, נמצאה משוטטת לבדה, ומחפשת משפחה שיתן לה אהבה."
+  },
+  {
+    "id": "qwen14b_hason_finder",
+    "model": "Qwen3-14B",
+    "error_type": "verb_gender_swap",
+    "faithful": "חסון קטן ואהוב בן 6, כלבלב שכל כך מכור לאהבה",
+    "erroneous": "חסון, כלבלב בן 6 שמחפשת אהבה"
+  },
+  {
+    "id": "gptoss_chef_finder",
+    "model": "gpt-oss-20B",
+    "error_type": "noun_gender_swap",
+    "faithful": "הראשונה להתארח היא מסעדת לונא הנצרתית. השפית לונא זרייק תגיע לערב חגיגי...",
+    "erroneous": "הערב הראשון, ב-9.8, מתארח שף לונא זרייק ממסעדת לונא הנצרתית, ומביא את המטבח הנצרתי שלה לתל אביב..."
+  },
+  {
+    "id": "gptoss_husband_finder",
+    "model": "gpt-oss-20B",
+    "error_type": "noun_gender_swap",
+    "faithful": "...שם גם הכירה את בעלה גיארג מתיאש לוי ושם גם ניתנו לשניהם שמות עבריים.",
+    "erroneous": "היא פגשה את גיארג מתיאש לוי, שהפך לבעלתה, והשתתפה בתנועת הנוער הציוני..."
+  },
+  {
+    "id": "qwen14b_shoham_finder",
+    "model": "Qwen3-14B",
+    "error_type": "homographic_gender_errors",
+    "faithful": "\"אות בבאר\" מאת שהם סמיט",
+    "erroneous": "\"אות בבאר\" של שה סמיט"
+  },
+  {
+    "id": "qwen14b_pribar_finder",
+    "model": "Qwen3-14B",
+    "error_type": "construct_state_confusion",
+    "faithful": "את רשימת המועמדויות מוביל הסרט 'אסיה' (סרטה של רותי פרי בר)",
+    "erroneous": "הסרט 'אסיה', בבימויו של רותי פרי-בר"
+  },
+  {
+    "id": "gpt35_gibush_finder",
+    "model": "GPT-3.5-Turbo",
+    "error_type": "hebrew_root_pattern_confusion",
+    "faithful": "ראש הממשלה... קבע דיון מחר עם השרים הנ\"ל על מנת לגבש תוכנית ממשלתית אחידה.",
+    "erroneous": "ראש הממשלה... קבע דיון מחר על גיוס תוכנית ממשלתית אחידה."
+  },
+  {
+    "id": "gpt35_schechter_finder",
+    "model": "GPT-3.5-Turbo",
+    "error_type": "verb_template_agency_reversal",
+    "faithful": "בתקרית המדוברת, שכטר חשף את ישבנו בפני קהל של 20,000 בני נוער בהופעה.",
+    "erroneous": "עפר שכטר נחשף בפרובוקציה כבר בתחילת קריירתו ונחקר במשטרה."
+  }
+]

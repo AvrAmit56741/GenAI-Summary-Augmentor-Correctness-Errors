@@ -1,0 +1,9 @@
+morph,n,expected_types,share_listing_expected,base_rate,lift
+negation,85,sentence_negation,1.0,0.451,2.22
+number_digit,40,"number_swap,entity_date_swap,measure_unit_swap",1.0,0.741,1.35
+gender,12,"verb_gender_swap,noun_gender_swap,homographic_gender_errors",0.917,0.512,1.79
+tense,6,verb_tense_swap,1.0,0.464,2.16
+construct,1,construct_state_confusion,1.0,0.808,1.24
+prefix,2,morphological_connective_confusion,0.5,0.297,1.68
+root_pattern,10,hebrew_root_pattern_confusion,1.0,0.759,1.32
+entity,49,"entity_person_swap,entity_organization_swap,entity_location_swap,entity_event_swap,entity_title_swap",0.98,0.774,1.27

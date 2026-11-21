@@ -71,6 +71,21 @@ Literature from a web search on 2026-11-14, read from search snippets only: **re
 | **14 (D)** | **Hebrew tool-output guard:** a ReAct-style agent summarizes Hebrew articles it retrieves with tools; MorphEvalHeb checks each step | AgentHallu (EMNLP 2026), ProvenanceGuard ([2606.18037](https://arxiv.org/html/2606.18037)); no Hebrew agent-trajectory data exists | A new trace dataset | High | 💡 Future work |
 | **15 (E)** | **MorphEvalHeb as a GRPO reward** for a small Hebrew summarizer | No paper found that uses a faithfulness classifier as a GRPO reward for summaries; Posterior-GRPO ([2508.05170](https://arxiv.org/html/2508.05170v1)) is real but is about **code generation**, not text/summarization RL — its reward-hacking point is domain-general and plausibly transfers, but check before citing it for a summarization-specific claim. Lead 12 measures how exploitable ours is | GPU server, lead 12 | High | 💡 Future work |
 
+### 2c. Representation learning / activation engineering / DRL leads (2026-11-21)
+
+Literature: `paper/research/drl_steering_representation_literature.md`. Results: `docs/experiments.md` §20.
+
+| Rank | Lead | Novelty / cost | Status |
+|---|---|---|---|
+| **R1** | Layer-wise probing of error types in MorphEvalHeb vs base NeoDictaBERT (+ t-SNE/silhouette) | High / low | 🟢 Done: sentence level (4 rule types, §20) and word level with Dicta morphology labels (11 types, §21): morphology encoded (already in base), discarded at the end |
+| **R2** | Causal erasure of per-type directions (random control) | High / low | 🟢 Done: shared direction → chance; negation- and number-specific parts matter, agreement does not |
+| **R3** | Activation patching (faithful ↔ corrupted) to map layer × token per type | High / medium | 🟢 Done (§21, n=80): error on the edited word until ~L22, moved to CLS in the last 6 layers |
+| **R4** | Steering the metric with type directions (hide/create errors; transfer matrix) | Med-high / low | 💡 Partly covered by R2 |
+| **R5** | Morphology-edit attacker (search over inflection alternatives; optional RL) → attack success per type | High / low | 🟢 Done (§21): 93–99% of single-word gender/prefix/pronoun/definiteness edits missed (mostly grammatical, not factual) |
+| **R8** | ⚠️ **Single-error sensitivity** (found by R3) | — | 🔴 **Major limitation:** one wrong word (even a name/number) in a full summary flagged only 4% (§21). Next: same test for baselines; detection vs number of errors; decide paper framing |
+| **R6** | LEACE instead of mean-difference projection; SAE on best layer | Medium / medium | 💡 |
+| **R7** | GRPO/DPO with MorphEvalHeb as reward for a small Hebrew summarizer (DictaLM-3.0-1.7B cached); test morphology-specific reward hacking | High / high (GPU) | 🔭 Defer; = lead 15 (E) |
+
 **Done and in the paper:** difficulty curve (§7.4: 93% detection on single-family negatives, baselines ≤ 43%); robustness to faithful rewrites (§7.4: < 0.01 SD vs ROUGE-2 0.32 SD).
 
 | Priority | Lead | Status | Result |

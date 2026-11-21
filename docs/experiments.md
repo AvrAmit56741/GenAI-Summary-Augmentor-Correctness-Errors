@@ -487,4 +487,53 @@ Error-finding: 10 parallel subagents (25 rows each) applying the mandatory-gate 
 
 ---
 
+## 20. Where are error types represented inside MorphEvalHeb, and which directions does it use? (representation learning + activation engineering, 2026-11-21) — ✅ positive, partial (4 of 20 types labeled)
+
+**Literature / novelty:** `paper/research/drl_steering_representation_literature.md` (~30 papers, 9 ranked leads). Gap: error-type probing exists only for decoder LLMs/judges (Orgad et al. 2410.02707; "Inside the Unfair Judge" 2607.11871); no layer-wise probing or concept erasure of a fine-tuned faithfulness cross-encoder, and no Hebrew-encoder morphology probing.
+
+**Data:** 740 sentence-level (faithful, corrupted) pairs from `multisource_units.csv` (Injected part), stratified by listed error type (≤40 per type, ≤2 per article per type) → `paper/results/eval/layers_sample.csv`. Error type per sentence = rule-based `edit_kind()` (exp_translation.py): negation 95, number 141, agreement_suffix 57, definiteness 16, other 410, mixed 21. **LLM labeling into all 20 types is coded (`exp_layers.py label`) but blocked: Bedrock token expired.**
+
+**Method (`paper/results/eval/exp_layers.py`):** each sentence scored with the full article (max 3,072 tokens). Hidden states at all 28 layers of the fine-tuned MorphEvalHeb and the base `dicta-il/neodictabert` (CLS token, and mean over the summary-sentence tokens) → `cache/layers_emb_{ft,base}.npz`. Linear probes (logistic regression, 5-fold grouped by article). On these units MorphEvalHeb's own output: paired detection 0.936, flagged 0.49, false alarms 0.036.
+
+**Results 1 — probing** (`layers_probe.csv`, `layers_probe_by_type.csv`, `layers_type_encoding.csv`; `figures/layers_probe.png`, `figures/layers_tsne_{ft,base}.png`):
+- Faithful vs corrupted from the CLS token: fine-tuned 0.59 (layers 1–4) → 0.85 (L12) → **0.96 (L16–20)**; base model 0.60–0.73 at all layers. Fine-tuning builds the decision in layers ~10–16.
+- From the summary-sentence tokens, base and fine-tuned both reach ~0.95 from layer 8 (surface difference of the edited words, not a judgment).
+- Error type (probe on corrupted − faithful, 4 rule types, majority 0.46): ~0.75–0.86 in both models from the sentence tokens; from CLS only the fine-tuned model encodes it (0.78 vs base 0.45–0.6 at late layers).
+- Clustering: types separate most in early layers (cosine silhouette ~0.2 at L1–8, negation a distinct cluster) and merge late (~0.02 at L28) → late layers collapse types into one "unfaithful" signal.
+- Per type (fine-tuned CLS): negation and agreement already informative at L4 (0.72/0.63); definiteness and number later; all peak ~L20.
+
+**Results 2 — causal erasure** (`layers_erase_summary.csv`, `layers_erase_summary_orth.csv`, raw `cache/layers_erase*.jsonl`, `figures/layers_erase.png`): mean (corrupted − faithful) direction per type from half of the articles, projected out at all 28 layers, re-scored on the other half (148 units, ≤40 per type). Random-direction control: no change (±0.03).
+- **Shared "all types" direction: detection drops to chance** (paired 0.36–0.55 vs 0.85–0.98; flagged −0.28 to −0.85). One shared direction carries the decision causally.
+- Full type directions overlap it (cos 0.36–0.71) and shift all scores globally: erasing negation flags everything (false alarms 100%); erasing number/agreement flags nothing. Not selective.
+- **Type-specific part (shared component removed):** erasing the negation-specific part cuts flagged negation sentences 0.85 → 0.32 (−0.52) vs −0.22/−0.14/+0.02 on other types; number-specific: number 0.70 → 0.35 (−0.35) vs −0.07 to −0.18. Agreement-specific: no effect (+0.05). Paired ranking barely changes (confidence lowered, not reversed). Definiteness n=6 test → not interpretable.
+
+**Conclusion:** MorphEvalHeb decides in layers ~10–16 along one shared "unfaithful" direction, plus small type-specific components that causally matter for negation and number but not for gender/number agreement suffixes. Novel for faithfulness metrics; supports a paper/thesis section "What does a Hebrew faithfulness metric know and what does it use?".
+
+**Limitations:** only 4 rule-defined types (lexical by construction, so early-layer type separation is partly expected); n=16–40 per type; erasure is rank-1 mean-difference projection (not LEACE); one model. **Next:** LLM labels for all 20 types (refresh Bedrock creds; ~740 Haiku calls), LEACE, activation patching, steering.
+
+---
+
+## 21. Hebrew-morphology tests: word-level probing, morphology attacker, activation patching, single-error sensitivity (2026-11-21) — ⚠️ important, partly negative
+
+All local (no API). Edit types from Dicta's analyzer `dicta-il/dictabert-joint` (lemma, POS, gender/number/tense/person, prefixes, smixut) via `paper/results/eval/exp_morph_labels.py`; parses cached in `cache/morph_parse.jsonl`. Label validity: each morphology label comes from summaries listing the matching injected type 1.2–2.2× more often than chance (`layers_morph_validation.csv`); spot-check of 12 word pairs after two rule fixes ≈ 10/12 correct (labels are rule-based, not human).
+
+**Test 1 — word-level probing** (`exp_layers_words.py`; 1,170 changed words in 1,004 sentences, ≤120 per type; `layers_words_probe.csv`, `layers_words_recall.csv`, `figures/layers_words_probe.png`, `figures/layers_words_tsne_{ft,base}.png`). Probe on (corrupted − faithful) word vector, 11 types (chance 0.09), 5-fold grouped by article. Balanced accuracy peaks ~0.5–0.58 at layers 8–12 in BOTH base and fine-tuned models; fine-tuning adds ≤0.07, and at layer 28 the fine-tuned model loses type structure (silhouette −0.07 vs base 0.02). Per-type recall at layer 8 (fine-tuned): negation 0.93, number 0.77, pronoun suffix 0.75, gender 0.69, definiteness 0.68, tense 0.67, prefix 0.56, entity 0.38, letter swap 0.26, root pattern 0.24, construct 0.23 (n=22). → Hebrew morphology changes ARE encoded (already in the pretrained encoder), root-pattern / construct-state / one-letter changes only weakly.
+
+**Test 2 — morphology attacker** (`exp_morph_attack.py`; 200 faithful reference sentences, proportional by source; 1,723 single-word edits whose new form occurs in the benchmark corpus; ≤3 per type per sentence; `morph_attack_summary.csv`, `morph_attack_scored.csv`, `figures/morph_attack.png`). Faithful originals flagged: 0%. Missed (p(faithful) ≥ 0.5): definiteness 99% [98,100], prefix 98% [97,99], gender 94% [92,96] (verbs 93%, adj 95%), pronoun suffix 93% [87,97]; negation control 14% [9,20]. **Manual reading of 24 missed edits (by Claude, not a human):** gender 0/8 change meaning (agreement errors with the subject explicit, e.g. "וילנאי ציינה"); prefix ~1–2/8 (e.g. זכתה בהצלחה); pronoun ~2–3/8 (e.g. "תעודת הזהות שלה" for a man). Most attacker edits are grammatical, not factual.
+
+**Test 3 — activation patching** (`exp_patching.py`; minimal pairs = faithful sentence with ONE typed word changed to its injected form; 80 detected pairs: entity 20, letter swap 20, root pattern 16, gender 12, number 10; `patching_summary.csv`, `cache/patching.jsonl`, `figures/patching.png`). Restoration from copying the faithful state: edited word 1.00 (L1) → 0.83 (L13) → 0.57 (L22) → 0; decision token (CLS) ~0 until L19, 0.40 at L25, 1.00 at L28; article tokens ~0 everywhere; other summary words ≤0.18 (higher for gender/number in mid layers: agreement spreads to neighbouring words). → The error is carried on the edited word until ~layer 22 and moved to the decision token only in the last ~6 layers; the article's representation never carries the decision.
+
+**Single-error sensitivity — the key finding** (`exp_single_edit_summary.py`, `single_edit_summary.csv`). Of the minimal pairs, the share MorphEvalHeb flags at sentence level: construct 0/15, prefix 0/23, pronoun 0/83, tense 1/52, definiteness 1/58, gender 12%, number 14%, entity 20%, root pattern 20%, letter swap 28%. Missed examples are clear factual errors (rabbi Amital → "הרב נאמן", ממלכת ישראל → ממלכת ארם, 30 → 60 years) scored p = 1.00. Placed into the full faithful reference summary (realistic use; 203 summaries, faithful version not flagged): **flagged 4% overall** (entity 14%, letter swap 13%, number 4%, root 4%, gender/tense/prefix/pronoun/definiteness/construct 0%); only 7% even lower the score by >0.01.
+
+**Conclusions:**
+1. MorphEvalHeb's high detection on Injected (~94–100% per family) depends on summaries carrying many errors (~8 edited sentences, ~6 types). **One wrong word in a summary — even a swapped name or number — is almost never flagged (4%).** This is a major limitation; the paper must not claim single-error sensitivity, and the benchmark (multi-error negatives) overstates it.
+2. "Knows but doesn't use": morphology changes are encoded in the representations (test 1), but the decision ignores them unless many errors accumulate (tests 2–3).
+3. Mechanism (new for faithfulness metrics): error evidence sits on the edited word through ~L22, is moved to CLS in the last layers along one shared direction (§20).
+
+**Open / next:** (a) compare baselines (SummaC, FactCG, LLM judge) on the same 203 single-error summaries — if they also miss them, it is a benchmark-wide finding, not ours alone; (b) detection vs number of errors (1, 2, 4, 8) curve; (c) human check of a sample of single edits; (d) fine-tune on single-error negatives (GPU server).
+
+---
+
+**Baselines on single-error summaries (2026-11-22, stopped at 140/203 by user; `exp_single_edit_baselines.py`, `single_edit_baselines_summary.csv`, `figures/single_vs_multi.png`).** Threshold = 5th pct of each metric's gold scores (5% FA). Flagged, single vs. multi (Injected): MorphEvalHeb 12% [8–19] vs 100%; FactCG 6% [3–12] vs 12%; SummaC-ZS 6% [3–11] vs 17%. Score below gold for single: MorphEvalHeb 84%, FactCG 13% (83% exact ties), SummaC 45% (chance). Per kind n≈14, too small to rank. Conclusion: no metric catches one wrong word in a full summary; MorphEvalHeb registers it most often (score drops) but rarely crosses the threshold. The gap single vs. multi is a benchmark/metric-wide finding, not MorphEvalHeb-specific. Unscored: last 63 items; LLM judge (Bedrock creds expired).
+
 ## Proposed, not yet run (awaiting prioritization — do not auto-run when the GPU frees up; wait for an explicit go-ahead)

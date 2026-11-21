@@ -32,6 +32,8 @@
 \usepackage{graphicx}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 % Figures live in ../figures (relative to this file); also try figures/ for root-relative builds
 \graphicspath{{../figures/}{figures/}}
 
@@ -202,7 +204,7 @@ To ground the taxonomy in real model behavior, we generated about 300 summaries 
 
 Three criteria guided the taxonomy construction process: (1) \textbf{Morphological Dependency}, where the error arises from Hebrew's inflectional system (e.g., gender, number, binyan patterns, prefixes, and suffixes); (2) \textbf{Syntactic Uniqueness}, where the error involves Hebrew-specific constructions such as the construct state (\textit{smichut}); and (3) \textbf{Morphological Ambiguity}, where factual errors emerge from unclear word boundaries caused by affixation and morphological attachment.
 
-Each candidate error type was independently evaluated by a Hebrew linguist against these criteria, with disagreements resolved through discussion. The resulting taxonomy (Figure~\ref{fig:taxonomy}) comprises 26 error families in three groups: (i) 17 Hebrew-specific morpho-syntactic families (e.g., \textit{verb\_gender\_swap}, \textit{construct\_state\_confusion}, \textit{hebrew\_root\_pattern\_confusion}, \textit{morphological\_connective\_confusion}); (ii) 3 cross-linguistic logical families (\textit{sentence\_negation}, \textit{number\_swap}, \textit{measure\_unit\_swap}); and (iii) 6 entity substitutions (person, location, organization, title, event, and date). Twenty families are operationalized in our augmentation pipeline (Section~\ref{sec:augmentation}); the remaining six morpho-syntactic families are defined but not yet used for generation. Each operationalized family is a blueprint for one controlled transformation of an otherwise faithful claim.
+Each candidate error type was independently evaluated by a Hebrew linguist against these criteria, with disagreements resolved through discussion. The resulting taxonomy (Figure~\ref{fig:taxonomy}) comprises 26 error families in three groups: (i) 17 Hebrew-specific morpho-syntactic families (e.g., \textit{verb\_gender\_swap}, \textit{construct\_state\_confusion}, \textit{hebrew\_root\_pattern\_confusion}, \textit{morphological\_connective\_confusion}); (ii) 3 cross-linguistic logical families (\textit{sentence\_negation}, \textit{number\_swap}, \textit{measure\_unit\_swap}); and (iii) 6 entity substitutions (person, location, organization, title, event, and date). Twenty families are operationalized in our augmentation pipeline (Section~\ref{sec:augmentation}); the remaining six morpho-syntactic families are defined but not yet used for generation. Each operationalized family is a blueprint for one controlled transformation of an otherwise faithful claim. As preliminary evidence that these families reflect distinguishable internal model structure rather than only a human-imposed labeling scheme, Appendix~\ref{app:repr_geometry} probes a Hebrew-native model's hidden states on confirmed errors from several of these families.
 
 \section{Data Augmentation Pipeline}
 Figure~\ref{fig:pipeline} gives an overview of the augmentation pipeline.
@@ -232,18 +234,38 @@ Let $T$ be the total number of candidate edits for a summary. A negative summary
 of these edits, where the corruption rate $\rho$ controls how heavily a summary is corrupted ($\rho=0.9$ in all experiments). We enumerate allocations of the $m$ edits to claims (at most $20{,}000$), applying at most one edit per family to a claim and never combining negation with another edit on the same claim, and substitute the edited claims back into the summary. Each negative inherits the set $E$ of families injected into it.
 
 \paragraph{Diversity filter.}
-To avoid near-duplicate negatives, we measure the surface overlap $o(a,b)$ between two summaries as the larger of their word-unigram and word-bigram Jaccard similarities. Among the first 51 recomposed candidates, a candidate $S'$ with error set $E'$ is kept only if $o(S',S)\le\theta(S')$ and $o(S',S'')\le\theta(S')$ for every candidate $S''$ already kept, with threshold
-\begin{equation}
-  \theta(S') = \theta_0 + 0.0013\,|E'|^{0.75},
-  \label{eq:threshold}
-\end{equation}
-where $\theta_0=0.85$. The small allowance grows with the number of injected families, since each additional error is a further small edit to the same summary. At most seven negatives are kept per reference summary.
-% CHECK (code): in utils.filter_diverse_summaries the threshold is updated
-% cumulatively (max_same = max_same + ...) inside the loop, so it grows with
-% every candidate examined, not per candidate as in Eq. (2). Fix the code to
-% use a per-candidate threshold, or describe the actual behavior here.
-% CHECK (code): if no candidate passes the filter, all candidates are kept
-% unfiltered (then truncated to seven). Decide whether to report this fallback.
+To avoid near-duplicate negatives, we measure the surface overlap $o(a,b)$ between two summaries as the larger of their word-unigram and word-bigram Jaccard similarities. We examine the at most 51 recomposed candidates in generation order and maintain a running threshold $\theta$, initialized to $\theta_0=0.85$; before testing candidate $S'$ with error set $E'$, $\theta$ is incremented by $0.0013\,|E'|^{0.75}$, so the allowance grows both with how many families a candidate injects and with how many candidates have already been examined. $S'$ is kept only if $o(S',S)\le\theta$ and $o(S',S'')\le\theta$ for every candidate $S''$ already kept. If no candidate survives this filter, we fall back to keeping all recomposed candidates unfiltered. At most seven negatives are kept per reference summary. Algorithm~\ref{alg:negative} gives the full negative-summary generation and filtering procedure.
+
+\begin{algorithm}[t]
+\caption{Negative summary generation and diversity filtering}
+\label{alg:negative}
+\begin{algorithmic}[1]
+\Require reference summary $S$, source article $A$, corruption rate $\rho$, base threshold $\theta_0$
+\State $c_1,\dots,c_n \gets \textsc{Decompose}(S)$ \Comment{sentence-level claims}
+\State $\mathcal{E} \gets \bigcup_{j=1}^{n} \textsc{ProposeEdits}(c_j, A)$ \Comment{LLM, NER, or rule, per family}
+\State $T \gets |\mathcal{E}|$;\quad $m \gets \max(1, \lfloor \rho\, T \rfloor)$
+\State $\mathcal{A} \gets \textsc{EnumerateAllocations}(\mathcal{E}, m)$ \Comment{$\le\! 20{,}000$; $\le\! 1$ edit/family per claim; no edit with negation on same claim}
+\State $C \gets \langle\rangle$ \Comment{candidate negatives, in generation order}
+\For{each allocation $\alpha \in \mathcal{A}$}
+    \State $S' \gets \textsc{Recompose}(S, \alpha)$
+    \State append $(S', E(\alpha))$ to $C$
+    \If{$|C| > 50$}
+        \State \textbf{break}
+    \EndIf
+\EndFor
+\State $\theta \gets \theta_0$;\quad $K \gets \emptyset$ \Comment{kept negatives}
+\For{each $(S', E') \in C$}
+    \State $\theta \gets \theta + 0.0013\,|E'|^{0.75}$ \Comment{cumulative, not reset per candidate}
+    \If{$o(S',S) \le \theta$ \textbf{and} $o(S',S'') \le \theta\ \forall (S'',\cdot) \in K$}
+        \State $K \gets K \cup \{(S', E')\}$
+    \EndIf
+\EndFor
+\If{$K = \emptyset$}
+    \State $K \gets C$ \Comment{fallback: no candidate survived the filter}
+\EndIf
+\State \Return the first $\min(7, |K|)$ elements of $K$
+\end{algorithmic}
+\end{algorithm}
 
 \paragraph{Positive summaries.}
 Faithful positives are generated by an OpenAI GPT model prompted to rewrite a reference summary twice, once by back-translation through English and once by paraphrasing, while preserving every entity, number, negation, and causal connective as well as gender, tense, definiteness, and construct-state relations.
@@ -441,6 +463,8 @@ We presented MorphEvalHeb, a Hebrew-native factual-consistency framework built o
 
 \textbf{Data and scope.} The Injected part of the benchmark covers 303 MAFAT articles from five sources; more than half of the benchmark is the Natural part, mFACT data translated by an LLM, which has much shorter summaries and shares its origin with the mFACT-He baseline. The error statistics in Figure~\ref{fig:llm_detected_errors} are produced automatically. We study summarization only, with a single LLM-judge model (GPT-4o-mini).
 
+\textbf{Representation-geometry pilot.} The hidden-state analysis in Appendix~\ref{app:repr_geometry} uses a single reader model (DictaLM-3.0-1.7B-Instruct) and 27 examples across 7 error families; it is not replicated across models and should be read as preliminary evidence, not an established property of Hebrew-processing LLMs in general.
+
 \section*{Ethics Statement}
 All source documents are drawn from the public MAFAT Hebrew summarization dataset \citep{mafat_dataset} (news, Wikipedia, Weizmann Institute, Knesset, and High Court of Justice text) and from the mFACT Hebrew translations \citep{qiu2023detecting}; neither contains personal or sensitive information beyond what is already public. No new human-subject data collection was performed: the taxonomy was validated by a Hebrew linguist and a native Hebrew speaker, as described in Section~\ref{sec:taxonomy}, and the benchmark labels follow automatically from the augmentation pipeline (Section~\ref{sec:augmentation}) rather than from crowdsourced annotation. Data generation and the baseline LLM judges rely on commercial LLM APIs (OpenAI GPT and Google Gemini models); we use them only to rewrite or score Hebrew text already present in the source datasets, not to generate content about individuals.
 
@@ -521,5 +545,29 @@ FactCG, Nova Micro MT & \shortstack{0.81\\{\scriptsize[0.76,0.86]}} & \shortstac
 \end{table*}
 
 \paragraph{Translation erasure.} On 260 Injected unfaithful summaries (stratified by source, summary length, edit size, and number of injected error families, with all 20 families covered), we translated each unfaithful summary and its faithful reference and tested, for every edited sentence, whether the injected error survives in English. A negation is lost in 27\% [22, 34] of negation edits with Haiku~4.5 and 19\% [15, 25] with Nova Micro when whole summaries are translated (flag precision 1.00 and 0.89 on a sample spot-checked by hand), and in 37\% [31, 44] when translating sentence by sentence (TranslateGemma-12B). Exact string comparison is unreliable for whole-document translation (only about 25\% of \emph{unchanged} sentences are translated identically in the two documents), so we report only this content-based check rather than raw edit distance.
+
+\section{Representation Geometry of Error Families}
+\label{app:repr_geometry}
+As preliminary evidence that the taxonomy (Section~\ref{sec:taxonomy}) tracks real internal model structure rather than only a human-imposed labeling scheme, we test whether error families occupy distinguishable directions in a model's hidden-state space. We curate 27 (faithful, erroneous) sentence pairs from confirmed findings across this project's evaluated models, spanning 7 of the taxonomy's families (verb\_gender\_swap $n{=}10$, noun\_gender\_swap $n{=}7$, homographic\_gender\_errors $n{=}3$, hebrew\_root\_pattern\_confusion, verb\_template\_agency\_reversal, and construct\_state\_confusion $n{=}2$ each, morphological\_connective\_confusion $n{=}1$), and extract last-token hidden states at every layer of DictaLM-3.0-1.7B-Instruct -- the only Hebrew-native model in our evaluated roster -- for both sentences in each pair. At each layer we form the difference vector $d=h(\text{erroneous})-h(\text{faithful})$ and compare its cosine similarity within the same error family against different families. The within/between gap peaks at layer 24 of 28 ($+0.096$ over all 7 families, $+0.136$ restricted to the two largest families), and a label-permutation test (10,000 shuffles) confirms it exceeds chance ($p{=}0.0021$ and $p{=}0.0089$ respectively; Figure~\ref{fig:repr_geometry}b). A binary faithful-vs-erroneous probe at the same layers stays weak (peak 64.8\%, chance 50\%; Figure~\ref{fig:repr_geometry}a), indicating this is not one generic ``wrongness'' direction but structure specific to error type.
+
+\textbf{What this does and does not compare.} The result above could be misread as the trivial observation that different sentences produce different hidden states -- true, but uninteresting, since a sentence about a lost dog obviously differs from one about a Knesset debate. That is not what is tested. We compare \emph{shift vectors} $d=h(\text{erroneous})-h(\text{faithful})$, the direction a sentence moves when its faithful version is turned into its erroneous version, between example pairs that may come from entirely unrelated topics and source models, and ask whether that direction is more similar when the two examples share an error \emph{mechanism} than when they do not -- a question that could have come back negative, and the simpler binary probe above mostly did (Figure~\ref{fig:confound_robustness}a gives a schematic of this distinction).
+
+We rule out a topic/lexical confound directly: four of the ten verb\_gender\_swap pairs are near-identical shelter-listing boilerplate, yet their pairwise similarity ($+0.165$) is \emph{lower} than between verb\_gender\_swap pairs on completely unrelated topics ($+0.212$; Figure~\ref{fig:confound_robustness}b) -- if topic overlap drove the effect, the same-topic pairs should be the most similar of the three, and they are not -- and the gap survives with three of the four dog examples removed ($+0.083$, $p{=}0.012$).
+
+This result is scoped narrowly. All hidden states come from one Hebrew-native reader model processing sentences whose errors were originally produced by several different models, so it shows how one model represents these error types, not that every model that produces them does so identically. With 27 examples across 7 families (one a singleton), this is a pilot, not a powered study, and we have not replicated it on another model. We leave cross-model replication and a larger, more balanced sample to future work.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_repr_geometry_pilot.png}
+\caption{Error-family geometry in DictaLM-3.0-1.7B-Instruct hidden states ($n{=}27$ pairs across 7 taxonomy families). (a) Leave-one-pair-out binary faithful-vs-erroneous probe accuracy, per layer. (b) Mean cosine similarity of (erroneous$-$faithful) direction vectors, within- vs.\ between-family, per layer, with permutation-test $p$-values at the peak layer. (c) PCA of the layer-24 difference vectors, colored by taxonomy family.}
+\label{fig:repr_geometry}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_confound_robustness.png}
+\caption{Robustness check for the family-geometry result. (a) What is and is not being compared: not raw topic similarity between sentences (trivial), but the similarity of the (erroneous$-$faithful) shift vector between examples that may share nothing but the error mechanism. (b) Cosine similarity within verb\_gender\_swap, split by whether the pair is same-topic (dog-shelter listings), mixed, or on unrelated topics -- same-topic pairs are not the most similar, ruling out a topic/lexical confound.}
+\label{fig:confound_robustness}
+\end{figure*}
 
 \end{document}
