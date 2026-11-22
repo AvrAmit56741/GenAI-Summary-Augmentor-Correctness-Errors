@@ -16,6 +16,8 @@ GROUPS = [
     ("Embedding similarity", ["BERTScore (heBERT)", "BERTScore (AlephBERT)"]),
     ("Entity hallucination", ["ENFS"]),
     ("NLI", ["SummaC-ZS"]),
+    ("Trained fact checker (cross-lingual)", ["FactCG"]),
+    ("Decision model (TypeSafe Jev, alpha API)", ["Jev"]),
 ]
 DISPLAY = {"SummaC-ZS": "SummaC-ZS (mDeBERTa)", "ENFS": "ENFS (entity overlap)"}
 PENDING = [("NLI", "SummaC-ZS (mDeBERTa)", "0.006"), ("Trained classifier", "mFACT-He", "0.529"),

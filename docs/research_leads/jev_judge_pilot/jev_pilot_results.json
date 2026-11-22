@@ -1,0 +1,1402 @@
+[
+  {
+    "index": "",
+    "label": "contradiction",
+    "source": "Israel_Hayom",
+    "premise_len": "",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.02
+        }
+      },
+      "usage": {
+        "input_tokens": 4737,
+        "output_tokens": 22,
+        "cost": 0.000198954,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.000198954,
+          "upstream_inference_prompt_cost": 0.000198954,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351451-nyarKugieWgXtE5Km50j",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "3589.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "233.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.06
+        }
+      },
+      "usage": {
+        "input_tokens": 600,
+        "output_tokens": 22,
+        "cost": 2.52e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 2.52e-05,
+          "upstream_inference_prompt_cost": 2.52e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351452-jrA0JZ1y8HX4zf7qtbtH",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "6337.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "270.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.05
+        }
+      },
+      "usage": {
+        "input_tokens": 652,
+        "output_tokens": 22,
+        "cost": 2.7384e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 2.7384e-05,
+          "upstream_inference_prompt_cost": 2.7384e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351452-KqBlb0Y2KDKiZczrRl2E",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1057.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "287.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.02
+        }
+      },
+      "usage": {
+        "input_tokens": 662,
+        "output_tokens": 22,
+        "cost": 2.7804e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 2.7804e-05,
+          "upstream_inference_prompt_cost": 2.7804e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351453-ykdCJk9ggy8HNViZP0qc",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "7497.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "541.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.05
+        }
+      },
+      "usage": {
+        "input_tokens": 862,
+        "output_tokens": 22,
+        "cost": 3.6204e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 3.6204e-05,
+          "upstream_inference_prompt_cost": 3.6204e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351453-93DexUWbZm3Z82xIpMya",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "411.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "842.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.14
+        }
+      },
+      "usage": {
+        "input_tokens": 1086,
+        "output_tokens": 22,
+        "cost": 4.5612e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 4.5612e-05,
+          "upstream_inference_prompt_cost": 4.5612e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351454-ib78AIfM7gZ0F97bVojL",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1302.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1232.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.14
+        }
+      },
+      "usage": {
+        "input_tokens": 1368,
+        "output_tokens": 22,
+        "cost": 5.7456e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 5.7456e-05,
+          "upstream_inference_prompt_cost": 5.7456e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351454-XTsmvr6VY5BnPnNW3vve",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "4953.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1197.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.05
+        }
+      },
+      "usage": {
+        "input_tokens": 1373,
+        "output_tokens": 22,
+        "cost": 5.7666e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 5.7666e-05,
+          "upstream_inference_prompt_cost": 5.7666e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351455-U6o6z3Bev2PNOVyodbka",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "152.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1067.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.64
+        }
+      },
+      "usage": {
+        "input_tokens": 1295,
+        "output_tokens": 22,
+        "cost": 5.439e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 5.439e-05,
+          "upstream_inference_prompt_cost": 5.439e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351456-zCYQrm2CT1l338j5yPm4",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "4656.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2048.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.02
+        }
+      },
+      "usage": {
+        "input_tokens": 1963,
+        "output_tokens": 22,
+        "cost": 8.2446e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 8.2446e-05,
+          "upstream_inference_prompt_cost": 8.2446e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351456-fJ8ezwTD6Ia8agWrnkJp",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1888.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1527.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.02
+        }
+      },
+      "usage": {
+        "input_tokens": 1629,
+        "output_tokens": 22,
+        "cost": 6.8418e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 6.8418e-05,
+          "upstream_inference_prompt_cost": 6.8418e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351457-Evzfinc2Yxt5Pvj8tgip",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "3446.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1638.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.27
+        }
+      },
+      "usage": {
+        "input_tokens": 1629,
+        "output_tokens": 22,
+        "cost": 6.8418e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 6.8418e-05,
+          "upstream_inference_prompt_cost": 6.8418e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351457-ESFDZXGPJWmA4U0YIz63",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1197.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1639.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.27
+        }
+      },
+      "usage": {
+        "input_tokens": 1639,
+        "output_tokens": 22,
+        "cost": 6.8838e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 6.8838e-05,
+          "upstream_inference_prompt_cost": 6.8838e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351458-jd6y9L2R7LhAlMIQDhov",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "5888.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2343.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.12
+        }
+      },
+      "usage": {
+        "input_tokens": 2211,
+        "output_tokens": 22,
+        "cost": 9.2862e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 9.2862e-05,
+          "upstream_inference_prompt_cost": 9.2862e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351458-yOtWhIQIQccT7t45foVP",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1195.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2656.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.04
+        }
+      },
+      "usage": {
+        "input_tokens": 2422,
+        "output_tokens": 22,
+        "cost": 0.000101724,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.000101724,
+          "upstream_inference_prompt_cost": 0.000101724,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351459-SL4jvKFnyyjVWZXgZUDK",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "4836.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2597.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.12
+        }
+      },
+      "usage": {
+        "input_tokens": 2372,
+        "output_tokens": 22,
+        "cost": 9.9624e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 9.9624e-05,
+          "upstream_inference_prompt_cost": 9.9624e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351459-9yTI7Jtdlqcr0LqY9ehB",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "2445.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2815.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.2
+        }
+      },
+      "usage": {
+        "input_tokens": 2595,
+        "output_tokens": 22,
+        "cost": 0.00010899,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.00010899,
+          "upstream_inference_prompt_cost": 0.00010899,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351460-aOAEVQNRJ0wrelRc4pmU",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "3564.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "567.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.7
+        }
+      },
+      "usage": {
+        "input_tokens": 845,
+        "output_tokens": 22,
+        "cost": 3.549e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 3.549e-05,
+          "upstream_inference_prompt_cost": 3.549e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351460-cGACwy9UwlOQVZ61St4W",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "5433.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "682.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.54
+        }
+      },
+      "usage": {
+        "input_tokens": 936,
+        "output_tokens": 22,
+        "cost": 3.9312e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 3.9312e-05,
+          "upstream_inference_prompt_cost": 3.9312e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351461-Gc9Rcw9PmUonGsvtXhJr",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "3027.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "459.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.46
+        }
+      },
+      "usage": {
+        "input_tokens": 781,
+        "output_tokens": 22,
+        "cost": 3.2802e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 3.2802e-05,
+          "upstream_inference_prompt_cost": 3.2802e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351462-HWTsuPGfzF9O8YMZvG0R",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1761.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "711.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.4
+        }
+      },
+      "usage": {
+        "input_tokens": 1016,
+        "output_tokens": 22,
+        "cost": 4.2672e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 4.2672e-05,
+          "upstream_inference_prompt_cost": 4.2672e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351462-LUC0L6mVE0i34IVT8VDJ",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "5414.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "974.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.47
+        }
+      },
+      "usage": {
+        "input_tokens": 1179,
+        "output_tokens": 22,
+        "cost": 4.9518e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 4.9518e-05,
+          "upstream_inference_prompt_cost": 4.9518e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351463-o7jPDhlWD9N3FRV1wg36",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "759.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "1183.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.72
+        }
+      },
+      "usage": {
+        "input_tokens": 1373,
+        "output_tokens": 22,
+        "cost": 5.7666e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 5.7666e-05,
+          "upstream_inference_prompt_cost": 5.7666e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351463-dxaazZdvx2yLhfAl1xoP",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "2051.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "1176.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.85
+        }
+      },
+      "usage": {
+        "input_tokens": 1363,
+        "output_tokens": 22,
+        "cost": 5.7246e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 5.7246e-05,
+          "upstream_inference_prompt_cost": 5.7246e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351464-PEgE8eLJtgJX0ZCLXB1W",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "2623.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "1151.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.69
+        }
+      },
+      "usage": {
+        "input_tokens": 1364,
+        "output_tokens": 22,
+        "cost": 5.7288e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 5.7288e-05,
+          "upstream_inference_prompt_cost": 5.7288e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351464-TikBecTBhHViqTiiEH7q",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "4284.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "1487.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.92
+        }
+      },
+      "usage": {
+        "input_tokens": 1620,
+        "output_tokens": 22,
+        "cost": 6.804e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 6.804e-05,
+          "upstream_inference_prompt_cost": 6.804e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351465-dwbI4v7RHVqtFowVtEew",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "569.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "1943.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.19
+        }
+      },
+      "usage": {
+        "input_tokens": 1953,
+        "output_tokens": 22,
+        "cost": 8.2026e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 8.2026e-05,
+          "upstream_inference_prompt_cost": 8.2026e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351465-M1QS7RbOTPcVcWHqDJKb",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "5039.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "1640.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.84
+        }
+      },
+      "usage": {
+        "input_tokens": 1742,
+        "output_tokens": 22,
+        "cost": 7.3164e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 7.3164e-05,
+          "upstream_inference_prompt_cost": 7.3164e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351466-qQPArz6PH6CbnKOk0H1Z",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "195.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "1452.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.52
+        }
+      },
+      "usage": {
+        "input_tokens": 1660,
+        "output_tokens": 22,
+        "cost": 6.972e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 6.972e-05,
+          "upstream_inference_prompt_cost": 6.972e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351466-D5khmsYzulI16OMrA4Jk",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "4036.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "2500.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.95
+        }
+      },
+      "usage": {
+        "input_tokens": 2338,
+        "output_tokens": 22,
+        "cost": 9.8196e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 9.8196e-05,
+          "upstream_inference_prompt_cost": 9.8196e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351467-rt7AStnYbfFcAveGzJ61",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "4871.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "2255.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.22
+        }
+      },
+      "usage": {
+        "input_tokens": 2172,
+        "output_tokens": 22,
+        "cost": 9.1224e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 9.1224e-05,
+          "upstream_inference_prompt_cost": 9.1224e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351467-aRPP4uFHBYHe1eAfDFcD",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "3081.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "2674.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.73
+        }
+      },
+      "usage": {
+        "input_tokens": 2453,
+        "output_tokens": 22,
+        "cost": 0.000103026,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.000103026,
+          "upstream_inference_prompt_cost": 0.000103026,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351468-405NByMYYatW0KDtOzN4",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "5971.0",
+    "label": "entailment",
+    "source": "",
+    "premise_len": "2643.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.67
+        }
+      },
+      "usage": {
+        "input_tokens": 2508,
+        "output_tokens": 22,
+        "cost": 0.000105336,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.000105336,
+          "upstream_inference_prompt_cost": 0.000105336,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351468-550cUvgkIlodHEuSQDP1",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "",
+    "label": "contradiction",
+    "source": "Wikipedia",
+    "premise_len": "",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.07
+        }
+      },
+      "usage": {
+        "input_tokens": 5123,
+        "output_tokens": 22,
+        "cost": 0.000215166,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.000215166,
+          "upstream_inference_prompt_cost": 0.000215166,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351469-GR8AJq8N6Giwfs57wM2a",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "4261.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "177.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.58
+        }
+      },
+      "usage": {
+        "input_tokens": 546,
+        "output_tokens": 22,
+        "cost": 2.2932e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 2.2932e-05,
+          "upstream_inference_prompt_cost": 2.2932e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351470-H6vdD6ku1z2GNSsFJJNy",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1470.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "382.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.07
+        }
+      },
+      "usage": {
+        "input_tokens": 730,
+        "output_tokens": 22,
+        "cost": 3.066e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 3.066e-05,
+          "upstream_inference_prompt_cost": 3.066e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351470-qYrWnsqFOnlDfXbTVE7U",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "6340.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "250.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.05
+        }
+      },
+      "usage": {
+        "input_tokens": 640,
+        "output_tokens": 22,
+        "cost": 2.688e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 2.688e-05,
+          "upstream_inference_prompt_cost": 2.688e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351471-HcH3vKK6iJ1PXxPmBAil",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "5971.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "348.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.03
+        }
+      },
+      "usage": {
+        "input_tokens": 716,
+        "output_tokens": 22,
+        "cost": 3.0072e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 3.0072e-05,
+          "upstream_inference_prompt_cost": 3.0072e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351471-6v8F6hWgoe231Qakbfvv",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1055.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "985.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.08
+        }
+      },
+      "usage": {
+        "input_tokens": 1174,
+        "output_tokens": 22,
+        "cost": 4.9308e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 4.9308e-05,
+          "upstream_inference_prompt_cost": 4.9308e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351472-OWxAgGDhDKXMPo5hSicw",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "1653.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1159.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.29
+        }
+      },
+      "usage": {
+        "input_tokens": 1294,
+        "output_tokens": 22,
+        "cost": 5.4348e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 5.4348e-05,
+          "upstream_inference_prompt_cost": 5.4348e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351472-4GKcoOGzugKhdMtT7Ja6",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "2127.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1074.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.21
+        }
+      },
+      "usage": {
+        "input_tokens": 1233,
+        "output_tokens": 22,
+        "cost": 5.1786e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 5.1786e-05,
+          "upstream_inference_prompt_cost": 5.1786e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351473-8m5eotYmHe7kK0PXhE6a",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "4539.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "877.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.06
+        }
+      },
+      "usage": {
+        "input_tokens": 1154,
+        "output_tokens": 22,
+        "cost": 4.8468e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 4.8468e-05,
+          "upstream_inference_prompt_cost": 4.8468e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351473-mRAf7ULcFdPGXdXKU19o",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "5608.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1891.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.03
+        }
+      },
+      "usage": {
+        "input_tokens": 1862,
+        "output_tokens": 22,
+        "cost": 7.8204e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 7.8204e-05,
+          "upstream_inference_prompt_cost": 7.8204e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351474-EGB9JwUNiCVj81z17yBZ",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "315.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1663.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.19
+        }
+      },
+      "usage": {
+        "input_tokens": 1697,
+        "output_tokens": 22,
+        "cost": 7.1274e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 7.1274e-05,
+          "upstream_inference_prompt_cost": 7.1274e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351474-RTAsUumc4oSVfPfr1tGA",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "2260.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1524.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.05
+        }
+      },
+      "usage": {
+        "input_tokens": 1507,
+        "output_tokens": 22,
+        "cost": 6.3294e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 6.3294e-05,
+          "upstream_inference_prompt_cost": 6.3294e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351475-nVZbLp7Q3UWCltPbJFqm",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "856.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "1754.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.49
+        }
+      },
+      "usage": {
+        "input_tokens": 1788,
+        "output_tokens": 22,
+        "cost": 7.5096e-05,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 7.5096e-05,
+          "upstream_inference_prompt_cost": 7.5096e-05,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351475-DNPTEH6xih51t8rfmzrE",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "489.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2801.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.53
+        }
+      },
+      "usage": {
+        "input_tokens": 2535,
+        "output_tokens": 22,
+        "cost": 0.00010647,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.00010647,
+          "upstream_inference_prompt_cost": 0.00010647,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351476-0HUIN53EGIlKr0hv6yJ7",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "6777.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2630.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.31
+        }
+      },
+      "usage": {
+        "input_tokens": 2421,
+        "output_tokens": 22,
+        "cost": 0.000101682,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.000101682,
+          "upstream_inference_prompt_cost": 0.000101682,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351476-RqfEl1DCt3kliolGKSv0",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "184.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2702.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.06
+        }
+      },
+      "usage": {
+        "input_tokens": 2550,
+        "output_tokens": 22,
+        "cost": 0.0001071,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.0001071,
+          "upstream_inference_prompt_cost": 0.0001071,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351477-CE62tVNBIli4Ow0VAc45",
+      "provider": "TypeSafe"
+    }
+  },
+  {
+    "index": "3764.0",
+    "label": "contradiction",
+    "source": "",
+    "premise_len": "2470.0",
+    "raw_response": {
+      "model": "typesafe/jev-1.14-20261014",
+      "answers": {
+        "faithful": {
+          "type": "noul",
+          "noul": 0.05
+        }
+      },
+      "usage": {
+        "input_tokens": 2478,
+        "output_tokens": 22,
+        "cost": 0.000104076,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.000104076,
+          "upstream_inference_prompt_cost": 0.000104076,
+          "upstream_inference_completions_cost": 0
+        }
+      },
+      "id": "gen-dec-1795351478-a8wrB8PZwnsNR9rX0MkY",
+      "provider": "TypeSafe"
+    }
+  }
+]

@@ -369,6 +369,7 @@ All classifiers fine-tune \texttt{dicta-il/neodictabert} \citep{BenDavid2025neod
 \midrule
 \textbf{MorphEvalHeb} (ours) & \textbf{0.6996} & \shortstack{\textbf{0.689}\\{\scriptsize[0.68,0.70]}} \\
 \midrule
+Jev (TypeSafe decisions API) & -- & \shortstack{0.660\\{\scriptsize[0.65,0.67]}} \\
 Vanilla Model (zero-shot judge) & 0.5989 & pending \\
 mFACT & 0.5290 & pending \\
 G-EVAL & 0.2418 & pending \\
@@ -397,7 +398,7 @@ Table~\ref{tab:main_results} compares Kendall's $\tau$ across all metrics; Table
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig_baseline_comparison.pdf}
-\caption{ROC AUC on the full benchmark ($n{=}4{,}024$), sorted ascending, with 95\% bootstrap CIs. MorphEvalHeb (highlighted) separates clearly from every baseline, none of which exceeds AUC 0.68.}
+\caption{ROC AUC on the full benchmark ($n{=}4{,}024$), sorted ascending, with 95\% bootstrap CIs. MorphEvalHeb (highlighted) leads every baseline; the only one that approaches it is Jev (AUC 0.963), an unpublished commercial decision model included as an exploratory comparison point (Appendix~\ref{app:jev}), not an established metric from the literature. Every peer-reviewed baseline stays at or below AUC 0.68.}
 \label{fig:baseline_comparison}
 \end{figure}
 % CHECK: these labels come from construction (Section~4.2), not from human annotators.
@@ -405,7 +406,7 @@ Table~\ref{tab:main_results} compares Kendall's $\tau$ across all metrics; Table
 
 
 
-MorphEvalHeb reaches an AUC of 0.992 (95\% CI 0.987--0.996), a balanced accuracy of 0.969, and $\tau_b$ of 0.689, and it is equally strong on both the Injected and Natural parts, with an AUC of 0.995 on each. Surface-overlap and embedding metrics are near chance on Injected (AUC 0.50--0.55), since an injected morphological error leaves almost every token in place; several fall below 0.5 overall because faithful rewrites change more tokens than corruptions do. Among the recomputed baselines, ENFS is the strongest (AUC 0.677), mainly on Natural, whose naturally occurring errors often introduce new entities (see Appendix~\ref{app:enfs} for its Hebrew-specific failure mode); among the LLM judges evaluated so far, the zero-shot GPT-4o-mini judge is the strongest ($\tau=0.599$), despite MorphEvalHeb's 363M-parameter encoder being far smaller than the LLM judges it outperforms. FactCG, an English fact checker among the strongest small checkers on English grounding benchmarks, makes the transfer gap explicit: it reaches an AUC of 0.893 on Natural's naturally occurring errors but falls to 0.534, near chance, on Injected's injected Hebrew morphological and entity errors, a 36-point drop that does not appear for MorphEvalHeb (0.995 on both parts).
+MorphEvalHeb reaches an AUC of 0.992 (95\% CI 0.987--0.996), a balanced accuracy of 0.969, and $\tau_b$ of 0.689, and it is equally strong on both the Injected and Natural parts, with an AUC of 0.995 on each. Surface-overlap and embedding metrics are near chance on Injected (AUC 0.50--0.55), since an injected morphological error leaves almost every token in place; several fall below 0.5 overall because faithful rewrites change more tokens than corruptions do. The single strongest baseline overall is Jev$^{\mathsection}$ (AUC 0.963, balanced accuracy 0.893, $\tau_b$ 0.660), an unpublished commercial calibrated-decision model (Appendix~\ref{app:jev}); among the established, peer-reviewed baselines, ENFS is the strongest (AUC 0.677), mainly on Natural, whose naturally occurring errors often introduce new entities (see Appendix~\ref{app:enfs} for its Hebrew-specific failure mode); among the LLM judges evaluated so far, the zero-shot GPT-4o-mini judge is the strongest ($\tau=0.599$), despite MorphEvalHeb's 363M-parameter encoder being far smaller than the LLM judges it outperforms. FactCG, an English fact checker among the strongest small checkers on English grounding benchmarks, makes the transfer gap explicit: it reaches an AUC of 0.893 on Natural's naturally occurring errors but falls to 0.534, near chance, on Injected's injected Hebrew morphological and entity errors, a 36-point drop that does not appear for MorphEvalHeb (0.995 on both parts).
 
 \subsection{Binary Faithfulness Verification}
 \label{sec:res_binary}
@@ -465,6 +466,8 @@ We presented MorphEvalHeb, a Hebrew-native factual-consistency framework built o
 
 \textbf{Representation-geometry pilot.} The hidden-state analysis in Appendix~\ref{app:repr_geometry} uses a single reader model (DictaLM-3.0-1.7B-Instruct) and 27 examples across 7 error families; it is not replicated across models and should be read as preliminary evidence, not an established property of Hebrew-processing LLMs in general.
 
+\textbf{Jev baseline.} Unlike every other baseline in Table~\ref{tab:full_results}, Jev (Appendix~\ref{app:jev}) is not a published, peer-reviewed metric: it is a commercial, closed-weight model reached through an unofficial-sounding ``alpha'' API endpoint, with no disclosed parameter count, training data, or architecture, and no independent verification beyond what we report ourselves. We include it because, to our knowledge, no other decision-model-style judge has been evaluated on Hebrew factuality, and its result -- a close second to MorphEvalHeb and far above every other baseline -- is itself informative, but it should be weighed accordingly: a provider could change or withdraw this endpoint at any time, and we cannot rule out that its training data overlaps with our benchmark's public source corpora (MAFAT, mFACT).
+
 \section*{Ethics Statement}
 All source documents are drawn from the public MAFAT Hebrew summarization dataset \citep{mafat_dataset} (news, Wikipedia, Weizmann Institute, Knesset, and High Court of Justice text) and from the mFACT Hebrew translations \citep{qiu2023detecting}; neither contains personal or sensitive information beyond what is already public. No new human-subject data collection was performed: the taxonomy was validated by a Hebrew linguist and a native Hebrew speaker, as described in Section~\ref{sec:taxonomy}, and the benchmark labels follow automatically from the augmentation pipeline (Section~\ref{sec:augmentation}) rather than from crowdsourced annotation. Data generation and the baseline LLM judges rely on commercial LLM APIs (OpenAI GPT and Google Gemini models); we use them only to rewrite or score Hebrew text already present in the source datasets, not to generate content about individuals.
 
@@ -503,6 +506,8 @@ SummaC-ZS (mDeBERTa) & 0.589\,{\scriptsize[0.57,0.61]} & 0.573 & 0.125 & 0.645 &
 mFACT-He$^{\ddagger}$ & -- & -- & 0.529 & -- & -- & -- & -- \\
 \multicolumn{8}{l}{\textit{Trained fact checker (cross-lingual)}} \\
 FactCG & 0.562\,{\scriptsize[0.54,0.59]} & 0.638 & 0.087 & 0.534 & 0.505 & 0.893 & 0.825 \\
+\multicolumn{8}{l}{\textit{Decision model (TypeSafe Jev, alpha API)}} \\
+Jev$^{\mathsection}$ & 0.963\,{\scriptsize[0.96,0.97]} & 0.893 & 0.660 & 0.988 & 0.946 & 0.942 & 0.868 \\
 \multicolumn{8}{l}{\textit{LLM judge (GPT-4o-mini)}} \\
 Zero-shot judge$^{\ddagger}$ & -- & -- & 0.599 & -- & -- & -- & -- \\
 G-EVAL$^{\ddagger}$ & -- & -- & 0.242 & -- & -- & -- & -- \\
@@ -510,7 +515,7 @@ G-EVAL$^{\ddagger}$ & -- & -- & 0.242 & -- & -- & -- & -- \\
 \textbf{MorphEvalHeb} (ours) & \textbf{0.992\,{\scriptsize[0.99,1.00]}} & \textbf{0.969} & \textbf{0.689} & \textbf{0.995} & \textbf{0.980} & \textbf{0.995} & \textbf{0.968} \\
 \bottomrule
 \end{tabular}
-\caption{Full meta-evaluation on the Hebrew benchmark. Bold marks our method. AUC and Kendall's $\tau_b$ are threshold-free; balanced accuracy (BAcc) uses a decision threshold tuned on held-out folds (Section~\ref{sec:protocol}). Brackets give 95\% bootstrap confidence intervals over articles. MorphEvalHeb outperforms every recomputed baseline ($p<0.001$, paired bootstrap on AUC, Holm-corrected). $^{\ddagger}$Not yet recomputed: $\tau$ from our earlier run; the remaining columns are pending.}
+\caption{Full meta-evaluation on the Hebrew benchmark. Bold marks our method. AUC and Kendall's $\tau_b$ are threshold-free; balanced accuracy (BAcc) uses a decision threshold tuned on held-out folds (Section~\ref{sec:protocol}). Brackets give 95\% bootstrap confidence intervals over articles. MorphEvalHeb outperforms every recomputed baseline ($p<0.001$ overall, paired bootstrap on AUC, Holm-corrected; $p=0.017$ specifically on MAFAT-Aug for Jev). $^{\ddagger}$Not yet recomputed: $\tau$ from our earlier run; the remaining columns are pending. $^{\mathsection}$Jev (TypeSafe, \texttt{typesafe/jev-1.14}) is an unpublished, non-peer-reviewed commercial calibrated-decision model reached through an alpha API endpoint, not an established metric from the literature; see Appendix~\ref{app:jev} for method and robustness checks.}
 \label{tab:full_results}
 \end{table*}
 
@@ -569,5 +574,17 @@ This result is scoped narrowly. All hidden states come from one Hebrew-native re
 \caption{Robustness check for the family-geometry result. (a) What is and is not being compared: not raw topic similarity between sentences (trivial), but the similarity of the (erroneous$-$faithful) shift vector between examples that may share nothing but the error mechanism. (b) Cosine similarity within verb\_gender\_swap, split by whether the pair is same-topic (dog-shelter listings), mixed, or on unrelated topics -- same-topic pairs are not the most similar, ruling out a topic/lexical confound.}
 \label{fig:confound_robustness}
 \end{figure*}
+
+\section{Jev: a Commercial Decision-Model Judge}
+\label{app:jev}
+As an additional baseline beyond the metrics surveyed in Related Work, we test whether a different \emph{architecture} of judge -- a calibrated decision model rather than a generative LLM prompted for a score -- can evaluate Hebrew summary factuality. Jev (\texttt{typesafe/jev-1.14}, provider TypeSafe) takes a \emph{state} (here, the source article and summary) and a typed question with explicit true/false criteria, and returns a single calibrated probability in one forward pass, with no free text to generate or parse. It is reached through OpenRouter's alpha ``decisions'' API, a different endpoint from the normal chat-completions interface used by every other LLM baseline in this paper. We emphasize that Jev is not an established, peer-reviewed metric: it is an unpublished commercial model with no disclosed architecture or parameter count, reached through an endpoint explicitly marked ``alpha''; we include it only because, to our knowledge, no decision-model-style judge has previously been evaluated on Hebrew factuality, and the result is informative regardless of the method's provenance.
+
+\textbf{Method.} For every pair in the benchmark ($n{=}4{,}024$), we ask one binary (``noul'') question -- \emph{is every claim in the summary supported by the source document?} -- over a state consisting of the full, untruncated source article and summary. We score all 4,024 pairs (full article and summary, no chunking) and merge the resulting probability into the same \texttt{scores.csv} used for every other baseline, so Jev is evaluated with the identical protocol as the rest of Table~\ref{tab:full_results}: 5-fold article-grouped cross-validated balanced accuracy, article-grouped bootstrap confidence intervals, and Holm-corrected significance against MorphEvalHeb.
+
+\textbf{Results.} Jev reaches an AUC of 0.963 (95\% CI 0.958--0.969), balanced accuracy 0.893, and $\tau_b$ 0.660 overall -- the strongest of any baseline we evaluate, though MorphEvalHeb still outperforms it significantly (AUC 0.992, $p<0.001$, Holm-corrected). Per benchmark part, Jev reaches AUC 0.988 on Injected and 0.942 on Natural; per source within Injected, AUC is 1.000 on both Bagatz (judicial, $n{=}30$) and Knesset (parliamentary, $n{=}141$), 0.998 on Wikipedia ($n{=}655$), 0.990 on Israel\_Hayom news ($n{=}864$), and 0.952 on Weizmann scientific text ($n{=}199$) -- strong and consistent across every native-Hebrew genre in the benchmark, not just one.
+
+\textbf{Robustness checks.} Two concerns specific to this baseline needed empirical verification before trusting the result. First, context handling: Jev's documented context length conflicts across sources (32K to 262K tokens), and our articles run up to 2,935 characters (Natural) or 13,240 characters (the longest Injected documents) -- both well within even the smaller figure, but we verified directly rather than trusting either claim. We built a synthetic 17,327-character document (six concatenated real articles) with a unique, never-mentioned-elsewhere fact in its final sentence, then asked Jev to judge two summaries: one repeating that fact, one contradicting it. It scored them 0.92 and 0.02 respectively -- it could only separate these if it processed the entire document, nearly six times longer than any real example in the benchmark. Second, Hebrew support: Jev's documentation does not confirm or deny Hebrew-language support at all. We verified empirically across all five Injected genres plus Natural (per-source AUCs above), including documents up to 13,240 characters, rather than relying on an absent vendor claim.
+
+\textbf{Caveats.} The decision threshold used for balanced accuracy is tuned on the same protocol as every other baseline (held-out folds, Section~\ref{sec:protocol}), but Jev itself is a closed, versioned commercial endpoint (resolved at call time to snapshot \texttt{typesafe/jev-1.14-20261014}) that a provider could change or withdraw at any time, with no disclosed training data -- we cannot rule out overlap with our benchmark's public source corpora (MAFAT, mFACT). Total cost for all 4,024 calls was \$0.62. Raw per-pair scores, the article and summary text sent for every pair, and the pilot scripts (including the truncation and genre-coverage checks above) are released alongside this paper.
 
 \end{document}
