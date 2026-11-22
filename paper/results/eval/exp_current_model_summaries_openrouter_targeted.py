@@ -88,6 +88,35 @@ def qc_checks(df):
     print(f"outputs starting with a likely meta-preamble (\"הנה/סיכום/להלן/...\"): {preamble}/{len(df)}")
 
 
+def _call_one(key, model, prompt):
+    import requests
+    last_err = None
+    for attempt in range(6):
+        try:
+            resp = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                # reasoning disabled: on a reasoning model (confirmed with qwen/qwen3.8-flash),
+                # hidden "thinking" tokens are drawn from the same max_tokens budget as the
+                # visible answer and can silently consume the ENTIRE budget, leaving empty
+                # content even at finish_reason="length" -- disabling it is the only reliable
+                # fix (increasing max_tokens alone does NOT help, confirmed empirically: at
+                # max_tokens=6000 with reasoning enabled, all 6000 tokens went to reasoning and
+                # content was 0 chars). Models that aren't reasoning models ignore this flag.
+                json={"model": model, "messages": [{"role": "user", "content": prompt}],
+                      "temperature": 0.2, "max_tokens": 3000, "reasoning": {"enabled": False}},
+                timeout=120,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return (data["choices"][0]["message"]["content"] or "").strip()
+        except Exception as e:  # noqa: BLE001 -- a transient network blip must not kill the whole batch
+            last_err = e
+            print(f"  retry {attempt} after error: {e}", flush=True)
+            time.sleep(min(2 ** attempt, 30))
+    raise last_err
+
+
 def main():
     model = sys.argv[1]
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 50
@@ -102,7 +131,6 @@ def main():
         pass
     from dotenv import load_dotenv
     load_dotenv(dotenv_path=os.path.join(REPO, ".env"), override=True)
-    import requests
 
     key = os.environ.get("OPENROUTER_API_KEY")
     if not key:
@@ -112,44 +140,40 @@ def main():
     print(f"model={model}  selected {len(arts)} known error-prone articles "
           f"(max_sev: {arts.max_sev.value_counts().to_dict()})", flush=True)
 
-    rows = []
-    for i, r in enumerate(arts.itertuples()):
-        prompt = THIN_PROMPT.format(article=r.premise)
-        t0 = time.time()
-        summary = ""
-        for attempt in range(4):
-            try:
-                resp = requests.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                    # reasoning disabled: on a reasoning model (confirmed with qwen/qwen3.8-flash),
-                    # hidden "thinking" tokens are drawn from the same max_tokens budget as the
-                    # visible answer and can silently consume the ENTIRE budget, leaving empty
-                    # content even at finish_reason="length" -- disabling it is the only reliable
-                    # fix (increasing max_tokens alone does NOT help, confirmed empirically: at
-                    # max_tokens=6000 with reasoning enabled, all 6000 tokens went to reasoning and
-                    # content was 0 chars). Models that aren't reasoning models ignore this flag.
-                    json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                          "temperature": 0.2, "max_tokens": 3000, "reasoning": {"enabled": False}},
-                    timeout=120,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                summary = (data["choices"][0]["message"]["content"] or "").strip()
-                break
-            except Exception as e:
-                if attempt == 3:
-                    raise
-                print(f"  retry {attempt} after error: {e}", flush=True)
-                time.sleep(2 ** attempt)
-        dt = time.time() - t0
-        rows.append({"doc_id": r.doc_id, "source": r.source, "orig_max_severity": r.max_sev,
-                     "orig_n_errors": r.n_err, "premise": r.premise, "generative_summary": summary,
-                     "model": model, "prompt_style": "thin", "gen_seconds": round(dt, 1)})
-        print(f"  [{i + 1}/{len(arts)}] {r.doc_id} (orig_sev={r.max_sev}) ({dt:.1f}s, {len(summary)} chars)",
-              flush=True)
+    # Resumable: write each row as soon as it completes (one JSON object per line) rather than one
+    # big CSV at the end -- a crash (e.g. a transient connection reset, which has happened in
+    # practice) must not lose already-completed work. A rerun with the same model/n/offset skips
+    # rows already present here.
+    import json
+    jsonl_path = out.replace(".csv", "_raw.jsonl")
+    done_doc_ids = set()
+    if os.path.exists(jsonl_path):
+        with open(jsonl_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    done_doc_ids.add(json.loads(line)["doc_id"])
+        print(f"Resuming: {len(done_doc_ids)} rows already done in {jsonl_path}", flush=True)
+
+    with open(jsonl_path, "a", encoding="utf-8") as jf:
+        for i, r in enumerate(arts.itertuples()):
+            if r.doc_id in done_doc_ids:
+                print(f"  [{i + 1}/{len(arts)}] {r.doc_id} (already done, skipping)", flush=True)
+                continue
+            prompt = THIN_PROMPT.format(article=r.premise)
+            t0 = time.time()
+            summary = _call_one(key, model, prompt)
+            dt = time.time() - t0
+            row = {"doc_id": r.doc_id, "source": r.source, "orig_max_severity": r.max_sev,
+                   "orig_n_errors": r.n_err, "premise": r.premise, "generative_summary": summary,
+                   "model": model, "prompt_style": "thin", "gen_seconds": round(dt, 1)}
+            jf.write(json.dumps(row, ensure_ascii=False) + "\n")
+            jf.flush()
+            print(f"  [{i + 1}/{len(arts)}] {r.doc_id} (orig_sev={r.max_sev}) ({dt:.1f}s, {len(summary)} chars)",
+                  flush=True)
 
     import pandas as pd
+    rows = [json.loads(l) for l in open(jsonl_path, encoding="utf-8") if l.strip()]
     df = pd.DataFrame(rows)
     df.to_csv(out, index=False)
     print(f"\nsaved {len(rows)} summaries -> {out}")
