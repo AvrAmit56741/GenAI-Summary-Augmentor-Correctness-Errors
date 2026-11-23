@@ -224,39 +224,22 @@ def fig_llm_detected_errors():
     st["share"] = st.with_err / st.n * 100
     st = st.sort_values("share")
 
-    # Single ACL column: the two measures get their own stacked panels (never one shared axis).
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(COL_W, 2.75), gridspec_kw=dict(hspace=0.75))
+    # Single panel: detection rate only (severity is not reported; all error types are treated as equally severe).
+    fig, a1 = plt.subplots(figsize=(COL_W, 1.45))
     y = np.arange(len(st))
     labels = [f"{m} (n={n})" for m, n in zip(st.model, st.n)]
     a1.barh(y, st.share, height=0.62, color=SERIES[1], edgecolor="white", linewidth=0.6)
     a1.set_yticks(y, labels)
     a1.set_xlim(0, 100)
     a1.set_xticks([0, 25, 50, 75, 100])
-    a1.set_title("(a) Summaries with \u22651 detected error (%)", loc="left", fontsize=7.5, color=INK)
+    a1.set_xlabel("summaries with \u22651 detected error (%)", fontsize=7.5, color=INK)
     a1.grid(axis="y", visible=False)
     for yi, sh in zip(y, st.share):
         a1.text(sh - 2, yi, f"{sh:.0f}%", va="center", ha="right", fontsize=6.8, color="white", fontweight="bold")
-
-    # Severity: sequential single-hue ramp (light = minor, dark = severe), 100%-stacked.
-    levels = [1, 2, 3, 4, 5]
-    ramp = ["#fde3d3", "#f9b896", "#f08a57", "#d95926", "#9a3510"]
-    left = np.zeros(len(st))
-    for lv, col in zip(levels, ramp):
-        vals = np.array([r.sev.get(lv, 0) / r.errors * 100 for r in st.itertuples()])
-        a2.barh(y, vals, left=left, height=0.62, color=col, edgecolor="white", linewidth=0.6, label=str(lv))
-        left += vals
-    a2.set_yticks(y, labels)
-    a2.set_xlim(0, 100)
-    a2.set_xticks([0, 25, 50, 75, 100])
-    a2.set_title("(b) Severity of detected errors (% of errors)", loc="left", fontsize=7.5, color=INK)
-    a2.grid(axis="y", visible=False)
-    a2.legend(title="severity: 1 = minor, 5 = severe", ncols=5, loc="upper center", bbox_to_anchor=(0.42, -0.16),
-              handlelength=1.0, columnspacing=0.9, title_fontsize=6.8, fontsize=6.8)
     save(fig, "fig_llm_detected_errors")
     tot_err = sum(r.errors for r in st.itertuples())
-    sev45 = sum(r.sev.get(4, 0) + r.sev.get(5, 0) for r in st.itertuples())
     print("detected-errors stats:", st[["model", "n", "with_err", "errors"]].to_dict("records"),
-          f"total n={st.n.sum()} with_err={st.with_err.sum()} share={st.with_err.sum()/st.n.sum():.3f} sev4-5={sev45/tot_err:.3f} errors={tot_err}")
+          f"total n={st.n.sum()} with_err={st.with_err.sum()} share={st.with_err.sum()/st.n.sum():.3f} errors={tot_err}")
     return st
 
 

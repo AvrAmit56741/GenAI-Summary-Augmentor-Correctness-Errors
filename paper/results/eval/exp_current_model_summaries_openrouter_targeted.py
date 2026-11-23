@@ -56,6 +56,33 @@ def pick_articles(n=50, offset=0):
     return by_doc.iloc[offset:offset + n].reset_index(drop=True)
 
 
+def pick_new_articles(n=50, seed=42):
+    """A disjoint pool: articles that NO model (old local/Bedrock rounds OR the new OpenRouter
+    Qwen/DeepSeek rounds) has ever had summarized, since pick_articles()'s 198-article
+    thesisdatasets/error_finder/ pool is now fully exhausted (every doc_id in it has a generated
+    summary from at least one model). Source: the mFACT-He portion of the project's own NLI
+    benchmark (thesisdatasets/train_datasets/Correctness/data/benchmark/combined.csv), which has
+    doc_id/source columns identical in spirit to the error_finder pool but was built for a
+    different purpose (entailment pairs) and has only ever been used for that -- never fed through
+    any summarization model. 303 unique doc_ids there, only 10 overlap with the exhausted pool,
+    leaving 293 genuinely untouched candidates. A fixed seed makes the 50-article sample
+    reproducible; there's no prior severity signal for these (never judged), so selection is a
+    random sample rather than the historical "hardest known" ranking."""
+    import pandas as pd
+    files = sorted(glob.glob(os.path.join(REPO, "thesisdatasets/error_finder/*.csv")))
+    e = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    e = e.dropna(subset=["premise", "doc_id", "severity"])
+    exhausted_doc_ids = set(e.doc_id.unique())
+
+    bench = pd.read_csv(os.path.join(
+        REPO, "thesisdatasets/train_datasets/Correctness/data/benchmark/combined.csv"))
+    bench = bench.dropna(subset=["doc_id", "premise", "source"])
+    by_doc = bench.groupby("doc_id").agg(premise=("premise", "first"),
+                                          source=("source", "first")).reset_index()
+    by_doc = by_doc[~by_doc.doc_id.isin(exhausted_doc_ids)]
+    return by_doc.sample(n=n, random_state=seed).reset_index(drop=True)
+
+
 def qc_checks(df):
     """Smoke-test QC: structure, length ratio, Hebrew-only, truncation -- everything that should be
     verified before trusting a new model's summaries enough to run the full error-finder pass."""
@@ -120,9 +147,11 @@ def _call_one(key, model, prompt):
 def main():
     model = sys.argv[1]
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 50
-    offset = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+    offset_arg = sys.argv[3] if len(sys.argv) > 3 else "0"
+    use_new_pool = offset_arg == "new"
+    offset = 0 if use_new_pool else int(offset_arg)
     tag = re.sub(r"[^A-Za-z0-9_-]", "_", model)
-    suffix = f"_offset{offset}" if offset > 0 else ""
+    suffix = "_newpool" if use_new_pool else (f"_offset{offset}" if offset > 0 else "")
     out = os.path.join(HERE, f"current_model_summaries_{tag}_targeted{suffix}.csv")
 
     try:
@@ -136,9 +165,14 @@ def main():
     if not key:
         sys.exit("OPENROUTER_API_KEY not found in environment / .env")
 
-    arts = pick_articles(n, offset=offset)
-    print(f"model={model}  selected {len(arts)} known error-prone articles "
-          f"(max_sev: {arts.max_sev.value_counts().to_dict()})", flush=True)
+    if use_new_pool:
+        arts = pick_new_articles(n)
+        print(f"model={model}  selected {len(arts)} never-summarized articles from the new pool "
+              f"(sources: {arts.source.value_counts().to_dict()})", flush=True)
+    else:
+        arts = pick_articles(n, offset=offset)
+        print(f"model={model}  selected {len(arts)} known error-prone articles "
+              f"(max_sev: {arts.max_sev.value_counts().to_dict()})", flush=True)
 
     # Resumable: write each row as soon as it completes (one JSON object per line) rather than one
     # big CSV at the end -- a crash (e.g. a transient connection reset, which has happened in
@@ -164,12 +198,15 @@ def main():
             t0 = time.time()
             summary = _call_one(key, model, prompt)
             dt = time.time() - t0
-            row = {"doc_id": r.doc_id, "source": r.source, "orig_max_severity": r.max_sev,
-                   "orig_n_errors": r.n_err, "premise": r.premise, "generative_summary": summary,
+            row = {"doc_id": r.doc_id, "source": r.source,
+                   "orig_max_severity": (None if use_new_pool else r.max_sev),
+                   "orig_n_errors": (None if use_new_pool else r.n_err),
+                   "premise": r.premise, "generative_summary": summary,
                    "model": model, "prompt_style": "thin", "gen_seconds": round(dt, 1)}
             jf.write(json.dumps(row, ensure_ascii=False) + "\n")
             jf.flush()
-            print(f"  [{i + 1}/{len(arts)}] {r.doc_id} (orig_sev={r.max_sev}) ({dt:.1f}s, {len(summary)} chars)",
+            sev_note = "n/a (new pool)" if use_new_pool else r.max_sev
+            print(f"  [{i + 1}/{len(arts)}] {r.doc_id} (orig_sev={sev_note}) ({dt:.1f}s, {len(summary)} chars)",
                   flush=True)
 
     import pandas as pd

@@ -73,3 +73,28 @@ to test whether a truly bidirectional "flip whatever gender is present" vector i
 scale up to more held-out sentences and add an automatic detector (e.g. a simple morphological
 checker or MorphEvalHeb itself) to get a quantitative flip-rate instead of by-eye inspection; (4)
 test on a realistic summarization-generation task instead of verbatim repetition.
+
+## Follow-up: quantitative test with balanced vectors (2026-11-23, `steer_eval.py`)
+
+Vectors built from real benchmark edits instead of the 10 pilot examples: VERB gender edits from
+`paper/results/eval/morph_attack_candidates.csv` (Dicta-parser gender of the original verb), split by article
+(train 84 masc->fem, 44 fem->masc; test articles held out). cosine(m2f, f2m) = -0.89: one shared gender axis.
+Vector norm ~115 (pilot vector 453), so scales here are ~4x the pilot's. 20 held-out sentences (10 with a
+masculine target verb, 10 feminine), "repeat verbatim", greedy decoding, scored automatically
+(`steer_eval.jsonl`, `steer_eval_summary.csv`).
+
+| condition | target verb flipped (fem sentences / masc sentences) | output verbatim |
+|---|---|---|
+| baseline | 0/10, 0/10 | 90% |
+| f2m x8 | **6/10** (fem->masc), 0/10 | 30-60% |
+| m2f x8 | 0/10, **4/10** (masc->fem) | 10-50% |
+| random x8 (norm-matched) | 0/10, 0/10 | 80-90% |
+
+- Both directions work and are selective: f2m never makes a word feminine, m2f never masculine; the random
+  vector never flips gender (f2m vs random p=0.011, m2f vs random p=0.087, Fisher, n=10 each).
+  Balanced training data removes the pilot's one-way asymmetry.
+- But flips are mostly not single-word: only 3/10 flips at x8 changed only the target word (median 3.5 words
+  changed). The vector tends to re-gender the whole referent (pronoun, verb, adjectives together), e.g.
+  "ד"ר גב מציעה" -> "ד"ר גב מציע", "הוא גם השתתף" -> "היא גם השתתפה". So it behaves more like
+  "the subject is female/male" (a referent-gender / entity error) than a pure agreement error.
+- x12 starts breaking fluency for all vectors, random included. Small n; a pilot, not a powered result.
