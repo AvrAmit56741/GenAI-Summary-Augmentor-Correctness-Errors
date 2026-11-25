@@ -1,0 +1,810 @@
+{
+  "tiktoken:cl100k_base": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 7,
+      "pieces": [
+        "ו�",
+        "�",
+        "מ",
+        "�",
+        "�",
+        "ע",
+        "ל"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 6,
+      "pieces": [
+        "א",
+        "ר",
+        "ו�",
+        "�",
+        "ת",
+        "ו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 7,
+      "pieces": [
+        "�",
+        "�",
+        "ל",
+        "�",
+        "�",
+        "י�",
+        "�"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 6,
+      "pieces": [
+        "ל",
+        "ח",
+        "�",
+        "�",
+        "ו�",
+        "�"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 6,
+      "pieces": [
+        "ש",
+        "י�",
+        "�",
+        "ל",
+        "ל",
+        "ו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 10,
+      "pieces": [
+        "ה",
+        "ת",
+        "�",
+        "�",
+        "�",
+        "�",
+        "י�",
+        "�",
+        "י�",
+        "�"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 6,
+      "pieces": [
+        "ו�",
+        "�",
+        "מ",
+        "נ",
+        "ו�",
+        "�"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 3,
+      "pieces": [
+        "ש",
+        "ל",
+        "ה"
+      ]
+    }
+  ],
+  "tiktoken:o200k_base": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 3,
+      "pieces": [
+        "וה",
+        "מפ",
+        "על"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 3,
+      "pieces": [
+        "אר",
+        "וס",
+        "תו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 3,
+      "pieces": [
+        "כל",
+        "פ",
+        "יה"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 3,
+      "pieces": [
+        "ל",
+        "חק",
+        "ור"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 4,
+      "pieces": [
+        "ש",
+        "יכ",
+        "ל",
+        "לו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 3,
+      "pieces": [
+        "הת",
+        "זק",
+        "יקים"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 3,
+      "pieces": [
+        "ול",
+        "מ",
+        "נוע"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 2,
+      "pieces": [
+        "ש",
+        "לה"
+      ]
+    }
+  ],
+  "DictaLM-2.0 (Hebrew-extended)": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 3,
+      "pieces": [
+        "וה",
+        "מפ",
+        "על"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 3,
+      "pieces": [
+        "אר",
+        "וס",
+        "תו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 2,
+      "pieces": [
+        "כל",
+        "פיה"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 2,
+      "pieces": [
+        "לח",
+        "קור"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 3,
+      "pieces": [
+        "שי",
+        "כל",
+        "לו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 4,
+      "pieces": [
+        "הת",
+        "זק",
+        "יק",
+        "ים"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 3,
+      "pieces": [
+        "ול",
+        "מנ",
+        "וע"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 1,
+      "pieces": [
+        "שלה"
+      ]
+    }
+  ],
+  "DictaLM-3.0-1.7B (Qwen3-based)": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 3,
+      "pieces": [
+        "וה",
+        "מ",
+        "פעל"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 3,
+      "pieces": [
+        "אר",
+        "וס",
+        "תו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 3,
+      "pieces": [
+        "כל",
+        "פ",
+        "יה"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 3,
+      "pieces": [
+        "ל",
+        "חק",
+        "ור"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 4,
+      "pieces": [
+        "ש",
+        "יכ",
+        "ל",
+        "לו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 4,
+      "pieces": [
+        "הת",
+        "ז",
+        "ק",
+        "יקים"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 3,
+      "pieces": [
+        "ול",
+        "מנ",
+        "וע"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 2,
+      "pieces": [
+        "ש",
+        "לה"
+      ]
+    }
+  ],
+  "Qwen3-14B": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 3,
+      "pieces": [
+        "וה",
+        "מ",
+        "פעל"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 3,
+      "pieces": [
+        "אר",
+        "וס",
+        "תו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 3,
+      "pieces": [
+        "כל",
+        "פ",
+        "יה"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 3,
+      "pieces": [
+        "ל",
+        "חק",
+        "ור"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 4,
+      "pieces": [
+        "ש",
+        "יכ",
+        "ל",
+        "לו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 4,
+      "pieces": [
+        "הת",
+        "ז",
+        "ק",
+        "יקים"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 3,
+      "pieces": [
+        "ול",
+        "מנ",
+        "וע"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 2,
+      "pieces": [
+        "ש",
+        "לה"
+      ]
+    }
+  ],
+  "Qwen3-32B": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 3,
+      "pieces": [
+        "וה",
+        "מ",
+        "פעל"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 3,
+      "pieces": [
+        "אר",
+        "וס",
+        "תו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 3,
+      "pieces": [
+        "כל",
+        "פ",
+        "יה"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 3,
+      "pieces": [
+        "ל",
+        "חק",
+        "ור"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 4,
+      "pieces": [
+        "ש",
+        "יכ",
+        "ל",
+        "לו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 4,
+      "pieces": [
+        "הת",
+        "ז",
+        "ק",
+        "יקים"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 3,
+      "pieces": [
+        "ול",
+        "מנ",
+        "וע"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 2,
+      "pieces": [
+        "ש",
+        "לה"
+      ]
+    }
+  ],
+  "GLM-4.6 (sibling tokenizer to 4.7-Flash)": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 7,
+      "pieces": [
+        "ו�",
+        "�",
+        "מ",
+        "�",
+        "�",
+        "ע",
+        "ל"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 6,
+      "pieces": [
+        "א",
+        "ר",
+        "ו�",
+        "�",
+        "ת",
+        "ו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 7,
+      "pieces": [
+        "�",
+        "�",
+        "ל",
+        "�",
+        "�",
+        "י�",
+        "�"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 6,
+      "pieces": [
+        "ל",
+        "ח",
+        "�",
+        "�",
+        "ו�",
+        "�"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 6,
+      "pieces": [
+        "ש",
+        "י�",
+        "�",
+        "ל",
+        "ל",
+        "ו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 10,
+      "pieces": [
+        "ה",
+        "ת",
+        "�",
+        "�",
+        "�",
+        "�",
+        "י�",
+        "�",
+        "י�",
+        "�"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 6,
+      "pieces": [
+        "ו�",
+        "�",
+        "מ",
+        "נ",
+        "ו�",
+        "�"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 3,
+      "pieces": [
+        "ש",
+        "ל",
+        "ה"
+      ]
+    }
+  ],
+  "DeepSeek-V3 (predecessor tokenizer)": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 4,
+      "pieces": [
+        "וה�",
+        "��",
+        "�ע",
+        "ל"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 4,
+      "pieces": [
+        "א",
+        "ר",
+        "וס",
+        "תו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 4,
+      "pieces": [
+        "כ",
+        "ל�",
+        "�",
+        "יה"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 3,
+      "pieces": [
+        "ל�",
+        "�ק",
+        "ור"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 4,
+      "pieces": [
+        "ש",
+        "י�",
+        "�ל",
+        "לו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 6,
+      "pieces": [
+        "ה�",
+        "��",
+        "�",
+        "ק",
+        "יק",
+        "ים"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 3,
+      "pieces": [
+        "ול�",
+        "��",
+        "�וע"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 2,
+      "pieces": [
+        "ש",
+        "לה"
+      ]
+    }
+  ],
+  "Kimi-K2-Instruct": {
+    "error": "AttributeError: 'PreTrainedConfig' object has no attribute 'max_position_embeddings'"
+  },
+  "Gemma-3-12B": {
+    "error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/google/gemma-3-12b-it.\n401 Client Error. (Request ID: Root=1-6b06b2b3-0a95cc420e76bce97bff5da5;131530e3-bc7a-413f-a3f8-1f7f7d7137d2)\n\nCannot access gated repo for url https://huggingface.co/google/gemma-3"
+  },
+  "Ministral (Tekken tokenizer family)": [
+    {
+      "word": "והמפעל",
+      "gloss": "ו- (and) + ה- (the) + מפעל (enterprise) = 'and the enterprise'",
+      "n_tokens": 4,
+      "pieces": [
+        "וה�",
+        "��",
+        "�",
+        "על"
+      ]
+    },
+    {
+      "word": "ארוסתו",
+      "gloss": "ארוסה (fiancee, fem.) + -ו (his) possessive suffix = 'his fiancee'",
+      "n_tokens": 3,
+      "pieces": [
+        "אר",
+        "וס",
+        "תו"
+      ]
+    },
+    {
+      "word": "כלפיה",
+      "gloss": "כלפי (toward) + -ה (her) possessive/pronominal suffix = 'toward her'",
+      "n_tokens": 3,
+      "pieces": [
+        "כל",
+        "פ",
+        "יה"
+      ]
+    },
+    {
+      "word": "לחקור",
+      "gloss": "ל- (to, infinitive marker) + חקור (research) = 'to research'",
+      "n_tokens": 3,
+      "pieces": [
+        "ל",
+        "חק",
+        "ור"
+      ]
+    },
+    {
+      "word": "שיכללו",
+      "gloss": "ש- (that) + יכללו (will include, 3pl fut.) = 'that will include'",
+      "n_tokens": 4,
+      "pieces": [
+        "ש",
+        "יכ",
+        "ל",
+        "לו"
+      ]
+    },
+    {
+      "word": "התזקיקים",
+      "gloss": "ה- (definite article) + תזקיקים (distillates, pl.) = 'the distillates'",
+      "n_tokens": 6,
+      "pieces": [
+        "ה�",
+        "�",
+        "ז",
+        "ק",
+        "יק",
+        "ים"
+      ]
+    },
+    {
+      "word": "ולמנוע",
+      "gloss": "ו- (and) + ל- (to) + מנוע (prevent) = 'and to prevent'",
+      "n_tokens": 3,
+      "pieces": [
+        "ול",
+        "מנ",
+        "וע"
+      ]
+    },
+    {
+      "word": "שלה",
+      "gloss": "של (possessive 'of') + ה (her) = 'hers / her [object]' -- single orthographic word",
+      "n_tokens": 2,
+      "pieces": [
+        "ש",
+        "לה"
+      ]
+    }
+  ]
+}
