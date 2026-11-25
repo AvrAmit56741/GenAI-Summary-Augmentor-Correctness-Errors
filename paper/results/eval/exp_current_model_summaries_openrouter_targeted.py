@@ -56,7 +56,7 @@ def pick_articles(n=50, offset=0):
     return by_doc.iloc[offset:offset + n].reset_index(drop=True)
 
 
-def pick_new_articles(n=50, seed=42):
+def pick_new_articles(n=50, seed=42, also_exclude_csvs=()):
     """A disjoint pool: articles that NO model (old local/Bedrock rounds OR the new OpenRouter
     Qwen/DeepSeek rounds) has ever had summarized, since pick_articles()'s 198-article
     thesisdatasets/error_finder/ pool is now fully exhausted (every doc_id in it has a generated
@@ -67,19 +67,25 @@ def pick_new_articles(n=50, seed=42):
     any summarization model. 303 unique doc_ids there, only 10 overlap with the exhausted pool,
     leaving 293 genuinely untouched candidates. A fixed seed makes the 50-article sample
     reproducible; there's no prior severity signal for these (never judged), so selection is a
-    random sample rather than the historical "hardest known" ranking."""
+    random sample rather than the historical "hardest known" ranking.
+
+    `also_exclude_csvs`: paths to prior pick_new_articles() output CSVs (e.g. the Qwen/DeepSeek
+    newpool rounds) whose doc_ids should also be excluded, so a later model's "new pool" round
+    draws from a genuinely fresh subset rather than re-sampling the same 50 articles."""
     import pandas as pd
     files = sorted(glob.glob(os.path.join(REPO, "thesisdatasets/error_finder/*.csv")))
     e = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
     e = e.dropna(subset=["premise", "doc_id", "severity"])
     exhausted_doc_ids = set(e.doc_id.unique())
+    for p in also_exclude_csvs:
+        exhausted_doc_ids |= set(pd.read_csv(p).doc_id.astype(str).unique())
 
     bench = pd.read_csv(os.path.join(
         REPO, "thesisdatasets/train_datasets/Correctness/data/benchmark/combined.csv"))
     bench = bench.dropna(subset=["doc_id", "premise", "source"])
     by_doc = bench.groupby("doc_id").agg(premise=("premise", "first"),
                                           source=("source", "first")).reset_index()
-    by_doc = by_doc[~by_doc.doc_id.isin(exhausted_doc_ids)]
+    by_doc = by_doc[~by_doc.doc_id.astype(str).isin(exhausted_doc_ids)]
     return by_doc.sample(n=n, random_state=seed).reset_index(drop=True)
 
 
@@ -123,16 +129,20 @@ def _call_one(key, model, prompt):
             resp = requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                # reasoning disabled: on a reasoning model (confirmed with qwen/qwen3.8-flash),
-                # hidden "thinking" tokens are drawn from the same max_tokens budget as the
-                # visible answer and can silently consume the ENTIRE budget, leaving empty
-                # content even at finish_reason="length" -- disabling it is the only reliable
-                # fix (increasing max_tokens alone does NOT help, confirmed empirically: at
-                # max_tokens=6000 with reasoning enabled, all 6000 tokens went to reasoning and
-                # content was 0 chars). Models that aren't reasoning models ignore this flag.
+                # reasoning disabled: on a reasoning model (confirmed with qwen/qwen3.8-flash and
+                # moonshotai/kimi-k2.6), hidden "thinking" tokens are drawn from the same
+                # max_tokens budget as the visible answer and can silently consume the ENTIRE
+                # budget, leaving empty content even at finish_reason="length" -- disabling it is
+                # the only reliable fix (increasing max_tokens alone does NOT help, confirmed
+                # empirically: at max_tokens=6000 with reasoning enabled, all 6000 tokens went to
+                # reasoning and content was 0 chars). Models that aren't reasoning models ignore
+                # this flag. max_tokens=6000 (raised from 3000 after Kimi K2.6's smoke test showed
+                # some article/summary pairs need up to ~3,700 completion tokens even with
+                # reasoning off); timeout=180 (raised from 120 after Kimi took up to 127s on a
+                # single call).
                 json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                      "temperature": 0.2, "max_tokens": 3000, "reasoning": {"enabled": False}},
-                timeout=120,
+                      "temperature": 0.2, "max_tokens": 6000, "reasoning": {"enabled": False}},
+                timeout=180,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -148,10 +158,17 @@ def main():
     model = sys.argv[1]
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 50
     offset_arg = sys.argv[3] if len(sys.argv) > 3 else "0"
-    use_new_pool = offset_arg == "new"
+    use_new_pool = offset_arg.startswith("new")
+    # "new" = round 1 of the disjoint pool (suffix "_newpool"); "new2", "new3", ... = later rounds
+    # once round 1 is exhausted for this or other models (suffix "_newpool_round{k}"), each
+    # excluding every doc_id any model's any round of this disjoint pool has already used.
+    new_round = int(offset_arg[3:]) if use_new_pool and len(offset_arg) > 3 else 1
     offset = 0 if use_new_pool else int(offset_arg)
     tag = re.sub(r"[^A-Za-z0-9_-]", "_", model)
-    suffix = "_newpool" if use_new_pool else (f"_offset{offset}" if offset > 0 else "")
+    if use_new_pool:
+        suffix = "_newpool" if new_round == 1 else f"_newpool_round{new_round}"
+    else:
+        suffix = f"_offset{offset}" if offset > 0 else ""
     out = os.path.join(HERE, f"current_model_summaries_{tag}_targeted{suffix}.csv")
 
     try:
@@ -166,9 +183,16 @@ def main():
         sys.exit("OPENROUTER_API_KEY not found in environment / .env")
 
     if use_new_pool:
-        arts = pick_new_articles(n)
+        # Exclude doc_ids any model's any round of the disjoint pool already used (this model's
+        # own earlier rounds included), so each new round draws genuinely fresh articles rather
+        # than re-sampling ones already tested. `out` itself is excluded from this list so a
+        # crashed/resumed run for the same model+round still lines up with its own JSONL.
+        prior_newpool_csvs = [f for f in glob.glob(os.path.join(HERE, "current_model_summaries_*_targeted_newpool*.csv"))
+                              if f != out]
+        arts = pick_new_articles(n, seed=42 + new_round, also_exclude_csvs=prior_newpool_csvs)
         print(f"model={model}  selected {len(arts)} never-summarized articles from the new pool "
-              f"(sources: {arts.source.value_counts().to_dict()})", flush=True)
+              f"round {new_round} (excluding {len(prior_newpool_csvs)} prior new-pool round files; "
+              f"sources: {arts.source.value_counts().to_dict()})", flush=True)
     else:
         arts = pick_articles(n, offset=offset)
         print(f"model={model}  selected {len(arts)} known error-prone articles "
